@@ -113,11 +113,14 @@ erDiagram
     projects ||--o{ project_members : "project_id"
     projects ||--o{ project_items : "project_id"
     projects ||--o{ invitations : "project_id"
+    projects ||--o{ share_links : "project_id"
     project_items ||--o{ plans : "item_id"
     plans ||--o{ ball_events : "plan_id"
     project_members ||--o{ plans : "from_member_id / to_member_id"
     project_members ||--o{ ball_events : "actor_member_id"
     project_members ||--o{ invitations : "invited_member_id"
+    project_members ||--o{ share_links : "issued_by_member_id"
+    share_links ||--o{ audit_logs : "share_link_id"
 
     users {
         uuid id PK
@@ -221,16 +224,32 @@ erDiagram
         timestamptz revoked_at "失効日時"
         timestamptz created_at
     }
+    share_links {
+        uuid id PK
+        uuid project_id FK
+        text scope_type "project/item/plan (CHECK)"
+        uuid scope_target_id "scope_typeに応じた対象ID"
+        text token_hash "ハッシュ保存"
+        uuid issued_by_member_id FK
+        timestamptz issued_at
+        timestamptz expires_at
+        timestamptz revoked_at "個別失効"
+        boolean organization_off_revoked "Phase2〜 (P0は常にfalse)"
+        timestamptz last_accessed_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
 
 ### 2.3.2. Phase 1 で追加されるテーブル（参考）
 
 | テーブル | 用途 | 関連 PRD |
 |---|---|---|
-| `share_links` | 非会員URL共有 | PRD §8.2、FR-SHARE-01〜07 |
 | `comments` | 予定コメント | PRD §8.2、FR-COMM-01 |
 | `attachments` | 添付ファイル | PRD §8.2、FR-COMM-02 |
 | `notifications` | メール通知 | PRD §8.2、FR-NOTIF-01〜02 |
+
+> v1.1 改訂注：v1.0 まで本表に含まれていた `share_links`（非会員URL共有）は **PRD v1.3 で Phase 0 へ前倒しされたため、§2.3.1 / §2.4 に移動**した。
 
 ### 2.3.3. Phase 2 で追加されるテーブル（参考）
 
@@ -247,7 +266,7 @@ erDiagram
 
 ### 2.4.1. users — アプリ側のユーザー本体
 
-**司る機能**：UC-01 アカウント作成・ログイン／FR-AUTH-01〜05／SR-AUTH-01〜04。**Supabase Auth `auth.users`（UUID）と 1:1 で紐付くアプリ DB の本体テーブル**。プロジェクトの永続参加・編集を行う全ロールが必ず1行を持つ。非会員URL閲覧者（Phase 1）は本テーブルに行を持たない。
+**司る機能**：UC-01 アカウント作成・ログイン／FR-AUTH-01〜05／SR-AUTH-01〜04。**Supabase Auth `auth.users`（UUID）と 1:1 で紐付くアプリ DB の本体テーブル**。プロジェクトの永続参加・編集を行う全ロールが必ず1行を持つ。非会員URL閲覧者（Phase 0、§2.4 share_links）は本テーブルに行を持たない。
 
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
@@ -434,15 +453,15 @@ erDiagram
 
 ### 2.4.7. audit_logs — 監査ログ
 
-**司る機能**：SR-AUDIT-01〜04。**追記専用・改ざん防止**。Phase 0 では `login` / `toss` / `complete` のみ記録、Phase 1 で全アクションに拡張。
+**司る機能**：SR-AUDIT-01〜04／FR-SHARE-04（非会員URLアクセス記録）。**追記専用・改ざん防止**。Phase 0 では `login` / `toss` / `complete` / `share_access` / `share_create` / `share_revoke` / `share_toss` / `share_complete` を記録、Phase 1 で全アクションに拡張。
 
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
 | id | uuid | × | uuidv7 | |
 | occurred_at | timestamptz | × | now() | 発生日時 |
 | actor_user_id | uuid | ○ | NULL | FK → users.id（非会員URL経由は NULL） |
-| share_link_id | uuid | ○ | NULL | Phase 1〜（FK → share_links.id） |
-| action | text | × | — | 'login','logout','toss','complete' …（CHECK） |
+| share_link_id | uuid | ○ | NULL | FK → share_links.id（非会員URL経由のアクセス時のみ／Phase 0 から有効） |
+| action | text | × | — | 'login','logout','toss','complete','share_access','share_create','share_revoke','share_toss','share_complete' …（CHECK） |
 | resource_type | text | × | — | 'project','plan','ball_event' 等 |
 | resource_id | uuid | ○ | NULL | 対象リソース ID |
 | result | text | × | — | 'success' / 'failure'（CHECK） |
@@ -492,6 +511,48 @@ erDiagram
 **Phase 1 拡張**：
 - `accepted_user_id` FK → users.id（受諾後に紐付け、監査用）
 - 招待メールテンプレートのバージョン管理列
+
+---
+
+### 2.4.9. share_links — 非会員URL共有
+
+**司る機能**：FR-SHARE-01〜06（Phase 0）／FR-SHARE-07（Phase 2）／SR-AUTH-08（Phase 0）／SR-AUTH-09（Phase 2）／UC-23 非会員URLでの確認・差し戻し／SC-16 非会員URL 発行・管理。**1行＝1発行URL**。短時間有効期限・個別失効・全アクセスの監査ログ記録（`audit_logs.share_link_id`）を Phase 0 から実装。組織OFFによる強制失効は Phase 2 で参照開始。トークン本体は SHA-256 等でハッシュ保存し、生トークンは保存しない（招待トークンと同方針）。
+
+| カラム | 型 | NULL | 既定 | 説明 |
+|---|---|:---:|---|---|
+| id | uuid | × | uuidv7 | |
+| project_id | uuid | × | — | FK → projects.id |
+| scope_type | text | × | — | 'project' / 'item' / 'plan'（CHECK）。共有スコープ |
+| scope_target_id | uuid | ○ | NULL | scope_type='item' なら project_items.id、'plan' なら plans.id、'project' なら NULL |
+| token_hash | text | × | — | トークン本体（≥256bit、暗号学的乱数、URL-safe Base64）の SHA-256 等ハッシュ。**生トークンは保存しない** |
+| issued_by_member_id | uuid | × | — | FK → project_members.id（発行者） |
+| issued_at | timestamptz | × | now() | 発行日時 |
+| expires_at | timestamptz | × | — | 有効期限（FR-SHARE-02、SR-AUTH-08） |
+| revoked_at | timestamptz | ○ | NULL | 個別失効日時（FR-SHARE-03、未失効は NULL） |
+| organization_off_revoked | boolean | × | false | 組織OFFによる強制失効フラグ（FR-SHARE-07／**Phase 2 で組織OFF反映時に true 化、Phase 0〜1 は常に false**） |
+| last_accessed_at | timestamptz | ○ | NULL | 最終アクセス日時（運用情報） |
+| created_at | timestamptz | × | now() | |
+| updated_at | timestamptz | × | now() | DBトリガで更新 |
+
+**制約**：
+- `ck_sl_scope_type` CHECK (scope_type IN ('project','item','plan'))
+- `ck_sl_scope_target_consistency` CHECK ((scope_type='project' AND scope_target_id IS NULL) OR (scope_type IN ('item','plan') AND scope_target_id IS NOT NULL))
+- `fk_sl_project_id` FK → projects(id) ON DELETE CASCADE
+- `fk_sl_issued_by_member_id` FK → project_members(id) ON DELETE RESTRICT（監査用、発行者は残す）
+- `uq_sl_token_hash`（token_hash UNIQUE）
+
+**インデックス**：
+- `idx_sl_project_id`（プロジェクト単位での一覧／SC-16）
+- `idx_sl_token_hash_active` 部分: `(token_hash)` WHERE revoked_at IS NULL AND organization_off_revoked = false AND expires_at > now()（トークン検証の高速化）
+- `idx_sl_expires_at`（期限切れバッチクリーンアップ／監視用）
+
+**Phase 1 拡張**：
+- アクセスログ詳細は本テーブルでなく `audit_logs.share_link_id` 経由で参照（既に Phase 0 で実装）。本テーブル自体の Phase 1 拡張は予定なし
+
+**Phase 0 留意**：
+- 削除（DELETE）は行わない。失効は `revoked_at` セットで論理失効（監査用に履歴保持、PRD §8.4 share_links 条項に準拠）
+- レート制限・総当り検知は Phase 0 では Vercel 既定のみ。Phase 1 で Upstash Redis ベースに強化（章3 §3.2.9）
+- `last_accessed_at` 更新は監査ログ記録と同一トランザクションで実施
 
 ---
 
@@ -645,11 +706,11 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 
 | マイグレーション | 内容 | リスク |
 |---|---|---|
-| M001 | 全 Phase 0 テーブル作成 | 初回 |
+| M001 | 全 Phase 0 テーブル作成（`share_links` を含む。v1.1 改訂で Phase 1 → Phase 0 へ移動） | 初回 |
 | M002 (Phase 1) | `plans.plan_type` CHECK 制約を `('toss','shared','solo')` に拡張 | 低（既存データは toss のみ） |
 | M003 (Phase 1) | `ball_events.event_type` CHECK 制約を拡張 | 低 |
 | M004 (Phase 1) | `audit_logs.action` の許容値を拡張 | 低 |
-| M005 (Phase 1) | `share_links` / `comments` / `attachments` / `notifications` テーブル追加 | 中（FK 設計検証必要） |
+| M005 (Phase 1) | `comments` / `attachments` / `notifications` テーブル追加 | 中（FK 設計検証必要） |
 | M006 (Phase 1) | `plans.owner_member_id` 用 CHECK 制約追加（plan_type='shared'/'solo' で NOT NULL 相当） | 中 |
 | M007 (Phase 1) | 論理削除へ移行（`plans.deleted_at` をアプリで参照開始）、Prisma middleware 適用 | 中（既存物理削除コードの撤去） |
 | M008 (Phase 2) | `organizations` テーブル追加 + `projects.organization_id` 既存データの組織割当 + NOT NULL 化 | 高（データ移行スクリプト必要） |
@@ -677,8 +738,10 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 
 | 該当 PRD 項 | 本章での扱い |
 |---|---|
-| §8.1 ER図 | §2.3 で物理 ER 化（カラム型・NULL・FK 明示） |
-| §8.2 全テーブル | §2.4 Phase 0 必須分を物理化、Phase 1+ は §2.3.2 で予告 |
+| §8.1 ER図 | §2.3 で物理 ER 化（カラム型・NULL・FK 明示）。`share_links` は v1.1 改訂で Phase 0 範囲に移動 |
+| §8.2 全テーブル | §2.4 Phase 0 必須分を物理化（`share_links` 含む）、Phase 1+ は §2.3.2 で予告 |
+| §8.2 share_links | §2.4.9 で物理化（v1.1 改訂で Phase 0 へ前倒し） |
+| FR-SHARE-01〜06 | §2.4.9 share_links + §2.4.7 audit_logs.share_link_id で対応（Phase 0 から有効） |
 | §8.3 ボール状態遷移 | `plans.status` + `ball_events.event_type` で表現、Phase 0 は遷移を最小実装 |
 | §8.4 プロジェクト状態遷移 | `projects.status` + `closed_at` / `archived_at` / `deleted_at` で表現 |
 | §8.5 論理削除・履歴保持 | §2.2.3、§2.7 で実装方針確定 |
@@ -689,7 +752,7 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 
 ### Phase 1+ 持ち越し
 
-- `share_links`、`comments`、`attachments`、`notifications` の物理定義（§2.3.2 で予告のみ）
+- `comments`、`attachments`、`notifications` の物理定義（§2.3.2 で予告のみ）
 - 論理削除アプリ実装の Prisma middleware 化
 - ハッシュチェーンによる監査ログ改ざん検知（Phase 2 以降）
 
@@ -705,3 +768,4 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §2.10 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §2.10 全10論点を AskUserQuestion で確定（全て推奨案＝たたき台どおり） |
+| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§2.3.1 ER 図に `share_links` を追加、§2.4.9 share_links テーブル定義を新設、§2.4.7 audit_logs に `share_link_id`／`share_*` アクションを Phase 0 から有効化、§2.9.3 マイグレーション計画から `share_links` を M001 に統合、§2.11 Phase 1+ 持ち越しから `share_links` を除外。 |

@@ -23,12 +23,14 @@ PRD §9 を Phase 0 実装レベルまで具体化する。スコープ：
 - プライバシー（PII 最小収集、自己情報削除）
 
 本章で**扱わない**もの：
-- 非会員URL共有（FR-SHARE-01〜07、PRD §9.2）：**Phase 1 で別章節**
+- 組織レベル On/OFF 統制（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09）：**Phase 2 で別章節**（`organizations` / `organization_settings` 導入と合わせて）
 - MFA（SR-AUTH-06）：Phase 2
 - 監査ログ閲覧 UI（SR-AUDIT-04）：Phase 2
 - 透かし表示（SR-DATA-04）：Phase 2+
 - ペネトレーションテスト（SR-OPS-06）：Phase 2+
 - 添付ファイル詳細（SR-DATA-03, 05、Phase 1）
+
+> v1.1 改訂：非会員URL共有（FR-SHARE-01〜06、SR-AUTH-08）は v1.0 まで「Phase 1 で別章節」としていたが、PRD v1.3 で Phase 0 へ前倒しされたため §5.4.5 / §5.6 / §5.7 で本章節として実装する。
 
 ---
 
@@ -40,8 +42,8 @@ PRD §9.1 の6方針を本章での実装ポリシーに落とす。
 |---|---|
 | **機密第一** | 機能追加・速度より機密保護を優先。トレードオフが出た場合の判断記録を本書に残す |
 | **最小権限** | 全 API に認可ガードを必須付与。デフォルトは「拒否」、明示的な許可のみ通す |
-| **デフォルト非公開** | 新規プロジェクト・予定・添付は全てプロジェクト参加者限定。公開（=非会員URL）は明示操作（Phase 1） |
-| **公開範囲は最小化・統制下で許可** | 認証なしアクセスは Phase 0 では `/healthz` `/login` `/signup` `/invitations/:token` のみ |
+| **デフォルト非公開** | 新規プロジェクト・予定・添付は全てプロジェクト参加者限定。公開（=非会員URL）は明示操作（Phase 0、§5.4.5） |
+| **公開範囲は最小化・統制下で許可** | 認証なしアクセスは Phase 0 では `/healthz` `/login` `/signup` `/invitations/:token` `/share/:token` のみ。非会員URL共有は短時間有効期限・個別失効・全アクセスの監査ログを必須（FR-SHARE-01〜04、SR-AUTH-08） |
 | **監査可能性** | 重要操作は `audit_logs` に記録。Phase 0 は最低限（login/toss/complete）で素地確保 |
 | **失敗に備える** | エラー時もスタックトレース・機密情報を返さない。シークレット漏洩時の即時無効化手順を運用に組み込む |
 
@@ -364,6 +366,111 @@ Phase 0 は role_type を実装しないため、簡易ロール導出：
 
 > 失敗時は カスタムエラー型 `BusinessRuleError` を throw、`errorBoundary` ミドルウェアで 422 にマッピング（章3 §3.2.6）。
 
+### 5.4.5. 非会員URL共有のセキュリティ実装（FR-SHARE-01〜06、SR-AUTH-08／Phase 0）
+
+PRD §9.2 統制ポリシーのうち、Phase 0 で必須となる **URL 単位の安全装置** を実装する。組織レベル On/OFF（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09）は Phase 2 で `organizations` / `organization_settings` 導入と合わせて追加する。
+
+#### トークン生成と保管
+
+| 観点 | 方針 |
+|---|---|
+| 生成方法 | Web Crypto API の `crypto.getRandomValues(new Uint8Array(32))`（256bit、暗号学的乱数）。サーバ側のみで生成 |
+| エンコード | URL-safe Base64（`+ → -`、`/ → _`、パディング除去）。長さは 43 文字程度 |
+| 保管 | **SHA-256 ハッシュで保管**（`share_links.token_hash`）。生トークンは DB に保存しない（招待トークンと同方針） |
+| 配布 | 発行 API レスポンスでのみ平文を返す（章3 §3.6.9 POST レスポンス。再表示・再取得は不可） |
+
+#### トークン検証ミドルウェア（`requireShareToken`）
+
+`/api/v1/share/:token/*` 配下のすべてのリクエストに適用：
+
+```ts
+// 概略
+app.use('/share/:token/*', async (c, next) => {
+  const token = c.req.param('token');
+  const tokenHash = sha256Hex(token);
+
+  // 部分インデックス idx_sl_token_hash_active で高速検索
+  const link = await prisma.shareLinks.findFirst({
+    where: {
+      tokenHash,
+      revokedAt: null,
+      organizationOffRevoked: false,  // Phase 0 は常に false
+      expiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!link) {
+    // 期限切れ・失効・存在せず・組織OFF はすべて 404 に集約（PRD §9.1）
+    return c.json({ error: { code: 'NOT_FOUND', requestId } }, 404);
+  }
+
+  // last_accessed_at 更新と監査ログ記録は同一トランザクション
+  await prisma.$transaction(async (tx) => {
+    await tx.shareLinks.update({
+      where: { id: link.id },
+      data: { lastAccessedAt: new Date() },
+    });
+    await tx.auditLogs.create({
+      data: {
+        action: 'share_access',
+        actorUserId: null,
+        shareLinkId: link.id,
+        resourceType: link.scopeType,
+        resourceId: link.scopeTargetId ?? link.projectId,
+        result: 'success',
+        ip: getClientIp(c),
+        userAgent: c.req.header('user-agent'),
+      },
+    });
+  });
+
+  c.set('currentShareLink', link);
+  await next();
+});
+```
+
+#### スコープ判定（IDOR 防止）
+
+`requireShareToken` 後段の認可チェーン：
+
+| ガード | 検証内容 | 失敗時 |
+|---|---|---|
+| `assertScopeMatchesPath(shareLink, planId)` | `shareLink.scopeType` に応じて、リクエストパスの `:planId` が share_link.scope の範囲内に存在することを確認（`project` なら同 project_id 配下、`item` なら同 item_id 配下、`plan` なら同一 plan_id） | 404 |
+| `assertCallerIsBallHolderViaShare(plan, shareLink)` | アクション系（toss/complete）で、share_link が代表する member（発行者が指定したクライアント member）が現 Ball Holder であること | 403 |
+
+> **原則**：トークンが取れたからといって全リソースに触れられるわけではない。share_link.scope 外のリソースへのアクセスは「見えない」（404）。
+
+#### レート制限（FR-SHARE 関連）
+
+| Phase | 方針 |
+|---|---|
+| Phase 0 | Vercel 標準のレート制限のみ（特別実装なし）。発行 API は director 認可済みのため濫用リスク低 |
+| Phase 1〜 | Upstash Redis + sliding window で `/share/:token` 系を IP/トークン単位で制限（総当り検知）。閾値は 60 req/min（IP 単位）／300 req/min（トークン単位）から開始 |
+
+#### クローラ防止（PRD §9.2.3）
+
+| 対策 | 実装 |
+|---|---|
+| HTTP ヘッダ | `/share/:token/*` の全レスポンスに `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` を付与（Hono ミドルウェア） |
+| HTML メタ | `GuestSharePage`（章4 §4.4.11）の `<head>` に `<meta name="robots" content="noindex, nofollow">` |
+| robots.txt | ルートの `robots.txt` で `Disallow: /share/` を明示（短縮URL等の保存も諦めさせる方針表明） |
+| Open Graph | `/share/:token/*` では OG タグを出さない（プレビューでの内容露出防止） |
+
+#### 期限・失効・組織OFF 判定の優先順位
+
+1. トークン存在せず（`token_hash` ヒットなし）→ 404
+2. `revoked_at IS NOT NULL`（個別失効）→ 404
+3. `organization_off_revoked = true`（Phase 2 以降）→ 404
+4. `expires_at <= now()`（期限切れ）→ 404
+
+> 全ケースで同じ 404 を返し、原因をクライアントには漏らさない（PRD §9.1）。発行者側は SC-16 のステータス表示で原因を確認できる。
+
+#### Phase 0 留意事項
+
+- **生トークンを Sentry / アクセスログ / Vercel Logs に記録しない**（SR-DATA-06）。リクエスト URL の `:token` 部分はマスキングする
+- 監査ログの `extra` に生トークンを書かない（`share_link_id` で参照する）
+- `last_accessed_at` 更新は監査ログ記録と同一トランザクション（章2 §2.4.9 留意）
+
 ---
 
 ## 5.5. データ保護
@@ -430,10 +537,17 @@ PRD SR-AUDIT-01 の全項目のうち、**Phase 0 では以下の最低限を記
 | action | トリガ | 記録元 |
 |---|---|---|
 | `login` | サインアップ・ログイン成功 | `POST /auth/me/sync` |
-| `toss` | TOSS 実行成功 | `POST .../toss` |
-| `complete` | 予定完了成功 | `POST .../complete` |
+| `toss` | TOSS 実行成功（認証経路） | `POST .../toss` |
+| `complete` | 予定完了成功（認証経路） | `POST .../complete` |
+| `share_create` | 非会員URL 発行成功 | `POST /projects/:projectId/share-links` |
+| `share_revoke` | 非会員URL 個別失効 | `DELETE /projects/:projectId/share-links/:shareLinkId` |
+| `share_access` | 非会員URL 経由のアクセス（GET/POST すべて） | `requireShareToken` ミドルウェア |
+| `share_toss` | 非会員URL 経由の TOSS 実行 | `POST /share/:token/plans/:planId/toss` |
+| `share_complete` | 非会員URL 経由の完了 | `POST /share/:token/plans/:planId/complete` |
 
-> Phase 1 で追加：`logout`、`login_failed`、`cancel_toss`、`return`、`retoss`、`member_added`、`member_removed`、`item_deleted`、`project_closed`、`project_archived`、`project_deleted`、`pdf_export`、`file_download`、`share_access`、`invitation_accepted`。
+> v1.1 改訂：`share_*` 5アクションは v1.0 まで Phase 1 追加リストに含まれていたが、PRD v1.3 で非会員URL共有が Phase 0 化されたため Phase 0 必須記録対象に格上げ（FR-SHARE-04、SR-AUTH-08）。
+
+> Phase 1 で追加：`logout`、`login_failed`、`cancel_toss`、`return`、`retoss`、`member_added`、`member_removed`、`item_deleted`、`project_closed`、`project_archived`、`project_deleted`、`pdf_export`、`file_download`、`invitation_accepted`。
 
 ### 5.6.2. ログ書き込みの実装方式（AuditLogger 抽象）
 
@@ -685,11 +799,12 @@ Content-Security-Policy:
 | §9.10 SR-OPS-01（OWASP Top 10） | §5.7 全節 |
 | §9.10 SR-OPS-03（シークレット） | §5.5.3 |
 | §9.11 SR-PRIVACY-01〜04 | §5.9 全節 |
-| §10.2 Phase 0 成功基準 7., 8. | §5.5.1（TLS）、§5.5.2（暗号化）、§5.6（監査ログ） |
+| §10.2 Phase 0 成功基準 7., 8., 9., 10. | §5.5.1（TLS）、§5.5.2（暗号化）、§5.6（監査ログ）、§5.4.5（非会員URL共有） |
+| §9.2 非会員URL共有 / FR-SHARE-01〜06 / SR-AUTH-08 | §5.4.5 で実装（v1.1 改訂で Phase 0 化）。トークン生成・保管・検証・スコープ判定・クローラ防止・監査ログを統合 |
 
 ### Phase 1+ 持ち越し
 
-- 非会員URL共有（FR-SHARE-01〜07、PRD §9.2）
+- 組織レベル On/OFF 統制（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09／Phase 2）
 - MFA（SR-AUTH-06）
 - 監査ログ閲覧 UI（SR-AUDIT-04、Phase 2）
 - 添付ファイル詳細（SR-DATA-03, 05）
@@ -708,3 +823,4 @@ Content-Security-Policy:
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §5.11 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §5.11 全10論点を AskUserQuestion で確定（全て推奨案＝たたき台どおり） |
+| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§5.1 で非会員URL共有を本章節（Phase 0）扱いに変更、§5.2 公開範囲・デフォルト非公開の Phase 区切りを更新、§5.4.5 非会員URL共有のセキュリティ実装を新設（トークン生成・保管・検証・スコープ判定・クローラ防止・期限失効優先順位）、§5.6.1 監査ログ Phase 0 必須に `share_*` 5アクションを追加、§5.12 Phase 1+ 持ち越しを組織レベル統制（Phase 2）のみに整理。 |

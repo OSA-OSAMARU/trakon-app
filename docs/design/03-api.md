@@ -64,7 +64,7 @@ Phase 0 で必要な REST API（Hono on Vercel Functions）の設計を行う。
 | **検証** | BE ミドルウェアで Supabase 公開鍵により署名・有効期限・iss/aud 検証 |
 | **失敗時** | 401 Unauthorized + `{ error: { code: 'AUTH_INVALID', ... } }` |
 | **リフレッシュ** | FE 側 Supabase Auth クライアント SDK が自動 refresh、BE は無関心 |
-| **未認証許容エンドポイント** | `GET /invitations/:token`（招待内容確認）、`POST /invitations/:token/accept`（招待受諾）、`GET /healthz`（ヘルスチェック） |
+| **未認証許容エンドポイント** | `GET /invitations/:token`（招待内容確認）、`POST /invitations/:token/accept`（招待受諾）、`GET /share/:token`（非会員URL閲覧／FR-SHARE-01〜05、Phase 0）、`POST /share/:token/plans/:planId/*`（非会員URL経由のボール操作／FR-SHARE-05、Phase 0）、`GET /healthz`（ヘルスチェック） |
 
 > 詳細・XSS 対策（FE 側のトークン保持戦略）は章5 で扱う。
 
@@ -264,8 +264,14 @@ flowchart TB
 | `DELETE /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅※own | ✅ | Phase 0 物理削除 |
 | `POST /projects/:projectId/items/:itemId/plans/:planId/toss` | ❌ | ❌ | ✅※holder | ✅※override | 現 Ball Holder のみ実行可（ディレクターは override 可） |
 | `POST /projects/:projectId/items/:itemId/plans/:planId/complete` | ❌ | ❌ | ✅※holder | ✅※override | 同上 |
+| `GET /projects/:projectId/share-links` | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01／SC-16 一覧 |
+| `POST /projects/:projectId/share-links` | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01, 02／SC-16 発行 |
+| `DELETE /projects/:projectId/share-links/:shareLinkId` | ❌ | ❌ | ❌ | ✅ | FR-SHARE-03／SC-16 個別失効 |
+| `GET /share/:token` | ✅ | ✅ | — | — | トークンが認可代わり／FR-SHARE-01, 04, 05／UC-23 |
+| `POST /share/:token/plans/:planId/toss` | ✅ | ✅ | — | — | 非会員URL経由のボール操作（スコープ判定）／FR-SHARE-05／UC-23 |
+| `POST /share/:token/plans/:planId/complete` | ✅ | ✅ | — | — | 同上 |
 
-> 凡例：✅ 許可／❌ 拒否（401 or 403／親リソース未参加なら 404）／✅※own（自分が当事者）／✅※holder（現 Ball Holder）／✅※override（ディレクターは追加権限あり）
+> 凡例：✅ 許可／❌ 拒否（401 or 403／親リソース未参加なら 404）／✅※own（自分が当事者）／✅※holder（現 Ball Holder）／✅※override（ディレクターは追加権限あり）／`/share/:token` 系はトークン自体が認可、有効期限・個別失効・スコープ・対象 plan が share_link.scope に整合することを `requireShareToken` ミドルウェアが検証（章5 §5.x）
 
 ---
 
@@ -298,6 +304,14 @@ flowchart TB
 | Plans | DELETE | `/projects/:projectId/items/:itemId/plans/:planId` | — | SC-08（MVP物理削除：FR-BALL-12） |
 | Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/toss` | UC-08 | SC-08 |
 | Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/complete` | UC-12 | SC-08 |
+| Share Links | GET | `/projects/:projectId/share-links` | UC-23 | SC-16 |
+| Share Links | POST | `/projects/:projectId/share-links` | UC-23 | SC-16 |
+| Share Links | DELETE | `/projects/:projectId/share-links/:shareLinkId` | UC-23 | SC-16 |
+| Share Access | GET | `/share/:token` | UC-23 | （非会員URL閲覧画面） |
+| Share Access | POST | `/share/:token/plans/:planId/toss` | UC-23 | （非会員URL閲覧画面） |
+| Share Access | POST | `/share/:token/plans/:planId/complete` | UC-23 | （非会員URL閲覧画面） |
+
+> v1.1 改訂注：`Share Links` / `Share Access` 6本は v1.0 まで §3.9 Phase 1 で予告していたが、PRD v1.3 で Phase 0 へ前倒しされたため Phase 0 必須として正式採番。詳細仕様は §3.6.9 を参照。
 
 ---
 
@@ -909,6 +923,162 @@ TOSS 実行。
 
 ---
 
+### 3.6.9. Share Links（非会員URL共有・管理側）
+
+> **PRD 紐付け**：FR-SHARE-01（発行）／FR-SHARE-02（有効期限）／FR-SHARE-03（個別失効）／FR-SHARE-04（監査ログ）／SR-AUTH-08（短時間有効期限・個別失効・監査ログ）／UC-23／SC-16。
+> Phase 0 から提供。組織レベル On/OFF（FR-SHARE-07、Phase 2）は本節では未実装。
+
+#### `GET /api/v1/projects/:projectId/share-links`
+
+プロジェクト配下の非会員URL一覧を取得（SC-16 の発行済URL一覧）。
+
+**認可**：プロジェクトディレクターのみ（`requireProjectDirector`）。
+
+**クエリ**：`?status=active|revoked|expired|all`（既定 `all`）、`?limit=50&offset=0`。
+
+**レスポンス（200）**：
+```typescript
+{
+  data: Array<{
+    id: string,
+    scopeType: 'project' | 'item' | 'plan',
+    scopeTargetId: string | null,
+    issuedByMemberId: string,
+    issuedAt: string,         // ISO8601
+    expiresAt: string,
+    revokedAt: string | null,
+    organizationOffRevoked: boolean,    // Phase 0 は常に false
+    lastAccessedAt: string | null,
+    status: 'active' | 'revoked' | 'expired'  // サーバ側で算出
+  }>,
+  meta: { total: number, limit: number, offset: number }
+}
+```
+
+> **生トークンは返さない**。発行直後の POST レスポンスでのみ平文を返す（後述）。
+
+#### `POST /api/v1/projects/:projectId/share-links`
+
+非会員URLを発行する。
+
+**認可**：プロジェクトディレクターのみ。
+
+**リクエスト**：
+```typescript
+{
+  scopeType: 'project' | 'item' | 'plan',
+  scopeTargetId?: string,        // scopeType='item' なら itemId、'plan' なら planId
+  expiresInSeconds: number       // 既定値・上限はサーバ側で検証（章5 §5.x）
+}
+```
+
+**処理**（同一トランザクション）：
+1. scope 整合性検証（`scopeType='item'/'plan'` なら `scopeTargetId` がプロジェクト配下に存在することを確認）
+2. 期限上限チェック（既定 7日、上限 30日。最終確定値は章5 §5.x）
+3. トークン生成：暗号学的乱数 32バイト → URL-safe Base64
+4. SHA-256 で `token_hash` を算出して `share_links` に INSERT
+5. `audit_logs` に `action='share_create'` を記録
+6. 平文トークンを含む URL をレスポンス
+
+**レスポンス（201）**：
+```typescript
+{
+  data: {
+    id: string,
+    url: string,                 // 例：https://app.example.com/share/<token>
+    token: string,               // **このレスポンスでのみ返す。再表示不可**
+    scopeType, scopeTargetId,
+    issuedByMemberId, issuedAt, expiresAt,
+    revokedAt: null,
+    organizationOffRevoked: false,
+    lastAccessedAt: null
+  }
+}
+```
+
+**エラー**：400 `VALIDATION_ERROR`（scope 不整合・期限超過）、403、404（scopeTarget が見つからない）。
+
+#### `DELETE /api/v1/projects/:projectId/share-links/:shareLinkId`
+
+非会員URLを個別失効する（FR-SHARE-03）。
+
+**認可**：プロジェクトディレクターのみ。
+
+**処理**：
+1. `share_links.revoked_at = now()` を UPDATE（既に revoked なら 200 冪等）
+2. `audit_logs` に `action='share_revoke'` を記録
+
+**レスポンス（200）**：失効後の share_link
+
+**注**：物理削除は行わない（章2 §2.4.9 留意点）。
+
+---
+
+### 3.6.10. Share Access（非会員URL閲覧・操作）
+
+> **PRD 紐付け**：FR-SHARE-01〜06／SR-AUTH-08／SR-AUTHZ-02／UC-23。
+> 未認証で利用可能（トークン自体が認可）。Phase 0 から提供。
+
+#### 共通ミドルウェア `requireShareToken`（章5 §5.x）
+
+`/share/:token/*` 配下のすべてのリクエストに適用：
+
+1. リクエストパスから `:token` を取得
+2. SHA-256 でハッシュ化し `share_links` を検索（`token_hash` ＋ `revoked_at IS NULL` ＋ `organization_off_revoked = false` ＋ `expires_at > now()`）
+3. ヒットしなければ 404 `NOT_FOUND`（存在を漏らさない）
+4. `currentShareLink` を context にセット、`audit_logs` に `action='share_access'`（IP・UA・参照リソース・share_link_id）を記録
+5. `share_links.last_accessed_at = now()` を更新（同一トランザクション）
+
+#### `GET /api/v1/share/:token`
+
+非会員URL閲覧者が、共有スコープに応じた最小限のプロジェクト情報を取得する。
+
+**認可**：未認証可（`requireShareToken`）。
+
+**レスポンス（200）**：
+```typescript
+{
+  data: {
+    project: { id, name, startDate, endDate /* 表示に必要な最小限 */ },
+    scope: {
+      type: 'project' | 'item' | 'plan',
+      targetId: string | null,
+      // scope に応じた items / plans のサブセット（クライアントロール相当：SR-AUTHZ-02）
+      items?: Array<{ id, name, sortOrder, ... }>,
+      plans?: Array<{ id, title, scheduledDate, status, ballHolderMemberId, ... }>
+    },
+    expiresAt: string
+  }
+}
+```
+
+#### `POST /api/v1/share/:token/plans/:planId/toss`
+
+非会員URL経由で TOSS を実行（FR-SHARE-05）。閲覧者が現 Ball Holder の場合のみ可。
+
+**認可**：`requireShareToken` ＋ `assertPlanInScope(planId, share_link.scope)` ＋ `assertCallerIsBallHolderViaShare(plan, share_link)`。
+
+**リクエスト**（FR-SHARE-06、任意）：
+```typescript
+{
+  displayName?: string,         // 表示名（ハンドル）
+  acknowledgedEmail?: string    // 受領メールアドレスの確認入力
+}
+```
+
+**処理**：通常の TOSS と同様の状態遷移＋ `ball_events.actor_member_id` は share_link.scope に紐づくクライアント member を充てる。
+`audit_logs` に `action='share_toss'`（`share_link_id` セット、`actor_user_id` は NULL）を記録。
+
+**レスポンス（200）**：plan + event。
+
+#### `POST /api/v1/share/:token/plans/:planId/complete`
+
+非会員URL経由で完了（差し戻し相当）。仕様は上記 toss と同様、`audit_logs.action='share_complete'`。
+
+> **エラー方針**：トークン期限切れ・失効・存在せずは **すべて 404 に集約**（PRD §9.1 機密第一）。クライアント側は専用の「失効ページ」を表示（基本設計書 第4章 §4.4.x）。
+
+---
+
 ## 3.7. OpenAPI スキーマ生成パイプライン
 
 ### 3.7.1. 生成方式
@@ -1005,10 +1175,6 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | Notifications | GET | `/users/me/notifications` | UC-20 |
 | Notifications | PATCH | `/users/me/notification-settings` | SC-14 |
 | Dashboard | GET | `/users/me/dashboard` | UC-13, 14 |
-| Share Links | GET | `/projects/:projectId/share-links` | FR-SHARE-01 |
-| Share Links | POST | `/projects/:projectId/share-links` | FR-SHARE-01 |
-| Share Links | DELETE | `/projects/:projectId/share-links/:shareLinkId` | FR-SHARE-03 |
-| Share Access | GET | `/share/:token/...` | UC-23 |
 | Export | POST | `/projects/:projectId/export.pdf` | FR-EXPORT-01 |
 | Audit | GET | `/audit/logs` | （Phase 2 組織管理者）|
 
@@ -1039,13 +1205,14 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | §6 UC-01〜08, 12, 15, 16 | §3.5〜3.6 で全て対応エンドポイント定義 |
 | §7 SC-01〜04, 06〜08, 10, 11 | 各画面が必要とする API を §3.5 に列挙 |
 | §9.4 ロール別操作マトリクス | §3.4 で API レベルに物理化 |
-| §9.6 SR-AUDIT-01 | §3.6.2 / §3.6.8 で Phase 0 範囲（login/toss/complete）を実装 |
-| §10.2 Phase 0 成功基準 | §3.5 の Phase 0 必須エンドポイントが満たすことを確認 |
+| §9.6 SR-AUDIT-01 | §3.6.2 / §3.6.8 / §3.6.9〜10 で Phase 0 範囲（login/toss/complete/share_access/share_create/share_revoke/share_toss/share_complete）を実装 |
+| §10.2 Phase 0 成功基準 | §3.5 の Phase 0 必須エンドポイントが満たすことを確認（FR-SHARE-01〜06／UC-23／SC-16 を含む） |
+| §10.2 FR-SHARE-01〜06／SR-AUTH-08 | §3.6.9 share-link 管理エンドポイント＋§3.6.10 share access エンドポイントで物理化（v1.1 改訂で Phase 0 化） |
 | FR-BALL-12 MVP 物理削除 | §3.6.7 DELETE 系で物理削除を実装、Phase 1 で論理削除へ |
 
 ### Phase 1+ 持ち越し
 
-- §3.9 のエンドポイント群（差し戻し・通知・ダッシュボード・非会員URL共有・PDF出力）
+- §3.9 のエンドポイント群（差し戻し・通知・ダッシュボード・PDF出力）
 - レート制限（Upstash Redis）
 - 楽観的ロック（必要性が出てから）
 - WebSocket / SSE（Phase 2+ リアルタイム要件が出れば）
@@ -1063,3 +1230,4 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | 2026-05-09 | Draft（たたき台） | §3.10 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §3.10 全10論点を AskUserQuestion で確定（全て推奨案＝たたき台どおり） |
 | 2026-05-09 | **v1.0.1 確定** | URL 階層の表現方針を改訂：「ネスト深さ最大2階層」の縛りを撤回し、データ所有関係を完全に URL に反映する方針へ更新（plans 系・items 詳細・ball actions・Phase 1 系のパスを完全階層化）。§3.10 に論点11として記録。 |
+| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§3.5 Phase 0 必須エンドポイントに Share Links（GET/POST/DELETE）と Share Access（GET /share/:token、POST /share/:token/plans/:planId/{toss,complete}）を追加、§3.6.9〜10 に詳細仕様を新設、§3.4 認可マトリクスに share-link 行を追加、§3.2.3 未認証許容エンドポイントに `/share/:token` を追加、§3.9 から share 関連 4行を削除、§3.11 PRD 整合チェックと Phase 1+ 持ち越しを更新。 |
