@@ -161,6 +161,7 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 | `/signup` | SC-01 サインアップ | ❌ | `SignupPage` |
 | `/forgot-password` | SC-01 パスワード再発行（要求） | ❌ | `ForgotPasswordPage` |
 | `/invitations/:token` | SC-02 招待受諾 | ❌ | `InvitationAcceptPage` |
+| `/share/:token` | 非会員URL閲覧（プロジェクト／制作物／ボール スコープ） | ❌ | `GuestSharePage` |
 | `/` | ルート（→ `/projects` にリダイレクト） | ✅ | — |
 | `/projects` | SC-03 プロジェクト一覧 | ✅ | `ProjectListPage` |
 | `/projects/new` | SC-04 プロジェクト新規作成 | ✅ | `ProjectNewPage` |
@@ -168,10 +169,11 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 | `/projects/:projectId/items/:itemId` | SC-06 各制作物画面（縦型スケジュール） | ✅ | `ItemSchedulePage` |
 | `/projects/:projectId/edit` | SC-10 プロジェクト編集 | ✅ | `ProjectEditPage` |
 | `/projects/:projectId/members` | SC-11 参加者管理 | ✅ | `ProjectMembersPage` |
+| `/projects/:projectId/share-links` | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（ディレクターのみ） |
 | `/account` | アカウント基本情報 | ✅ | `AccountPage`（最小） |
 | `*` | 404 | — | `NotFoundPage` |
 
-> Phase 1 で予約（URL は確保するが Phase 0 では空 or リダイレクト）：`/dashboard`（SC-09）、`/projects/:projectId/share-links`（SC-16）。
+> Phase 1 で予約（URL は確保するが Phase 0 では空 or リダイレクト）：`/dashboard`（SC-09）。
 
 ### 4.3.2. ルートツリー
 
@@ -181,7 +183,8 @@ RootLayout（グローバルヘッダー）
 │   ├── /login → LoginPage
 │   ├── /signup → SignupPage
 │   ├── /forgot-password → ForgotPasswordPage
-│   └── /invitations/:token → InvitationAcceptPage
+│   ├── /invitations/:token → InvitationAcceptPage
+│   └── /share/:token → GuestSharePage（非会員URL閲覧／FR-SHARE、Phase 0）
 ├── 認証必須ルート（<RequireAuth>）
 │   ├── / → Navigate to /projects
 │   ├── /projects → ProjectListPage
@@ -191,7 +194,8 @@ RootLayout（グローバルヘッダー）
 │   │   ├── index → ProjectShellPage（最初の item へ Navigate）
 │   │   ├── /items/:itemId → ItemSchedulePage（SC-06）
 │   │   ├── /edit → ProjectEditPage（SC-10）
-│   │   └── /members → ProjectMembersPage（SC-11）
+│   │   ├── /members → ProjectMembersPage（SC-11）
+│   │   └── /share-links → ShareLinkAdminPage（SC-16、ディレクターのみ）
 │   └── /account → AccountPage
 └── * → NotFoundPage
 ```
@@ -211,6 +215,10 @@ flowchart LR
     ItemSchedule --> BallDetail[SC-08 ボール詳細モーダル]
     ItemSchedule --> ProjectEdit[SC-10 プロジェクト編集]
     ProjectEdit --> Members[SC-11 参加者管理]
+    ProjectEdit --> ShareAdmin[SC-16 非会員URL 発行・管理]
+    ShareAdmin -.発行.-> GuestEntry[非会員URL]
+    GuestEntry --> GuestShare[GuestSharePage<br/>非会員URL閲覧]
+    GuestShare -. TOSS／完了／差し戻し .-> GuestShare
     BallDetail -. TOSS／完了 .-> ItemSchedule
 ```
 
@@ -539,6 +547,71 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 ---
 
+### 4.4.10. SC-16 非会員URL 発行・管理（`/projects/:projectId/share-links`）
+
+**目的**：クライアント向けの非会員URLの発行・有効期限管理・個別失効・アクセスログ確認（FR-SHARE-01〜04、UC-23）。
+
+**権限**：プロジェクトディレクターのみ（`requireProjectDirector`）。Phase 2 以降は組織で機能 OFF の場合に本画面そのものへのアクセスを禁止（FR-SHARE-07）、Phase 0〜1 は常時アクセス可。
+
+**表示項目（PRD SC-16）**：
+- 「+ 新規発行」ボタン
+- 発行モーダル：共有スコープ（プロジェクト全体／特定の制作物／特定のボール）、有効期限（Date / Duration、既定値はサーバ側システム規定）
+- 発行済URL一覧：URL／発行者／発行日時／有効期限／状態（有効／失効／期限切れ）／個別失効ボタン
+- アクセスログ：時刻／IP／UA／参照リソース（FR-SHARE-04、`audit_logs.share_link_id` で紐付く行を集計）
+
+**重要な UX 制約**：
+- **生トークンを含む完全な URL は発行直後の1回のみ表示**（章3 §3.6.9 POST レスポンス）。再表示・再取得は不可。閉じるとトークン平文は失われる旨を明示
+- 「URL をコピー」ボタンは発行直後のモーダル内のみ提供
+- 失効操作は確認ダイアログ必須（`ConfirmDialog`）。失効後の取り消し不可
+
+**API**：
+- 一覧：`GET /api/v1/projects/:projectId/share-links?status=...`
+- 発行：`POST /api/v1/projects/:projectId/share-links`
+- 個別失効：`DELETE /api/v1/projects/:projectId/share-links/:shareLinkId`
+
+**フォーム**：React Hook Form + zodResolver。`packages/shared/schemas` に発行スキーマ（scopeType / scopeTargetId / expiresInSeconds）を集約、API と型共有。
+
+**状態**：未発行（空状態）／発行済（有効）／失効済／期限切れ。空状態は `EmptyState` で「最初の非会員URLを発行する」CTA を表示。
+
+---
+
+### 4.4.11. 非会員URL 閲覧画面（`/share/:token`）
+
+**目的**：非会員URL閲覧者（クライアント）が、共有スコープに応じてプロジェクト・制作物・ボールを閲覧し、自分が Ball Holder のボールに対して TOSS／完了／差し戻しを実行する（FR-SHARE-05、UC-23、SR-AUTHZ-02）。
+
+**権限**：未認証可。トークン自体が認可（`requireShareToken`、章5 §5.x）。
+
+**処理フロー**：
+1. URL アクセス → `GET /api/v1/share/:token` でスコープ・対象データ取得
+2. トークン無効（404）→ 「失効ページ」を表示（「このリンクは無効になりました。発行者にお問い合わせください」）
+3. 有効 → スコープに応じた閲覧画面：
+   - `scope='project'`：プロジェクトTOP相当（Phase 0 では各制作物画面の簡易版＋ヘッダ）
+   - `scope='item'`：SC-06 縦型スケジュールのリードオンリー版＋自分が Ball Holder のボール操作
+   - `scope='plan'`：SC-08 ボール詳細モーダル相当の単一画面
+4. ボール操作（TOSS／完了／差し戻し）：
+   - SC-08 と同じ UI（ただしクライアントロール相当の操作のみ表示：SR-AUTHZ-02）
+   - 操作前に表示名（ハンドル）または受領メールアドレスを任意入力（FR-SHARE-06）
+   - 入力値は localStorage に保存して再入力を省く（同一ブラウザ内）
+
+**コンポーネント**：
+- `GuestSharePage`（ルート、`/share/:token`）
+- `GuestProjectView` / `GuestItemView` / `GuestPlanView`（scope に応じた切替）
+- `GuestActionInputDialog`（FR-SHARE-06：表示名／メールの確認入力）
+- `ShareLinkExpiredPage`（404 時の失効表示）
+
+**API**：
+- 取得：`GET /api/v1/share/:token`
+- TOSS：`POST /api/v1/share/:token/plans/:planId/toss`
+- 完了：`POST /api/v1/share/:token/plans/:planId/complete`
+
+**SEO 対策**：`<meta name="robots" content="noindex, nofollow">` を `/share/:token` 配下のページに必ず付与（章5 §5.x のクローラ防止と整合）。
+
+**楽観更新**：Phase 0 では非会員URL経由の TOSS／完了は **楽観更新を実装しない**（管理画面相当でレアケース、`/dashboard` 等の一覧キャッシュとの整合が複雑）。サーバ確定後に画面更新する素直な実装にとどめる。Phase 1 で利用頻度が見えたら再評価。
+
+**フォントと文言**：認証画面と同一トーン（NFR-UX-01「煽らず濁さず逃げない」）。「このリンクは TRAKON 上で発行された短期共有URLです」のサブ説明をフッタに常時表示。
+
+---
+
 ## 4.5. 共通コンポーネント
 
 | コンポーネント | 用途 | ベース |
@@ -822,7 +895,6 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 - SC-12 アーカイブ一覧
 - SC-13 コメント／ファイル共有パネル
 - SC-14 通知設定
-- SC-16 非会員URL 発行・管理
 - SC-07 の予定種別3種対応（共同予定／単独予定）
 - SC-08 の TOSS 取消／差し戻し／再 TOSS
 - ダッシュボードのモバイル最適化（NFR-MOBILE-01 本格対応）
@@ -839,3 +911,4 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §4.10 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §4.10 全10論点を AskUserQuestion で確定。モーダル管理は推奨案「Zustand ベース」から **「URL 同期方式」に変更**、他9項目は推奨案どおり。§4.2.4 / §4.4.6 SC-07 / §4.4.7 SC-08 / §4.8.1 を URL 同期方式に書き換え。 |
+| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§4.3.1 URL 構造に `/share/:token` と `/projects/:projectId/share-links` を追加、§4.3.2 ルートツリーを更新、§4.3.3 画面遷移図に SC-16 と GuestEntry / GuestSharePage を追加、§4.4.10 SC-16 非会員URL 発行・管理／§4.4.11 非会員URL 閲覧画面を新設、§4.11 Phase 1+ 持ち越しから SC-16 を除外。 |

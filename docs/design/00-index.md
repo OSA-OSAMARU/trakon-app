@@ -4,11 +4,11 @@
 |---|---|
 | プロダクト名 | TRAKON |
 | 発行元 | 株式会社おさまるカンパニー |
-| ドキュメント版 | **v1.0（全章確定）** |
+| ドキュメント版 | **v1.1（非会員URL共有 Phase 0 化）** |
 | 発行日 | 2026-05-09 |
-| ステータス | **v1.0 確定**（全6章） |
+| ステータス | **v1.1 確定**（全6章） |
 | 本書の位置づけ | 基本原則 > PRD > **本基本設計書** > 実装仕様書 |
-| 上位ドキュメント | [TRAKON PRD v1.2](../prd/trakon-prd.md) |
+| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) |
 
 ---
 
@@ -24,6 +24,7 @@
 | v0.5 | 2026-05-09 | 第4章「画面・コンポーネント設計」v1.0 確定（Data Router + TQ集約 / RHF+zodResolver / date-fns / Lucide / **モーダルはURL同期** / CSS Grid 縦型カレンダー / 楽観更新 Phase 0 から / 祝日 FE直接 / accent 仮確定 / i18n はjaのみ集約）。Phase 0 必須画面 SC-01,02,03,04,06,07,08,10,11 を §4.4 で詳細化、Ball Holder 楽観更新責務を §4.7 で定義。 | — |
 | v0.6 | 2026-05-09 | 第5章「セキュリティ実装設計」v1.0 確定（FE トークン localStorage + CSP厳格化 / Resend 自前送信 / パスワード Phase 0 8文字英数記号、HIBP は Phase 1 / ロックアウト Phase 1 / レート制限 Phase 1 / CSP は Phase 0 unsafe-inline 許容 / 監査ログは同期トランザクション / サインイン失敗は区別なし / 規約は同意チェックのみ / Sentry は PII scrub）。多層防御 7層・OWASP Top 10 対策・招待トークン自前管理を §5.3〜§5.7 で定義。 | — |
 | v1.0 | 2026-05-09 | 第6章「インフラ・デプロイ・運用」v1.0 確定（dev+prod 2環境 / Supabase CLI ローカル / 仮ドメイン → 商用前に本確定 / Sentry 1プロジェクト + env タグ / Phase 0 はレビュースキップ可 / 復元テスト Phase 1 から / ログは既定保管 + audit_logs のみ DB 長期 / Better Stack Uptime / app_user + app_migrator 分離 / **Production デプロイは GitHub Release 公開がトリガ**）。全6章 v1.0 確定により基本設計書 v1.0 完成。 | — |
+| v1.1 | 2026-05-09 | PRD v1.3 改訂（非会員URL共有を Phase 1 → Phase 0 へ前倒し）に追従。FR-SHARE-01〜06、SR-AUTH-08、UC-23、SC-16、`share_links` テーブルを Phase 0 スコープに取り込み、第1〜6章の Phase 区切り・テーブル定義・エンドポイント一覧・画面ツリー・認可ガード・監査ログ記録対象を更新。組織レベル統制（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09、`organizations` / `organization_settings`）は Phase 2 維持。 | — |
 
 ---
 
@@ -35,7 +36,7 @@ PRD で「**何を・誰に・なぜ作るか**」が確定した内容を、**�
 ┌──────────────────────────────────────────┐
 │  TRAKON 基本原則 v1.0（思想・判断基準の最上位）│
 ├──────────────────────────────────────────┤
-│  TRAKON PRD v1.2（要件定義）                │
+│  TRAKON PRD v1.3（要件定義）                │
 ├──────────────────────────────────────────┤
 │  TRAKON 基本設計書（本書）                   │ ← ココ
 │   - 構成・スタック・スキーマ・API・画面・運用 │
@@ -65,14 +66,14 @@ PRD で「**何を・誰に・なぜ作るか**」が確定した内容を、**�
 | 順 | ファイル | 領域 | ステータス |
 |---|---|---|---|
 | 0 | [00-index.md](00-index.md) | 全章のINDEX・改訂履歴・前提整理 | Draft（随時更新） |
-| 1 | [01-architecture.md](01-architecture.md) | システム構成・スタック詳細・拡張戦略 | **v1.0 確定（2026-05-09）** |
-| 2 | [02-database.md](02-database.md) | テーブル定義・制約・インデックス・マイグレーション | **v1.0 確定（2026-05-09）** |
-| 3 | [03-api.md](03-api.md) | REST エンドポイント・OpenAPI・認可ガード・エラーモデル | **v1.0.1 確定（2026-05-09）** |
-| 4 | [04-frontend.md](04-frontend.md) | 画面ツリー・ルーティング・状態管理・モーダル制御 | **v1.0 確定（2026-05-09）** |
-| 5 | [05-security.md](05-security.md) | 認証・認可・監査・添付・XSS/CSRF・トークン管理 | **v1.0 確定（2026-05-09）** |
-| 6 | [06-infrastructure.md](06-infrastructure.md) | Vercel/Supabase 構成・環境分離・CI/CD・バックアップ・監視 | **v1.0 確定（2026-05-09）** |
+| 1 | [01-architecture.md](01-architecture.md) | システム構成・スタック詳細・拡張戦略 | **v1.1 確定（2026-05-09）** |
+| 2 | [02-database.md](02-database.md) | テーブル定義・制約・インデックス・マイグレーション | **v1.1 確定（2026-05-09）** |
+| 3 | [03-api.md](03-api.md) | REST エンドポイント・OpenAPI・認可ガード・エラーモデル | **v1.1 確定（2026-05-09）** |
+| 4 | [04-frontend.md](04-frontend.md) | 画面ツリー・ルーティング・状態管理・モーダル制御 | **v1.1 確定（2026-05-09）** |
+| 5 | [05-security.md](05-security.md) | 認証・認可・監査・添付・XSS/CSRF・トークン管理 | **v1.1 確定（2026-05-09）** |
+| 6 | [06-infrastructure.md](06-infrastructure.md) | Vercel/Supabase 構成・環境分離・CI/CD・バックアップ・監視 | **v1.1 確定（2026-05-09）** |
 
-> ステータス凡例：未着手 / Draft（たたき台） / Review中 / **v1.0 確定** / Phase 1 拡張
+> ステータス凡例：未着手 / Draft（たたき台） / Review中 / **v1.x 確定** / Phase 1 拡張
 
 ---
 

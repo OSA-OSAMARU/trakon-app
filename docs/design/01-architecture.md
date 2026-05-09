@@ -234,7 +234,7 @@ sequenceDiagram
 | `ball_events.event_type` | `tossed / completed` のみ | `+ canceled / returned / retossed` | 型として最初から enum 定義 |
 | `audit_logs.action` | `login / toss / complete` のみ | 全アクション記録 | 列構造は Phase 1 仕様で先に確定 |
 | `organization_id`（全主要テーブル） | NULL 許容 | NOT NULL 化（移行スクリプト） | Phase 0 から列存在 |
-| `share_links` テーブル | 作らない | 新規作成 | Phase 0 では Migration なし |
+| `share_links.organization_off_revoked` | 列定義あり・常に false | Phase 2 で組織OFF反映時に参照開始 | 列は最初から定義（章2 §2.4 share_links）。`share_links` テーブル本体は v1.3 で Phase 0 物理化 |
 | `comments` / `attachments` テーブル | 作らない | 新規作成 | 同上 |
 | ダッシュボード `/dashboard` | 空状態（カウンタゼロ表示） | SC-09 を実装 | URL は Phase 0 から確保 |
 | API バージョン | `/api/v1/` プレフィックス | 同上 | Phase 3 公開API（FR-API-01）で v2 を切れる構造 |
@@ -286,7 +286,7 @@ sequenceDiagram
 | §4.2 NFR-AVAIL-01 (99.5%) | §1.2 Vercel/Supabase の SLA で素地（章6で詳細） |
 | §4.2 NFR-MOBILE-01 | §1.2 Tailwind + shadcn/ui のレスポンシブで対応（章4で詳細） |
 | §9.1 機密第一 | §1.5 BE 経由認可、Supabase RLS 不採用。詳細は章5 |
-| §9.2 非会員URL共有 | Phase 1 機能。本章は対象外（DB列・URL設計は章2／章3で扱う） |
+| §9.2 非会員URL共有 | Phase 0 機能（v1.3 で前倒し）。本章は構成全体への影響を確認するに留め、DB 列・URL 設計・認可・トークンは章2／章3／章5 で扱う |
 | §10.2 Phase 0 成功基準 7., 8. | §1.5 で TLS・認証・監査ログを Phase 0 から実装することを明記 |
 
 ### Phase 1+ 持ち越し（本章では扱わない）
@@ -308,3 +308,4 @@ sequenceDiagram
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §1.7 議論ポイントを未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §1.7 全7論点を AskUserQuestion で確定、リポジトリ構成を Vercel 単一プロジェクト方式に更新 |
+| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§1.6.1 事前確保表から `share_links` テーブルを除外し、`organization_off_revoked` 列の Phase 2 参照ノートに置換。§1.8 PRD 整合チェックで §9.2 を Phase 0 機能に再分類。 |

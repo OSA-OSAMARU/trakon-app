@@ -152,6 +152,8 @@ Vercel は1プロジェクトで以下の環境を持つ：
 
 > ドメイン本体（`trakon.{tld}`）は別途ブランド・登記・会社方針で確定（**§6.16-3 議論ポイント**）。基本設計上は `app.trakon.{tld}` を仮値として進める。
 
+> **非会員URL共有（FR-SHARE、Phase 0）の運用注記**：`/share/:token` は Phase 0 から `app.trakon.{tld}` 配下のパスとして提供される。`robots.txt` に `Disallow: /share/` を必須記載し、Hono ミドルウェアで `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet` を `/share/:token/*` 全レスポンスに付与する（章5 §5.4.5）。Cloudflare 側で Bot 検知・キャッシュバイパスを設定（短時間有効URLのキャッシュ事故防止）。
+
 ### 6.4.2. DNS
 
 | プロバイダ | 推奨 | 理由 |
@@ -650,6 +652,8 @@ jobs:
 | 復元テストの定期化 | Phase 1 開始 | 四半期に1回（SR-OPS-04） |
 | MFA / SSO | Phase 2 | PRD SR-AUTH-06 |
 | 監査ログ閲覧 UI | Phase 2 | PRD SR-AUDIT-04 |
+| 非会員URL共有のレート制限・総当り検知 | Phase 1 中盤 | Upstash Redis 導入と合わせて `/share/:token` を IP/トークン単位で制限。`audit_logs.action='share_access'` の異常増加アラートを Sentry または Better Stack で設定（章5 §5.4.5） |
+| 組織レベル On/OFF 統制 | Phase 2 | `organizations` / `organization_settings` 導入と合わせて FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09 を有効化 |
 
 ---
 
@@ -761,3 +765,4 @@ jobs:
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §6.16 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §6.16 全10論点を AskUserQuestion で確定。Production デプロイは推奨案「Phase 0 は自動」から **「GitHub Release ベース」に変更**、他9項目は推奨案どおり。§6.5.4 / §6.8 / §6.9 / §6.15 を Release ベースに書き換え。 |
+| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§6.4.1 ドメイン構成に `/share/:token` の `noindex`／robots.txt／Cloudflare キャッシュバイパス運用注記を追加、§6.14 Phase 1+ 拡張計画に「非会員URL共有のレート制限・総当り検知」と「組織レベル On/OFF 統制」を追加。 |
