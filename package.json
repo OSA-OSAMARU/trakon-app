@@ -1,0 +1,44 @@
+{
+  "name": "trakon",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.19.0",
+  "engines": {
+    "node": ">=20.0.0 <23.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @trakon/web dev",
+    "build": "pnpm --filter @trakon/web build",
+    "lint": "pnpm -r --parallel lint",
+    "type-check": "pnpm -r --parallel type-check",
+    "test": "pnpm -r --parallel test",
+    "db:generate": "pnpm --filter @trakon/db generate",
+    "db:migrate": "pnpm --filter @trakon/db migrate",
+    "db:studio": "pnpm --filter @trakon/db studio",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,js,jsx,json,css}\" \"packages/**/*.{ts,tsx,js,jsx,json}\" \"*.{json,md}\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ],
+    "overrides": {
+      "vite": "^6.0.3",
+      "@types/node": "^20.14.10"
+    },
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "vite": "6"
+      }
+    }
+  }
+}
