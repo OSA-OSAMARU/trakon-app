@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.vercel
+.next
+.turbo
+pnpm-lock.yaml
+packages/db/prisma/migrations
+prototype
+docs
+README.md
+.claude

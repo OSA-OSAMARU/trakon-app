@@ -1,0 +1,22 @@
+// =============================================================================
+// TRAKON — Prisma Schema
+// -----------------------------------------------------------------------------
+// 詳細は docs/design/02-database.md を参照。
+// Sub-Phase 0.0 では空スキーマで初期化のみ。
+// 各サブフェーズで必要なテーブルを段階的に追加していく：
+//   0.1: users, oauth_identities, audit_logs (login のみ)
+//   0.2: projects, project_members, project_items, invitations
+//   0.3: plans, ball_events
+//   0.5: share_links
+// =============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
