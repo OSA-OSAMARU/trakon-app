@@ -3,10 +3,10 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 06 |
-| ステータス | **v1.0 確定** |
-| 確定日 | 2026-05-09 |
-| 上位ドキュメント | [TRAKON PRD v1.2](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [05-security.md](05-security.md) |
-| 主参照 PRD 節 | §4.2（NFR）／§9.5（データ保護）／§9.6（監査ログ）／§9.10（脆弱性・運用）／§10（フェーズ） |
+| ステータス | **v1.1 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
+| 確定日 | 2026-05-24 |
+| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [05-security.md](05-security.md) |
+| 主参照 PRD 節 | §4.2（NFR）／§9.5（データ保護）／§9.6（監査ログ）／§9.10（脆弱性・運用）／§9.3 SR-AUTH-10（OAuth）／§10（フェーズ） |
 
 ---
 
@@ -228,8 +228,13 @@ Vercel は1プロジェクトで以下の環境を持つ：
 | `RESEND_API_KEY` | All | Resend ダッシュボード | BE 専用 |
 | `SENTRY_DSN_BE` | All | Sentry BE プロジェクト | BE 専用 |
 | `APP_URL` | Production / Preview | 自身の URL | BE 専用（招待リンクの組み立て用） |
+| **`GOOGLE_OAUTH_CLIENT_ID`** **(v1.1)** | All | Google Cloud Console | BE 専用（Supabase Auth Provider 設定にも入れる） |
+| **`GOOGLE_OAUTH_CLIENT_SECRET`** **(v1.1)** | All | 同上 | BE 専用、絶対漏洩禁止 |
+| **`MICROSOFT_OAUTH_CLIENT_ID`** **(v1.1)** | All | Microsoft Entra ID（Azure portal） | BE 専用 |
+| **`MICROSOFT_OAUTH_CLIENT_SECRET`** **(v1.1)** | All | 同上 | BE 専用、絶対漏洩禁止 |
+| **`OAUTH_STATE_TTL_SECONDS`** **(v1.1)** | All | 設定値（既定 300） | BE 専用、state KV の TTL |
 
-> **環境別値**：Vercel の各環境（Production / Preview / Development）で別の値を設定。Preview は dev Supabase を指す。
+> **環境別値**：Vercel の各環境（Production / Preview / Development）で別の値を設定。Preview は dev Supabase を指す。**OAuth Client は dev / prod で別アプリ作成**（Authorized redirect URI が環境別の URL を指すため）。
 
 ### 6.5.4. デプロイ戦略（GitHub Release ベース）
 
@@ -325,18 +330,52 @@ jobs:
 
 ## 6.6. Supabase 構成
 
-### 6.6.1. プロジェクト設定
+### 6.6.1. プロジェクト設定（v1.1 で OAuth 追加）
 
 | 項目 | 設定 |
 |---|---|
 | リージョン | Northeast Asia (Tokyo) |
 | プラン | Free（Phase 0 dev/prod 両方） → 商用リリース前に prod を Pro へ昇格 |
 | Postgres バージョン | 15.x（Phase 0 開始時の Supabase 既定） |
-| 認証プロバイダ | Email（メール+パスワード）のみ Phase 0 で有効 |
+| 認証プロバイダ | **Email（メール+パスワード Magic-link）+ Google + Microsoft** を Phase 0 で有効化（v1.1、FR-AUTH-10） |
 | 認証メール送信 | **無効化**（章5 §5.3.2、Resend で自前送信） |
 | API スキーマ | `public`（自動生成 PostgREST API は使用しない、Hono BE 経由） |
 | Storage | 無効（Phase 1 で有効化） |
 | Realtime | 無効（Phase 0 不要） |
+
+#### Google OAuth Provider 設定手順（v1.1 新規）
+
+1. **Google Cloud Console**（[console.cloud.google.com](https://console.cloud.google.com)）でプロジェクト作成
+2. 「API とサービス」→「OAuth 同意画面」：
+   - User Type: External
+   - アプリ名: TRAKON、サポートメール: 連絡先
+   - 認可スコープ: `email`, `profile`, `openid`
+   - テストユーザー（開発期間中）登録
+3. 「認証情報」→「+ 認証情報を作成」→ OAuth クライアント ID：
+   - アプリケーションの種類: ウェブアプリケーション
+   - 名前: TRAKON Web (dev) / TRAKON Web (prod)
+   - **承認済みリダイレクト URI**: `https://<supabase-project-ref>.supabase.co/auth/v1/callback`
+4. Client ID / Client Secret を Vercel Env と Supabase ダッシュボードに登録：
+   - Supabase: Authentication → Providers → Google を有効化、Client ID / Secret を貼り付け
+   - Vercel Env: `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`
+
+#### Microsoft OAuth Provider 設定手順（v1.1 新規）
+
+1. **Microsoft Entra ID**（旧 Azure AD）でアプリ登録：
+   - サポートされるアカウントの種類: **個人アカウント＋職場/学校アカウント**（v2.0 エンドポイント）
+   - **リダイレクト URI**: `https://<supabase-project-ref>.supabase.co/auth/v1/callback`
+2. 「証明書とシークレット」→「クライアントシークレット」を新規作成（有効期限24ヶ月推奨）
+3. 「API のアクセス許可」→ Microsoft Graph の `User.Read`, `openid`, `email`, `profile` を委任で追加
+4. アプリ (クライアント) ID と シークレットを Vercel Env と Supabase ダッシュボードに登録：
+   - Supabase: Authentication → Providers → Azure (Microsoft) を有効化、Client ID / Secret を貼り付け
+   - Vercel Env: `MICROSOFT_OAUTH_CLIENT_ID` / `MICROSOFT_OAUTH_CLIENT_SECRET`
+
+#### 共通の注意点（v1.1）
+
+- **dev / prod で別 OAuth App を作成**（リダイレクト URI が異なるため、同じ Client を流用しない）
+- **Same-email 1 認証手段制約**（FR-AUTH-12）：BE 側で実装（章5 §5.3.9.3）、Supabase Auth 側の設定では制御しない
+- Supabase Auth の **Site URL** を `https://app.trakon.example`（または Vercel 既定 URL）に設定。`Additional Redirect URLs` に開発用 URL を追加
+- 認証メールは Supabase 側を OFF にしているため、OAuth プロバイダのコールバック後は **自前メール（Resend）で welcome メール送信**（Phase 1 で実装、Phase 0 はサインアップ通知のみ）
 
 ### 6.6.2. データベース設定
 
@@ -383,6 +422,8 @@ flowchart LR
 | Supabase service_role key | Vercel Env + Supabase Vault | 漏洩疑い時に即時、Phase 1 で四半期定期 |
 | Resend API キー | Vercel Env | 同上 |
 | Supabase DB パスワード | Vercel Env | 同上 |
+| **Google OAuth Client Secret** **(v1.1)** | Vercel Env + Supabase Auth Provider 設定 | 漏洩疑い時に即時（Google Cloud Console で再生成）、Phase 1 で **年次定期**（OAuth 標準慣行） |
+| **Microsoft OAuth Client Secret** **(v1.1)** | Vercel Env + Supabase Auth Provider 設定 | 同上、ただし**作成時に有効期限を 24ヶ月で設定**しているため、期限前カレンダー登録（運用 Runbook §6.15.6） |
 | GitHub Actions シークレット | GitHub Settings → Secrets | リポジトリ管理者のみ閲覧 |
 
 ### 6.7.2. ローカル開発（`.env.local`）
@@ -397,6 +438,12 @@ SUPABASE_SERVICE_ROLE_KEY=
 SUPABASE_JWT_SECRET=
 RESEND_API_KEY=
 APP_URL=http://localhost:5173
+# v1.1 OAuth
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+MICROSOFT_OAUTH_CLIENT_ID=
+MICROSOFT_OAUTH_CLIENT_SECRET=
+OAUTH_STATE_TTL_SECONDS=300
 ```
 
 `.env.local` は **gitignore 必須**。実値は開発者個別に Supabase CLI から取得 or Vercel CLI で `vercel env pull .env.local` で同期。
@@ -710,6 +757,15 @@ jobs:
 
 ドメインの自動更新を有効化、レジストラに支払い情報登録。年1回の手動確認をカレンダーに登録。
 
+### 6.15.7. OAuth Client Secret 期限管理（v1.1 新規）
+
+| 項目 | 運用 |
+|---|---|
+| Microsoft Client Secret | 作成時に有効期限 24ヶ月を設定、**期限の 30 日前にカレンダー通知**（運用担当者の Google カレンダー登録）→ 新シークレット作成 → Vercel Env と Supabase Auth Provider 設定を更新 → 旧シークレット削除 |
+| Google Client Secret | 期限なしだが、年次（毎年4月）に自主ローテーションを実施（漏洩リスクを下げる） |
+| 失効時の影響 | OAuth サインアップ・ログインが全停止。**期限切れ警告は Better Stack uptime で 401 監視を兼ねる** |
+| 漏洩疑い時 | Google Cloud Console / Microsoft Entra ID で即時シークレット削除 → 新規生成 → Vercel/Supabase 更新
+
 ---
 
 ## 6.16. 議論ポイントの確定結果
@@ -726,6 +782,10 @@ jobs:
 | 8 | Uptime 監視 | **Better Stack Free で 5分間隔 /healthz 監視** | Vercel から独立した外部監視、無料枠で要件充足 |
 | 9 | DB ロール分離 | **Phase 0 から `app_user` / `app_migrator` の2ロール分離** | 章2 §2.7 の append-only 強制（REVOKE）を Phase 0 から有効化、多層防御を初日から確保 |
 | 10 | Production デプロイ承認 | **GitHub Release 公開タイミングで Production デプロイ**（§6.5.4） | main マージは Preview のみ、Release が承認行為。誤マージで本番に流れない安全装置。Phase 1 で GitHub Environments の Protection Rules で2段階化 |
+| 11 | OAuth Client の dev/prod 分離（v1.1） | **dev と prod で別の OAuth App を作成**（Google Cloud Console / Microsoft Entra ID で別アプリ） | リダイレクト URI が環境別で異なるため、シークレット混在事故も防止 |
+| 12 | OAuth state の保管基盤（v1.1） | **Phase 0 はメモリ Map（代替）、商用リリース前に Upstash KV / Vercel KV 導入** | Vercel Functions のステートレス性で持続性弱いが、5分 TTL かつトラフィック小規模で Phase 0 は許容（章5 §5.11-11） |
+| 13 | OAuth Secret ローテーション周期（v1.1） | **Google: 年次自主、Microsoft: 24ヶ月で期限切れ予告 → 期限30日前にローテ** | プロバイダの慣行と運用負荷のバランス |
+| 14 | カテゴリ・後続紐付け運用（v1.1） | **インフラ層は新規対応なし**（DB スキーマと API のみ、章2・章3 で対応済み） | 既存インデックス追加（章2 §2.8）で対応、本章は監視ダッシュボードに後続自動 TOSS 件数の指標を Phase 1 で追加検討 |
 
 ---
 
@@ -765,4 +825,5 @@ jobs:
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §6.16 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §6.16 全10論点を AskUserQuestion で確定。Production デプロイは推奨案「Phase 0 は自動」から **「GitHub Release ベース」に変更**、他9項目は推奨案どおり。§6.5.4 / §6.8 / §6.9 / §6.15 を Release ベースに書き換え。 |
-| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§6.4.1 ドメイン構成に `/share/:token` の `noindex`／robots.txt／Cloudflare キャッシュバイパス運用注記を追加、§6.14 Phase 1+ 拡張計画に「非会員URL共有のレート制限・総当り検知」と「組織レベル On/OFF 統制」を追加。 |
+| 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§6.4.1 ドメイン構成に `/share/:token` の `noindex`／robots.txt／Cloudflare キャッシュバイパス運用注記を追加、§6.14 Phase 1+ 拡張計画に「非会員URL共有のレート制限・総当り検知」と「組織レベル On/OFF 統制」を追加。 |
+| 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | §6.5.3 環境変数に OAuth Client ID/Secret + state TTL 追加／§6.6.1 Google・Microsoft OAuth Provider 設定手順を新規セクションとして追加／§6.7.1 シークレット保管・ローテに OAuth Secret 2行追加／§6.7.2 .env.example に OAuth 行追加／§6.15.7 OAuth Client Secret 期限管理 Runbook 追加／§6.16 論点 11〜14 追加。 |

@@ -3,10 +3,10 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 05 |
-| ステータス | **v1.0 確定** |
-| 確定日 | 2026-05-09 |
-| 上位ドキュメント | [TRAKON PRD v1.2](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [02-database.md](02-database.md) ／ [03-api.md](03-api.md) ／ [04-frontend.md](04-frontend.md) |
-| 主参照 PRD 節 | §9 全節（§9.1〜§9.11）／§4.3 SR要約／§10.2 Phase 0 セキュリティ成功基準 |
+| ステータス | **v1.1 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
+| 確定日 | 2026-05-24 |
+| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [02-database.md](02-database.md) ／ [03-api.md](03-api.md) ／ [04-frontend.md](04-frontend.md) |
+| 主参照 PRD 節 | §9 全節（§9.1〜§9.11）／§4.3 SR要約（v1.3 で SR-AUTH-10 追加）／§4.1.1 FR-AUTH-10〜12／§10.2 Phase 0 セキュリティ成功基準 |
 
 ---
 
@@ -212,6 +212,23 @@ COMMIT;
 | 期限超過後の利用 | クエリ条件で除外、応答も 404 に集約 |
 | プロジェクト ID 漏洩 | URL に projectId を含めない（章3 §3.6.3 の経緯） |
 
+#### 招待トークン × OAuth の組み合わせ（v1.1 追記、FR-AUTH-10 / 12）
+
+招待リンクから OAuth でログイン／サインアップする場合：
+
+```
+1. ユーザーが招待リンク（/invitations/:token）にアクセス
+2. SC-02 招待受諾画面で「Google で続けて受諾」ボタン押下
+3. FE は token を sessionStorage に保管 → OAuth フロー（§5.3.9）開始
+4. OAuth callback → /auth/me/sync で users 行作成（同一メール検証）
+5. FE は sessionStorage の token を取り出して POST /invitations/:token/accept
+6. 受諾完了、プロジェクトへ遷移
+```
+
+**整合性**：
+- **招待メールと OAuth プロバイダのメールが一致しない場合**：受諾を拒否（422 `INVITATION_EMAIL_MISMATCH`）。理由：他人のメールで作られた招待を別人の OAuth アカウントで横取りできないようにするため
+- **同一メール 1 認証手段制約**（FR-AUTH-12）：招待メールアドレスで既存 users が `password` 認証で存在する場合、OAuth 受諾は 409。ユーザーは password ログインで受諾する必要がある
+
 ### 5.3.6. FE 側トークン保持戦略
 
 **結論**：Supabase Auth クライアント SDK の標準（**localStorage 保持**）を採用する。
@@ -308,6 +325,142 @@ export const auth = createMiddleware(async (c, next) => {
 
 ---
 
+### 5.3.9. OAuth 認証（Google / Microsoft）（v1.1 新規、✅ Phase 0、FR-AUTH-10, 12 / SR-AUTH-10）
+
+PRD §9.3 SR-AUTH-10 を実装する OAuth セクション。Supabase Auth Provider 設定 + PKCE フロー + state 検証 + 同一メール 1 認証手段制約を本節で確定。
+
+#### 5.3.9.1 採用方針
+
+| 観点 | 方針 |
+|---|---|
+| プロバイダ | **Google** + **Microsoft（Entra ID / Personal account 両対応）** を Phase 0 から提供 |
+| フロー | **PKCE Authorization Code Flow**（OAuth 2.0 + PKCE、Implicit Flow は不採用） |
+| **state 検証** | BE が `state` を uuidv7 で生成して短期 KV/メモリに保管（5分 TTL）、callback で必ず検証（CSRF 対策） |
+| 同一メール 1 認証制約 | FR-AUTH-12：1 メール = 1 `primary_auth_method`。別 provider での再ログイン試行は 409 で拒否し、本来の認証手段を案内 |
+| ID トークン保持 | localStorage（章5 §5.3.6 と同じ、CSP 厳格化で軽減） |
+| **Supabase Auth Provider 設定** | Google Cloud Console / Microsoft Entra ID で OAuth App 作成 → Supabase ダッシュボードで Client ID / Secret 登録（章6 §6.6.1） |
+
+#### 5.3.9.2 OAuth フロー（シーケンス）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as ユーザー
+    participant FE as Vite SPA
+    participant BE as Hono API
+    participant SAuth as Supabase Auth
+    participant Provider as Google/Microsoft
+
+    U->>FE: 「Google で続ける」押下
+    FE->>BE: POST /auth/oauth/google/start { redirectTo: '/dashboard' }
+    BE->>BE: PKCE code_verifier 生成、state 生成、KV に保管（5分 TTL）
+    BE-->>FE: { authorizeUrl, state }
+    FE->>SAuth: signInWithOAuth({ provider: 'google', options: { redirectTo, queryParams: { state } } })
+    SAuth->>Provider: PKCE Authorize URL へリダイレクト
+    U->>Provider: 同意
+    Provider->>SAuth: code + state（コールバック）
+    SAuth-->>FE: /auth/oauth/google/callback?code=...&state=...
+    FE->>BE: POST /auth/oauth/google/callback { code, state }
+    BE->>BE: state を KV と照合（CSRF 検証）
+    BE->>SAuth: exchangeCodeForSession(code, code_verifier)
+    SAuth-->>BE: access_token + refresh_token
+    BE-->>FE: tokens
+    FE->>BE: POST /auth/me/sync (Bearer JWT)
+    alt 同一メールが別 provider で既登録
+        BE-->>FE: 409 SAME_EMAIL_DIFFERENT_PROVIDER
+        FE-->>U: 「このメールは password 認証で登録済み」案内
+    else 新規 or 同 provider
+        BE->>BE: users INSERT (primary_auth_method=provider)、oauth_identities INSERT
+        BE-->>FE: { user, requiresProfileCompletion }
+        alt requiresProfileCompletion
+            FE-->>U: screen=create-account へ（display_name 入力）
+        else
+            FE-->>U: /dashboard へ遷移
+        end
+    end
+```
+
+#### 5.3.9.3 同一メール 1 認証手段制約の実装（FR-AUTH-12）
+
+`POST /auth/me/sync` で users 検索時に以下のロジックを実行：
+
+```typescript
+// apps/web/server/services/auth.ts
+async function syncUser(jwt: SupabaseJWT): Promise<UserSyncResult> {
+  const authUserId = jwt.sub;
+  const email = jwt.email;
+  const provider = jwt.app_metadata?.provider ?? 'email';  // Supabase Auth が提供
+  const newAuthMethod = providerToAuthMethod(provider);    // 'password' | 'google' | 'microsoft'
+
+  // 1) auth_user_id 一致の users を検索
+  let user = await prisma.users.findUnique({ where: { auth_user_id: authUserId } });
+  if (user) return { user, requiresProfileCompletion: !user.full_name || !user.display_name };
+
+  // 2) 同一メールの既存 users を検索（auth_user_id 不一致の場合）
+  const existingByEmail = await prisma.users.findUnique({ where: { email } });
+  if (existingByEmail && existingByEmail.primary_auth_method !== newAuthMethod) {
+    throw new HttpError(409, 'SAME_EMAIL_DIFFERENT_PROVIDER', {
+      message: `このメールアドレスは ${labelForAuthMethod(existingByEmail.primary_auth_method)} で登録済みです。`,
+      registeredMethod: existingByEmail.primary_auth_method,
+    });
+  }
+
+  // 3) 新規ユーザー作成
+  user = await prisma.users.create({
+    data: {
+      auth_user_id: authUserId,
+      email,
+      full_name: jwt.user_metadata?.full_name ?? jwt.user_metadata?.name ?? '',
+      display_name: jwt.user_metadata?.display_name ?? jwt.user_metadata?.name ?? '',
+      primary_auth_method: newAuthMethod,
+    },
+  });
+
+  // 4) OAuth の場合は oauth_identities INSERT
+  if (newAuthMethod !== 'password') {
+    await prisma.oauth_identities.create({
+      data: {
+        user_id: user.id,
+        provider: newAuthMethod,
+        provider_user_id: jwt.sub,  // Supabase Auth の sub と同等扱い（厳密には provider_id を別取得）
+        email,
+      },
+    });
+  }
+
+  return { user, requiresProfileCompletion: !user.full_name || !user.display_name };
+}
+```
+
+#### 5.3.9.4 PKCE / state の保管
+
+| 観点 | 方針 |
+|---|---|
+| code_verifier | BE で生成、URL のクエリではなく BE 側 KV に保管（state とペア）。callback 時に取り出して Supabase Auth に渡す |
+| state | BE で uuidv7 生成、5 分 TTL の KV（Phase 0 は Vercel KV / Upstash 未導入のため **メモリ Map（短命）** で代替、商用リリース前に KV 化） |
+| state 検証失敗時 | 400 `INVALID_STATE` を返し、`audit_logs` に `oauth_state_failure`（Phase 1） |
+
+> **議論ポイント §5.11-11**：Phase 0 でメモリ Map（Vercel Functions のサーバレス前提でステートレス）使用 vs Upstash KV を Phase 0 から導入。
+
+#### 5.3.9.5 OAuth プロバイダのメール変更時のハンドリング
+
+| 観点 | 方針 |
+|---|---|
+| 検知 | Supabase Auth の `auth.users.email` 更新を Webhook で受ける（章2 §2.5.3） |
+| 同期 | Webhook ハンドラで `users.email` と `oauth_identities.email` を片方向更新 |
+| ユーザー通知 | Phase 1 で「メールアドレスが変更されました」通知メール（Resend） |
+
+#### 5.3.9.6 セキュリティ上の留意
+
+| 項目 | 方針 |
+|---|---|
+| OAuth Client Secret 漏洩対策 | Vercel Env + Supabase Vault、SR-OPS-03 と同じ。漏洩時の再生成手順を Runbook 化（章6 §6.7） |
+| Authorize URL のドメイン検証 | Supabase Auth が標準で正規プロバイダドメインのみ許可 |
+| open redirect 対策 | `redirectTo` パラメータは同一オリジン以外を 400 で拒否（章3 §3.6.2） |
+| プロバイダから取得する PII | メール・名前のみ。プロフィール画像（picture）は Phase 0 では取得しても表示せず、`users.avatar_url` への保存も Phase 1+ で検討（PRD SR-PRIVACY-01 最小収集） |
+
+---
+
 ## 5.4. 認可実装
 
 ### 5.4.1. 認可ガード階層（章3 §3.3.2 の詳細化）
@@ -351,6 +504,9 @@ Phase 0 は role_type を実装しないため、簡易ロール導出：
 | URL の :itemId 改ざん | `requireItemInProject` で「指定 projectId の配下に存在するか」を必ず確認（**親子関係の検証**） |
 | URL の :planId 改ざん | `requirePlanInItem` で同上 |
 | リクエストボディの id 参照（例：`from_member_id`） | サービス層で「対象 member が currentProject の参加者であること」を検証 |
+| **`successor_plan_id` の指定（v1.1）** | サービス層で「対象後続 plan が **同一 project 内** に存在すること」を検証（Phase 0 制約）。`UNIQUE` 制約 + アプリ層の循環参照検出 |
+| **`oauth_identities` の参照（v1.1）** | アカウント設定画面（Phase 1+）で OAuth 連携を表示する際、`user_id == currentUser.id` を必ず WHERE 句に含める |
+| **カンバン DnD の `toMemberId`（v1.1、SC-17）** | TOSS API のサービス層で「対象 member が currentProject の参加者で、is_active=true であること」を検証 |
 
 > **原則**：URL パラメータと、リクエストボディに含まれる ID は **すべて currentProject に属することを必ず検証**する。これを Repository に「`findXxxInProject(id, projectId)`」のシグネチャで強制（projectId を引数に必須化）。
 
@@ -530,24 +686,27 @@ app.use('/share/:token/*', async (c, next) => {
 
 ## 5.6. 監査ログ実装
 
-### 5.6.1. Phase 0 の記録対象
+### 5.6.1. Phase 0 の記録対象（v1.1 で auto_toss / oauth_login を追加）
 
 PRD SR-AUDIT-01 の全項目のうち、**Phase 0 では以下の最低限を記録**：
 
-| action | トリガ | 記録元 |
-|---|---|---|
-| `login` | サインアップ・ログイン成功 | `POST /auth/me/sync` |
-| `toss` | TOSS 実行成功（認証経路） | `POST .../toss` |
-| `complete` | 予定完了成功（認証経路） | `POST .../complete` |
-| `share_create` | 非会員URL 発行成功 | `POST /projects/:projectId/share-links` |
-| `share_revoke` | 非会員URL 個別失効 | `DELETE /projects/:projectId/share-links/:shareLinkId` |
-| `share_access` | 非会員URL 経由のアクセス（GET/POST すべて） | `requireShareToken` ミドルウェア |
-| `share_toss` | 非会員URL 経由の TOSS 実行 | `POST /share/:token/plans/:planId/toss` |
-| `share_complete` | 非会員URL 経由の完了 | `POST /share/:token/plans/:planId/complete` |
+| action | トリガ | 記録元 | 備考 |
+|---|---|---|---|
+| `login` | サインアップ・ログイン成功（password / OAuth 両方） | `POST /auth/me/sync` | actor_user_id = currentUser.id |
+| `toss` | TOSS 実行成功（human、認証経路） | `POST .../toss` | source='human' |
+| `auto_toss` **(v1.1 プロトタイプ反映)** | **後続自動 TOSS 連鎖**（UC-25、FR-BALL-13） | `POST .../complete` 内部処理 | source='auto_chain'、**actor_user_id = NULL**（system actor）、extra に `triggered_by_plan_id` |
+| `complete` | 予定完了成功（認証経路） | `POST .../complete` | actor_user_id = currentUser.id |
+| `share_create` **(v1.1 非会員URL前倒し)** | 非会員URL 発行成功 | `POST /projects/:projectId/share-links` | actor_user_id = currentUser.id |
+| `share_revoke` **(v1.1)** | 非会員URL 個別失効 | `DELETE /projects/:projectId/share-links/:shareLinkId` | actor_user_id = currentUser.id |
+| `share_access` **(v1.1)** | 非会員URL 経由のアクセス（GET/POST すべて） | `requireShareToken` ミドルウェア | actor_user_id = NULL、share_link_id 設定、IP/UA 記録（FR-SHARE-04） |
+| `share_toss` **(v1.1)** | 非会員URL 経由の TOSS 実行 | `POST /share/:token/plans/:planId/toss` | actor_user_id = NULL、share_link_id 設定 |
+| `share_complete` **(v1.1)** | 非会員URL 経由の完了 | `POST /share/:token/plans/:planId/complete` | 同上 |
 
-> v1.1 改訂：`share_*` 5アクションは v1.0 まで Phase 1 追加リストに含まれていたが、PRD v1.3 で非会員URL共有が Phase 0 化されたため Phase 0 必須記録対象に格上げ（FR-SHARE-04、SR-AUTH-08）。
+> **v1.1 改訂（非会員URL前倒し）**：`share_*` 5アクションは v1.0 まで Phase 1 追加リストに含まれていたが、PRD v1.3 で非会員URL共有が Phase 0 化されたため Phase 0 必須記録対象に格上げ（FR-SHARE-04、SR-AUTH-08）。
 
-> Phase 1 で追加：`logout`、`login_failed`、`cancel_toss`、`return`、`retoss`、`member_added`、`member_removed`、`item_deleted`、`project_closed`、`project_archived`、`project_deleted`、`pdf_export`、`file_download`、`invitation_accepted`。
+> Phase 1 で追加：`logout`、`login_failed`、**`oauth_login` / `oauth_state_failure` / `complete_signup` / `email_changed`（v1.1 想定）**、`cancel_toss`、`return`、`retoss`、`member_added`、`member_removed`、`item_deleted`、`project_closed`、`project_archived`、`project_deleted`、`pdf_export`、`file_download`、`invitation_accepted`、`invitation_email_mismatch`。
+
+> **重要（v1.1 プロトタイプ反映）**：`auto_toss` の `actor_user_id` は NULL とし、`ball_events.actor_user_id` および `ball_events.actor_member_id` も NULL になる（章2 §2.4.6 `ck_be_actor_consistency`）。**system actor 操作を人間 actor と明確に区別**する。同様に `share_*` 系は actor_user_id = NULL、share_link_id を設定して非会員 URL 経路の操作を明示する。
 
 ### 5.6.2. ログ書き込みの実装方式（AuditLogger 抽象）
 
@@ -780,6 +939,10 @@ Content-Security-Policy:
 | 8 | サインイン失敗表示 | **区別しない（同一文言）** | PRD §9.1 機密第一、ユーザー列挙攻撃の素地を作らない |
 | 9 | 利用規約・プライバシー | **同意チェックのみ、文書整備は別途（リーガル監修）** | 法務観点の本文整備は専門領域、設計でブロックしない |
 | 10 | Sentry 送信データ | **スタックトレース・URL・user.id のみ、ボディ・クエリ・PII は scrub** | PRD SR-DATA-06 に準拠、デバッグ便利性は二次 |
+| 11 | OAuth state の保管先（v1.1） | **Phase 0 はメモリ Map で代替、商用リリース前に Upstash KV / Vercel KV へ移行** | Vercel Functions のサーバレス性質でメモリ持続性は弱いが、5分 TTL かつ取り扱いトラフィックが Phase 0 では小規模なため許容。Phase 1 で KV 化 |
+| 12 | OAuth プロバイダのメール変更同期（v1.1） | **Webhook 経由で users.email / oauth_identities.email を片方向同期**（Supabase Auth が真） | Phase 1 でユーザー通知メール追加 |
+| 13 | 招待リンク × OAuth のメール不一致（v1.1） | **422 INVITATION_EMAIL_MISMATCH で拒否**（招待先メール ≠ OAuth プロバイダのメール） | 他人の招待を別アカウントで横取り防止 |
+| 14 | system actor（auto_chain）の監査記録（v1.1） | **`audit_logs.actor_user_id = NULL`、ball_events も同様**、`source='auto_chain'` で識別 | 「人間の操作」と「システム自動連鎖」を改ざんログレベルで分離（DB CHECK で強制） |
 
 ---
 
@@ -823,4 +986,5 @@ Content-Security-Policy:
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §5.11 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §5.11 全10論点を AskUserQuestion で確定（全て推奨案＝たたき台どおり） |
-| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§5.1 で非会員URL共有を本章節（Phase 0）扱いに変更、§5.2 公開範囲・デフォルト非公開の Phase 区切りを更新、§5.4.5 非会員URL共有のセキュリティ実装を新設（トークン生成・保管・検証・スコープ判定・クローラ防止・期限失効優先順位）、§5.6.1 監査ログ Phase 0 必須に `share_*` 5アクションを追加、§5.12 Phase 1+ 持ち越しを組織レベル統制（Phase 2）のみに整理。 |
+| 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§5.1 で非会員URL共有を本章節（Phase 0）扱いに変更、§5.2 公開範囲・デフォルト非公開の Phase 区切りを更新、§5.4.5 非会員URL共有のセキュリティ実装を新設（トークン生成・保管・検証・スコープ判定・クローラ防止・期限失効優先順位）、§5.6.1 監査ログ Phase 0 必須に `share_*` 5アクションを追加、§5.12 Phase 1+ 持ち越しを組織レベル統制（Phase 2）のみに整理。 |
+| 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | §5.3.5 招待トークン × OAuth 組合せルール追記／§5.3.9 OAuth 認証セクション新規（フロー・PKCE/state・同一メール1認証制約・メール変更同期）／§5.4.3 IDOR にカンバン DnD toMemberId 検証 / successor_plan_id 検証 / oauth_identities 検証を追加／§5.6.1 監査ログに `auto_toss` を追加（system actor 識別）／§5.11 論点 11〜14 追加。 |

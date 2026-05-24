@@ -3,10 +3,10 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 02 |
-| ステータス | **v1.0 確定** |
-| 確定日 | 2026-05-09 |
-| 上位ドキュメント | [TRAKON PRD v1.2](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) |
-| 主参照 PRD 節 | §8（データモデル概要）、§4.1.4〜4.1.6（予定／ボール要件）、§9.5（データ保護）、§9.6（監査ログ） |
+| ステータス | **v1.1 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
+| 確定日 | 2026-05-24 |
+| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) |
+| 主参照 PRD 節 | §8（データモデル概要）、§4.1.1（FR-AUTH-10〜12）、§4.1.4（FR-SCH-17, 18）、§4.1.5（FR-BALL-13）、§9.5（データ保護）、§9.6（監査ログ） |
 
 ---
 
@@ -110,12 +110,14 @@ erDiagram
     users ||--o{ project_members : "user_id (招待受諾後)"
     users ||--o{ projects : "created_by"
     users ||--o{ audit_logs : "actor_user_id"
+    users ||--o{ oauth_identities : "user_id (v1.1)"
     projects ||--o{ project_members : "project_id"
     projects ||--o{ project_items : "project_id"
     projects ||--o{ invitations : "project_id"
     projects ||--o{ share_links : "project_id"
     project_items ||--o{ plans : "item_id"
     plans ||--o{ ball_events : "plan_id"
+    plans }o--|| plans : "successor_plan_id (v1.1)"
     project_members ||--o{ plans : "from_member_id / to_member_id"
     project_members ||--o{ ball_events : "actor_member_id"
     project_members ||--o{ invitations : "invited_member_id"
@@ -126,10 +128,21 @@ erDiagram
         uuid id PK
         uuid auth_user_id "Supabase auth.users.id"
         text email
-        text display_name
+        text full_name "v1.1 本名"
+        text display_name "v1.1 表示名"
+        text primary_auth_method "v1.1 password/google/microsoft (CHECK)"
         timestamptz created_at
         timestamptz updated_at
         timestamptz deleted_at "Phase1〜"
+    }
+    oauth_identities {
+        uuid id PK
+        uuid user_id FK
+        text provider "google/microsoft (CHECK)"
+        text provider_user_id "OAuth subject"
+        text email
+        timestamptz created_at
+        timestamptz updated_at
     }
     projects {
         uuid id PK
@@ -177,12 +190,14 @@ erDiagram
         uuid item_id FK
         text plan_type "toss(P0) / shared/solo(P1) (CHECK)"
         text title
+        text category "v1.1 wireframe/design/coding/review/meeting/other (CHECK, NOT NULL)"
         date scheduled_date
         date due_date
         date end_date
         uuid from_member_id FK
         uuid to_member_id FK
         uuid owner_member_id "Phase1〜 共同/単独"
+        uuid successor_plan_id "v1.1 FK self, NULL可, UNIQUE"
         text location_or_url "Phase1〜"
         text status "active/completed/canceled (CHECK)"
         text memo
@@ -196,7 +211,9 @@ erDiagram
         uuid id PK
         uuid plan_id FK
         text event_type "tossed/completed(P0) +canceled/returned/retossed(P1)"
-        uuid actor_member_id FK
+        uuid actor_member_id "v1.1 NULL可"
+        uuid actor_user_id "v1.1 NULL可 (system actor対応)"
+        text source "v1.1 human/auto_chain (CHECK, NOT NULL)"
         timestamptz occurred_at
         text note
     }
@@ -266,14 +283,16 @@ erDiagram
 
 ### 2.4.1. users — アプリ側のユーザー本体
 
-**司る機能**：UC-01 アカウント作成・ログイン／FR-AUTH-01〜05／SR-AUTH-01〜04。**Supabase Auth `auth.users`（UUID）と 1:1 で紐付くアプリ DB の本体テーブル**。プロジェクトの永続参加・編集を行う全ロールが必ず1行を持つ。非会員URL閲覧者（Phase 0、§2.4 share_links）は本テーブルに行を持たない。
+**司る機能**：UC-01 アカウント作成・ログイン／UC-24 OAuth ログイン／FR-AUTH-01〜05, 10〜12／SR-AUTH-01〜04, 10。**Supabase Auth `auth.users`（UUID）と 1:1 で紐付くアプリ DB の本体テーブル**。プロジェクトの永続参加・編集を行う全ロールが必ず1行を持つ。非会員URL閲覧者（Phase 0、§2.4 share_links）は本テーブルに行を持たない。
 
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
 | id | uuid | × | uuidv7 | アプリ内 PK |
 | auth_user_id | uuid | × | — | Supabase `auth.users.id`。**ユニーク制約必須** |
 | email | text | × | — | ログインID。Supabase Auth と同期（`auth.users.email` のキャッシュ）。ユニーク |
-| display_name | text | × | — | 表示名 |
+| **full_name** | text | × | — | **本名**（招待・請求書類用、v1.1 追加、FR-AUTH-11）|
+| **display_name** | text | × | — | **表示名・ハンドル**（画面表示・チップ、v1.1 で本名と分離）|
+| **primary_auth_method** | text | × | 'password' | **'password' / 'google' / 'microsoft'**（CHECK、同一メール1認証手段制約、v1.1 追加、FR-AUTH-12）|
 | created_at | timestamptz | × | now() | |
 | updated_at | timestamptz | × | now() | DBトリガで更新 |
 | deleted_at | timestamptz | ○ | NULL | 論理削除（Phase 1〜） |
@@ -281,6 +300,9 @@ erDiagram
 **制約**：
 - `uq_users_auth_user_id`（auth_user_id ユニーク）
 - `uq_users_email`（email ユニーク、deleted_at IS NULL のみ → 部分インデックス）
+- `ck_users_primary_auth_method` CHECK (primary_auth_method IN ('password','google','microsoft'))
+- `ck_users_full_name_length` CHECK (char_length(full_name) BETWEEN 1 AND 100)
+- `ck_users_display_name_length` CHECK (char_length(display_name) BETWEEN 1 AND 50)
 - インデックス：`idx_users_auth_user_id`（JWT 検証時の高速参照）
 
 **Phase 1 拡張**：
@@ -290,6 +312,37 @@ erDiagram
 **Phase 0 留意**：
 - パスワードハッシュは Supabase Auth が `auth.users.encrypted_password` に保持、本テーブルには持たせない
 - 招待受諾フロー（FR-AUTH-02）：`invitations.token_hash` 検証 → Supabase Auth でユーザー作成 → アプリ DB の `users` 行作成 → `project_members.user_id` を埋める、の順
+- **OAuth サインアップフロー（v1.1、UC-24）**：FE が Supabase Auth `signInWithOAuth` → コールバック → BE `/auth/me/sync` で users 行 INSERT（primary_auth_method = 'google' or 'microsoft'）、oauth_identities INSERT
+- **Magic-link サインアップフロー（v1.1、UC-01 改訂）**：FE がメール入力 → Supabase Auth Magic-link 送信 → リンク押下後に詳細入力（full_name / display_name / password）→ `/auth/me/complete-signup` で users 行 INSERT + Supabase Auth `updateUser({ password })` で恒久パスワード設定
+
+---
+
+### 2.4.X. oauth_identities — OAuth 連携（v1.1 新規、✅ Phase 0）
+
+**司る機能**：FR-AUTH-10, 12／UC-24 OAuth サインアップ／SR-AUTH-10。Supabase Auth が管理する `auth.identities` の補完情報をアプリ DB 側にミラー。**Phase 0 では 1 user = 1 identity 制約**（同一メール 1 認証手段、FR-AUTH-12）。
+
+| カラム | 型 | NULL | 既定 | 説明 |
+|---|---|:---:|---|---|
+| id | uuid | × | uuidv7 | PK |
+| user_id | uuid | × | — | FK → users.id |
+| provider | text | × | — | 'google' / 'microsoft'（CHECK）|
+| provider_user_id | text | × | — | OAuth プロバイダの subject（プロバイダ内一意）|
+| email | text | × | — | OAuth から取得したメール（users.email と一致）|
+| created_at | timestamptz | × | now() | |
+| updated_at | timestamptz | × | now() | DBトリガで更新 |
+
+**制約**：
+- `ck_oauth_identities_provider` CHECK (provider IN ('google','microsoft'))
+- `uq_oauth_identities_provider_provider_user_id`（provider, provider_user_id）UNIQUE
+- `uq_oauth_identities_user_id_provider`（user_id, provider）UNIQUE — Phase 0 の1ユーザー1プロバイダ制約に追加で、Phase 1+ でも「同一ユーザーが同じプロバイダ identity を二重登録不可」
+- `fk_oauth_identities_user_id` FK → users(id) ON DELETE CASCADE
+
+**インデックス**：
+- `idx_oauth_identities_provider_provider_user_id`（OAuth コールバック時の identity 検索用、UNIQUE と兼用）
+- `idx_oauth_identities_user_id`（ユーザー詳細画面用）
+
+**Phase 1+ 拡張**：
+- 1 ユーザーが複数プロバイダ連携可能になった場合、`uq_oauth_identities_user_id_provider` を維持しつつアプリ側 `users.primary_auth_method` の意味を再定義（複数 identity リンク UI 提供時）
 
 ---
 
@@ -392,12 +445,14 @@ erDiagram
 | item_id | uuid | × | — | FK → project_items.id |
 | plan_type | text | × | 'toss' | 'toss'（P0）／+'shared','solo'（P1）（CHECK） |
 | title | text | × | — | 予定名 |
+| **category** | text | × | — | **'wireframe' / 'design' / 'coding' / 'review' / 'meeting' / 'other'**（CHECK、NOT NULL、v1.1 追加、FR-SCH-18） |
 | scheduled_date | date | × | — | 予定日（TOSS／共同）／開始予定日（単独） |
 | due_date | date | ○ | NULL | 期日（TOSS 用、任意） |
 | end_date | date | ○ | NULL | 終了予定日（共同／単独 用、任意） |
 | from_member_id | uuid | ○ | NULL | TOSS の FROM。Phase 1 で plan_type='toss' のとき NOT NULL 相当 |
 | to_member_id | uuid | ○ | NULL | TOSS の TO。同上 |
 | owner_member_id | uuid | ○ | NULL | Phase 1〜（共同／単独 の主担当者） |
+| **successor_plan_id** | uuid | ○ | NULL | **後続予定の FK (self、UNIQUE、v1.1 追加、FR-SCH-17)**。Phase 0 では同一プロジェクト内に限定 |
 | location_or_url | text | ○ | NULL | Phase 1〜（共同予定用） |
 | status | text | × | 'active' | 'active' / 'completed' / 'canceled'（CHECK） |
 | memo | text | ○ | NULL | |
@@ -410,44 +465,64 @@ erDiagram
 **制約**：
 - `ck_plans_plan_type` CHECK (plan_type IN ('toss'))  ← **Phase 0 のチェック式。Phase 1 で `('toss','shared','solo')` に ALTER**
 - `ck_plans_status` CHECK (status IN ('active','completed','canceled'))
+- `ck_plans_category` CHECK (category IN ('wireframe','design','coding','review','meeting','other')) ← **v1.1、enum 拡張は ALTER で対応**
 - `ck_plans_toss_members` CHECK (
     plan_type <> 'toss' OR
     (from_member_id IS NOT NULL AND to_member_id IS NOT NULL AND from_member_id <> to_member_id)
   ) ← TOSS は FROM/TO 必須かつ別人
+- `uq_plans_successor_plan_id` UNIQUE (successor_plan_id) — **後続は1つの先行からのみ指される（v1.1）**
+- `ck_plans_no_self_successor` CHECK (successor_plan_id IS NULL OR successor_plan_id <> id) ← 自己参照防止（深い循環はアプリ層で）
 - `fk_plans_item_id` FK → project_items(id) ON DELETE CASCADE
 - `fk_plans_from_member_id` FK → project_members(id) ON DELETE RESTRICT
 - `fk_plans_to_member_id` FK → project_members(id) ON DELETE RESTRICT
+- `fk_plans_successor_plan_id` FK → plans(id) ON DELETE SET NULL — 後続が削除された場合は紐付け解除のみ
 - Phase 1 で `ck_plans_owner_required` を追加（共同／単独 では owner_member_id NOT NULL）
+
+**循環参照防止**：
+- 単純な自己参照（A → A）は `ck_plans_no_self_successor` で DB 拒否
+- 長い循環（A → B → … → A）はアプリ層（サービス層）で **後続紐付け／更新時に再帰検出して 409 を返す**（議論ポイント §2.10-11 で確定）
 
 **インデックス**：
 - `idx_plans_item_id_scheduled_date`（縦型カレンダー描画クエリ用）
 - `idx_plans_from_member_id`、`idx_plans_to_member_id`、`idx_plans_owner_member_id`（参加者列ごとの取得用）
-- `idx_plans_status_scheduled_date`（ダッシュボード用、Phase 1 で活用）
+- `idx_plans_status_scheduled_date`（ダッシュボード用）
+- `idx_plans_successor_plan_id`（**v1.1、後続自動 TOSS の SELECT FOR UPDATE 用**）
+- `idx_plans_category`（**v1.1、カテゴリでのフィルタ・色分け用**）
 - 部分インデックス：`idx_plans_active` ON plans(scheduled_date) WHERE status = 'active' AND deleted_at IS NULL
 
 ---
 
 ### 2.4.6. ball_events — ボール責任移動履歴
 
-**司る機能**：FR-BALL-04〜10／UC-08 TOSS実行／UC-09 TOSS取消／UC-10 差し戻し／UC-11 再TOSS／UC-12 予定完了。**追記専用、物理削除しない**。Ball Holder 導出のソース・オブ・トゥルース。
+**司る機能**：FR-BALL-04〜10, 13／UC-08 TOSS実行／UC-09 TOSS取消／UC-10 差し戻し／UC-11 再TOSS／UC-12 予定完了／**UC-25 後続自動 TOSS 連鎖**。**追記専用、物理削除しない**。Ball Holder 導出のソース・オブ・トゥルース。**v1.1 で `source` 列を追加（human / auto_chain）、`actor_user_id` を NULL 許容化**（system actor 対応、FR-BALL-13）。
 
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
 | id | uuid | × | uuidv7 | |
 | plan_id | uuid | × | — | FK → plans.id |
 | event_type | text | × | — | 'tossed' / 'completed'（P0）／+'canceled' / 'returned' / 'retossed'（P1）（CHECK） |
-| actor_member_id | uuid | × | — | 実行者（FK → project_members.id） |
+| actor_member_id | uuid | ○ | NULL | 実行者（FK → project_members.id）。**v1.1 で NULL 許容化**（system actor 時は NULL）|
+| **actor_user_id** | uuid | ○ | NULL | **実行ユーザー（FK → users.id、v1.1 追加、system actor 時は NULL）** |
+| **source** | text | × | 'human' | **'human' / 'auto_chain'**（CHECK、NOT NULL、v1.1 追加、FR-BALL-13）|
 | occurred_at | timestamptz | × | now() | 実行日時 |
 | note | text | ○ | NULL | 差し戻し理由など |
 
 **制約**：
 - `ck_be_event_type` CHECK (event_type IN ('tossed','completed'))  ← **Phase 0、Phase 1 で拡張**
+- `ck_be_source` CHECK (source IN ('human','auto_chain'))
+- `ck_be_actor_consistency` CHECK (
+    (source = 'human' AND actor_member_id IS NOT NULL AND actor_user_id IS NOT NULL)
+    OR
+    (source = 'auto_chain' AND actor_member_id IS NULL AND actor_user_id IS NULL)
+  ) ← **v1.1：human なら actor 必須、auto_chain なら actor NULL（system actor）**
 - `fk_be_plan_id` FK → plans(id) ON DELETE RESTRICT（plans の物理削除時にこちらを残すため、plans の MVP 物理削除はアプリ側で関連 ball_events 削除を伴う）
 - `fk_be_actor_member_id` FK → project_members(id) ON DELETE RESTRICT
-- **Append-only 強制**（§2.6 で詳述）
+- `fk_be_actor_user_id` FK → users(id) ON DELETE SET NULL
+- **Append-only 強制**（§2.7 で詳述）
 
 **インデックス**：
 - `idx_be_plan_id_occurred_at_desc`（最新イベント取得・Ball Holder 導出用）
+- `idx_be_source`（**v1.1：自動連鎖イベントの分析・監査用**）
 
 ---
 
@@ -581,6 +656,20 @@ erDiagram
 
 > 詳細は章5「セキュリティ実装設計」で扱う。
 
+### 2.5.3. OAuth（Google / Microsoft）の紐付け（v1.1 追加、Phase 0 から）
+
+| 観点 | 方針 |
+|---|---|
+| Supabase Auth 設定 | プロバイダ（Google / Microsoft）を Supabase ダッシュボードで有効化、Client ID/Secret 登録（章6 §6.6.1）。**PKCE フロー必須**（章5 §5.3 OAuth セクション） |
+| `auth.identities` テーブル | Supabase Auth が `auth.users` と `auth.identities` を自動管理。アプリ DB の `oauth_identities` テーブル（§2.4.X）はその**ミラー**として保持 |
+| ユーザー作成順（OAuth 初回） | ① FE が `signInWithOAuth({ provider })` → ② プロバイダ同意・コールバック → ③ Supabase Auth が `auth.users` + `auth.identities` 作成 → ④ FE が BE `POST /auth/me/sync` → ⑤ BE が users 行作成（`primary_auth_method='google' or 'microsoft'`、`full_name` は OAuth `user_metadata.full_name` から取得、`display_name` は full_name で初期化）+ oauth_identities INSERT |
+| **同一メール 1 認証手段制約**（FR-AUTH-12） | BE `/auth/me/sync` で `users` 検索時、既存 `users.email` がある場合に `primary_auth_method` を比較。不一致なら **409 SAME_EMAIL_DIFFERENT_PROVIDER** を返す（詳細は章5 §5.3）|
+| OAuth メール変更時 | Supabase Auth の `auth.users.email` 更新 → Webhook 経由で `users.email` と `oauth_identities.email` を同期（v1.1 議論ポイント §2.10-13） |
+| ユーザー削除時 | Supabase Auth 側削除 → `users.deleted_at` 設定、`oauth_identities` は CASCADE で削除 |
+| Phase 1+ 複数プロバイダ連携 | `users.primary_auth_method` の制約を緩和し、`oauth_identities` を複数行許容に拡張。初回作成時のプロバイダを記録する別カラム（`signup_provider`）の追加を検討 |
+
+> 詳細な OAuth セキュリティ仕様（PKCE、state、コールバック検証、ブランド統制メール）は章5 §5.3 を参照。
+
 ---
 
 ## 2.6. Ball Holder 導出戦略
@@ -660,7 +749,7 @@ CREATE TRIGGER trg_ball_events_no_update BEFORE UPDATE OR DELETE ON ball_events
 
 ---
 
-## 2.8. インデックス戦略（Phase 0）
+## 2.8. インデックス戦略（Phase 0、v1.1 追加分含む）
 
 クエリパターンを起点に必要最小限を定義。Phase 1 でクエリ追加時に追従。
 
@@ -672,9 +761,13 @@ CREATE TRIGGER trg_ball_events_no_update BEFORE UPDATE OR DELETE ON ball_events
 | 特定参加者列の予定取得 | SC-06 描画 | `idx_plans_from_member_id`, `idx_plans_to_member_id` |
 | ボール詳細の最新イベント | SC-08 | `idx_be_plan_id_occurred_at_desc` |
 | ユーザー認証時の `users` 取得 | 全API ミドルウェア | `idx_users_auth_user_id` |
+| **OAuth コールバックの identity 検索（v1.1）** | **POST /auth/oauth/:provider/callback** | `idx_oauth_identities_provider_provider_user_id` |
+| **ダッシュボード（自分／全員の今日のタスク、v1.1 Phase 0 へ繰り上げ）** | **GET /users/me/dashboard** | `idx_plans_status_scheduled_date` + 部分インデックス `idx_plans_active` |
+| **後続自動 TOSS の連鎖元検索（v1.1）** | **POST .../plans/:id/complete 内部処理** | `idx_plans_successor_plan_id` |
+| **カテゴリでのフィルタ・色分け（v1.1）** | **GET /items/:id/plans レスポンス描画** | `idx_plans_category` |
 | 監査ログの時系列参照 | （Phase 1〜） | `idx_al_occurred_at_desc`, `brin_al_occurred_at` |
 
-> Phase 0 で**作らない**もの：ダッシュボード集計用インデックス（Phase 1 で SC-09 実装時に追加）、全文検索インデックス（FR 対象外）。
+> Phase 0 で**作らない**もの：複合プロジェクト集計用マテリアライズドビュー（Phase 1 末で計測ベース判断）、全文検索インデックス（FR 対象外）。
 
 ---
 
@@ -715,6 +808,17 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 | M007 (Phase 1) | 論理削除へ移行（`plans.deleted_at` をアプリで参照開始）、Prisma middleware 適用 | 中（既存物理削除コードの撤去） |
 | M008 (Phase 2) | `organizations` テーブル追加 + `projects.organization_id` 既存データの組織割当 + NOT NULL 化 | 高（データ移行スクリプト必要） |
 
+**v1.1（2026-05-24）プロトタイプ反映マイグレーション（Phase 0 範囲、M001 と同時に初回投入）**：
+
+| マイグレーション | 内容 | リスク |
+|---|---|---|
+| M001a | `users.full_name`（NOT NULL）/ `display_name`（NOT NULL）に分離、`primary_auth_method`（CHECK）追加 | 低（初回投入） |
+| M001b | `oauth_identities` テーブル新規作成 | 低 |
+| M001c | `plans.category`（NOT NULL, CHECK 6値）追加 | 低 |
+| M001d | `plans.successor_plan_id`（FK self, UNIQUE）追加、`ck_plans_no_self_successor` | 低 |
+| M001e | `ball_events.source`（NOT NULL, CHECK）追加、`actor_user_id`（NULL可）追加、`actor_member_id` を NULL 許容化、`ck_be_actor_consistency` | 低 |
+| M001f | 追加インデックス：`idx_oauth_identities_provider_provider_user_id`, `idx_plans_successor_plan_id`, `idx_plans_category`, `idx_plans_status_scheduled_date`, `idx_plans_active`, `idx_be_source` | 低 |
+
 ---
 
 ## 2.10. 議論ポイントの確定結果
@@ -731,6 +835,10 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 | 8 | タイムゾーン | **DB は UTC、アプリで JST 変換** | サーバ・クライアント双方で JST 表示、サーバ側「本日」「3日以内」も JST 暦日で判定 |
 | 9 | users.email 同期 | **Supabase Auth → アプリの片方向（Supabase が真）** | Supabase の email 変更を webhook/定期ジョブで反映、双方向同期は採用しない |
 | 10 | project_members.user_id NULL | **NULL 許容（招待中行を同テーブル保持）** | 名刺記載のみ・招待中・受諾済みを一元管理、横軸表示と受諾フローがシンプル |
+| 11 | 後続紐付け（successor_plan_id）の循環参照防止（v1.1） | **DB CHECK で自己参照のみ拒否、長い循環はアプリ層（サービス層）で再帰検出して 409** | DB の CHECK で深い循環は判定不可。アプリ層で `INSERT/PATCH successor` 時にトポロジカルチェック |
+| 12 | 後続紐付けの範囲（v1.1） | **Phase 0 は同一プロジェクト内に限定**（アプリ層で validation） | プロトタイプ UI は同制作物配下から選択。異プロジェクト跨ぎは Phase 1+ の議論 |
+| 13 | OAuth プロバイダのメール変更ハンドリング（v1.1） | **Webhook 経由で users.email / oauth_identities.email を片方向同期**（Supabase Auth が真） | 章9 §2.5.3 と整合、プロバイダ変更を能動検知 |
+| 14 | ball_events 'auto_chain' での actor 整合性（v1.1） | **`ck_be_actor_consistency` CHECK で human ⇒ actor 必須、auto_chain ⇒ actor NULL** | 監査上「人間 actor」と「system actor」を明確分離、改ざんミスを DB 層で防ぐ |
 
 ---
 
@@ -759,6 +867,7 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 ### PRD 整合メモ（PRD 改訂提案）
 
 - **新規追加候補**：PRD §8.2 に **`invitations` テーブル**を明示すべき。FR-AUTH-02 の物理化として PRD への追記を提案（本基本設計書の章末リストとして起票）
+- **v1.1 反映**：PRD v1.3 で `oauth_identities` テーブル定義 / `users.full_name` `users.display_name` `users.primary_auth_method` / `plans.successor_plan_id` `plans.category` / `ball_events.source` `ball_events.actor_user_id` を §8.2 に追記済み（同期完了）
 
 ---
 
@@ -768,4 +877,5 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §2.10 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §2.10 全10論点を AskUserQuestion で確定（全て推奨案＝たたき台どおり） |
-| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§2.3.1 ER 図に `share_links` を追加、§2.4.9 share_links テーブル定義を新設、§2.4.7 audit_logs に `share_link_id`／`share_*` アクションを Phase 0 から有効化、§2.9.3 マイグレーション計画から `share_links` を M001 に統合、§2.11 Phase 1+ 持ち越しから `share_links` を除外。 |
+| 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§2.3.1 ER 図に `share_links` を追加、§2.4.9 share_links テーブル定義を新設、§2.4.7 audit_logs に `share_link_id`／`share_*` アクションを Phase 0 から有効化、§2.9.3 マイグレーション計画から `share_links` を M001 に統合、§2.11 Phase 1+ 持ち越しから `share_links` を除外。 |
+| 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | users 拡張（full_name/display_name 分離、primary_auth_method）／oauth_identities 新規／plans 拡張（successor_plan_id, category）／ball_events 拡張（source, actor_user_id NULL化、ck_be_actor_consistency）／インデックス追加（OAuth/successor/category/ダッシュボード）／§2.5.3 OAuth 紐付け方針新設／§2.10 に論点 11〜14 追加／M001a〜f マイグレーション。 |
