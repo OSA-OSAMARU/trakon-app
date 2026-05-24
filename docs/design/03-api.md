@@ -3,10 +3,10 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 03 |
-| ステータス | **v1.0.1 確定** |
-| 確定日 | 2026-05-09 |
-| 上位ドキュメント | [TRAKON PRD v1.2](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [02-database.md](02-database.md) |
-| 主参照 PRD 節 | §4.1（FR）／§6 UC-01〜08, 12, 15, 16／§7 SC-01〜04, 06〜08, 10, 11／§9.4（ロール別マトリクス） |
+| ステータス | **v1.1 確定**（v1.0.1: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
+| 確定日 | 2026-05-24 |
+| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [02-database.md](02-database.md) |
+| 主参照 PRD 節 | §4.1（FR、v1.3 で追加された FR-AUTH-10〜12, FR-SCH-17〜18, FR-BALL-13, FR-DASH 改訂）／§6 UC-01〜08, 12, 15, 16, 24, 25, 26／§7 SC-01, 03〜04, 06〜11, 17／§9.4（ロール別マトリクス） |
 
 ---
 
@@ -240,10 +240,14 @@ flowchart TB
 | エンドポイント | 未認証 | 認証済み一般 | プロジェクト参加 | ディレクター | 備考 |
 |---|:---:|:---:|:---:|:---:|---|
 | `GET /healthz` | ✅ | ✅ | ✅ | ✅ | |
+| `POST /auth/oauth/:provider/start` **(v1.1)** | ✅ | ✅ | — | — | PKCE state 生成、redirect URL 返却 |
+| `POST /auth/oauth/:provider/callback` **(v1.1)** | ✅ | ✅ | — | — | code+state 検証、Supabase Auth セッション確立 |
+| `POST /auth/me/complete-signup` **(v1.1)** | ❌ | ✅ | — | — | Magic-link 後の詳細入力（full_name/display_name/password） |
 | `GET /invitations/:token` | ✅ | ✅ | — | — | トークンが認可代わり |
 | `POST /invitations/:token/accept` | ✅ | ✅ | — | — | 同上＋JWT で users 紐付け |
-| `POST /auth/me/sync`（初回ユーザー作成） | ❌ | ✅ | — | — | JWT は要、users 行は未存在 |
+| `POST /auth/me/sync`（初回ユーザー作成） | ❌ | ✅ | — | — | JWT は要、users 行は未存在。**v1.1 で OAuth プロバイダの初回登録も同 EP 経由** |
 | `GET /auth/me` | ❌ | ✅ | — | — | |
+| `GET /users/me/dashboard` **(v1.1)** | ❌ | ✅ | — | — | 自分が見える全プロジェクトの「今日のタスク」階層ビュー |
 | `GET /projects` | ❌ | ✅ | — | — | 自分が参加するもののみ |
 | `POST /projects` | ❌ | ✅ | — | — | Phase 2 で組織制限（PRD §9.4 注記 ※1） |
 | `GET /projects/:projectId` | ❌ | ❌ | ✅ | ✅ | |
@@ -262,14 +266,15 @@ flowchart TB
 | `GET /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅ | ✅ | |
 | `PATCH /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅※own | ✅ | own = from/to のいずれか or owner |
 | `DELETE /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅※own | ✅ | Phase 0 物理削除 |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/toss` | ❌ | ❌ | ✅※holder | ✅※override | 現 Ball Holder のみ実行可（ディレクターは override 可） |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/complete` | ❌ | ❌ | ✅※holder | ✅※override | 同上 |
-| `GET /projects/:projectId/share-links` | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01／SC-16 一覧 |
-| `POST /projects/:projectId/share-links` | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01, 02／SC-16 発行 |
-| `DELETE /projects/:projectId/share-links/:shareLinkId` | ❌ | ❌ | ❌ | ✅ | FR-SHARE-03／SC-16 個別失効 |
-| `GET /share/:token` | ✅ | ✅ | — | — | トークンが認可代わり／FR-SHARE-01, 04, 05／UC-23 |
-| `POST /share/:token/plans/:planId/toss` | ✅ | ✅ | — | — | 非会員URL経由のボール操作（スコープ判定）／FR-SHARE-05／UC-23 |
-| `POST /share/:token/plans/:planId/complete` | ✅ | ✅ | — | — | 同上 |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/toss` | ❌ | ❌ | ✅※holder | ✅※override | 現 Ball Holder のみ実行可（ディレクターは override 可）。**v1.1：カンバン DnD（UC-26）からも呼ばれる** |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/complete` | ❌ | ❌ | ✅※holder | ✅※override | 同上。**v1.1：successor_plan_id があれば自動 TOSS を連鎖（UC-25、FR-BALL-13）** |
+| `PATCH /projects/:projectId/items/:itemId/plans/:planId/successor` **(v1.1 プロトタイプ反映)** | ❌ | ❌ | ✅※own | ✅ | 後続予定の紐付け設定／解除（FR-SCH-17） |
+| `GET /projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01／SC-16 一覧 |
+| `POST /projects/:projectId/share-links` **(v1.1)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01, 02／SC-16 発行 |
+| `DELETE /projects/:projectId/share-links/:shareLinkId` **(v1.1)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-03／SC-16 個別失効 |
+| `GET /share/:token` **(v1.1)** | ✅ | ✅ | — | — | トークンが認可代わり／FR-SHARE-01, 04, 05／UC-23 |
+| `POST /share/:token/plans/:planId/toss` **(v1.1)** | ✅ | ✅ | — | — | 非会員URL経由のボール操作（スコープ判定）／FR-SHARE-05／UC-23 |
+| `POST /share/:token/plans/:planId/complete` **(v1.1)** | ✅ | ✅ | — | — | 同上 |
 
 > 凡例：✅ 許可／❌ 拒否（401 or 403／親リソース未参加なら 404）／✅※own（自分が当事者）／✅※holder（現 Ball Holder）／✅※override（ディレクターは追加権限あり）／`/share/:token` 系はトークン自体が認可、有効期限・個別失効・スコープ・対象 plan が share_link.scope に整合することを `requireShareToken` ミドルウェアが検証（章5 §5.x）
 
@@ -280,8 +285,12 @@ flowchart TB
 | カテゴリ | メソッド | パス | 関連 UC | 関連 SC |
 |---|---|---|---|---|
 | Health | GET | `/healthz` | — | — |
-| Auth | POST | `/auth/me/sync` | UC-01 | SC-01 |
+| Auth | POST | `/auth/oauth/:provider/start` **(v1.1)** | UC-24 | SC-01 |
+| Auth | POST | `/auth/oauth/:provider/callback` **(v1.1)** | UC-24 | SC-01 |
+| Auth | POST | `/auth/me/sync` | UC-01, 24 | SC-01 |
+| Auth | POST | `/auth/me/complete-signup` **(v1.1)** | UC-01 | SC-01 |
 | Auth | GET | `/auth/me` | UC-01 | SC-01, 全画面ヘッダ |
+| Dashboard | GET | `/users/me/dashboard` **(v1.1)** | UC-13 相当 | SC-09 |
 | Invitations | GET | `/invitations/:token` | UC-03 | SC-02 |
 | Invitations | POST | `/invitations/:token/accept` | UC-03 | SC-02 |
 | Projects | GET | `/projects` | — | SC-03 |
@@ -302,16 +311,17 @@ flowchart TB
 | Plans | GET | `/projects/:projectId/items/:itemId/plans/:planId` | UC-08 | SC-08 ボール詳細 |
 | Plans | PATCH | `/projects/:projectId/items/:itemId/plans/:planId` | UC-05 | SC-07, SC-08 |
 | Plans | DELETE | `/projects/:projectId/items/:itemId/plans/:planId` | — | SC-08（MVP物理削除：FR-BALL-12） |
-| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/toss` | UC-08 | SC-08 |
-| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/complete` | UC-12 | SC-08 |
-| Share Links | GET | `/projects/:projectId/share-links` | UC-23 | SC-16 |
-| Share Links | POST | `/projects/:projectId/share-links` | UC-23 | SC-16 |
-| Share Links | DELETE | `/projects/:projectId/share-links/:shareLinkId` | UC-23 | SC-16 |
-| Share Access | GET | `/share/:token` | UC-23 | （非会員URL閲覧画面） |
-| Share Access | POST | `/share/:token/plans/:planId/toss` | UC-23 | （非会員URL閲覧画面） |
-| Share Access | POST | `/share/:token/plans/:planId/complete` | UC-23 | （非会員URL閲覧画面） |
+| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/toss` | UC-08, UC-26 | SC-08, SC-17 |
+| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/complete` | UC-12, UC-25 | SC-08 |
+| Plans | PATCH | `/projects/:projectId/items/:itemId/plans/:planId/successor` **(v1.1 プロトタイプ反映)** | UC-25（紐付け管理） | SC-07 |
+| Share Links | GET | `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | UC-23 | SC-16 |
+| Share Links | POST | `/projects/:projectId/share-links` **(v1.1)** | UC-23 | SC-16 |
+| Share Links | DELETE | `/projects/:projectId/share-links/:shareLinkId` **(v1.1)** | UC-23 | SC-16 |
+| Share Access | GET | `/share/:token` **(v1.1)** | UC-23 | （非会員URL閲覧画面） |
+| Share Access | POST | `/share/:token/plans/:planId/toss` **(v1.1)** | UC-23 | （非会員URL閲覧画面） |
+| Share Access | POST | `/share/:token/plans/:planId/complete` **(v1.1)** | UC-23 | （非会員URL閲覧画面） |
 
-> v1.1 改訂注：`Share Links` / `Share Access` 6本は v1.0 まで §3.9 Phase 1 で予告していたが、PRD v1.3 で Phase 0 へ前倒しされたため Phase 0 必須として正式採番。詳細仕様は §3.6.9 を参照。
+> **v1.1 改訂注**：`Share Links` / `Share Access` 6本は v1.0 まで §3.9 Phase 1 で予告していたが、PRD v1.3 で Phase 0 へ前倒しされたため Phase 0 必須として正式採番。詳細仕様は §3.6.9（非会員URL前倒し改訂）を参照。
 
 ---
 
@@ -334,10 +344,76 @@ flowchart TB
 
 ### 3.6.2. Auth
 
+#### `POST /api/v1/auth/oauth/:provider/start` （v1.1 新規、UC-24）
+
+OAuth フロー開始：BE が PKCE `code_verifier` 生成 → `code_challenge` を返し、FE は Supabase Auth `signInWithOAuth` をその challenge 付きで呼ぶ。
+
+**認可**：未認証可。
+
+**パスパラメータ**：`provider`（'google' / 'microsoft'）
+
+**リクエスト**：
+```typescript
+{ redirectTo: string }   // FE が処理後に戻るアプリ内 URL（同一オリジン必須）
+```
+
+**レスポンス（200）**：
+```typescript
+{
+  data: {
+    authorizeUrl: string,  // FE が遷移する Supabase Auth の URL
+    state: string,         // CSRF 対策、callback で検証
+  }
+}
+```
+
+**処理**：
+1. PKCE `code_verifier` / `code_challenge` をサーバ側で生成
+2. `state` を uuidv7 で生成、短期 KV/メモリに保管（5分 TTL）
+3. Supabase Auth の authorize URL を組み立てて返す
+
+**エラー**：400 (`INVALID_REDIRECT`：同一オリジン外)、400 (`UNSUPPORTED_PROVIDER`)。
+
+> 詳細な OAuth セキュリティ仕様は章5 §5.3 を参照。
+
+---
+
+#### `POST /api/v1/auth/oauth/:provider/callback` （v1.1 新規、UC-24）
+
+OAuth コールバック：Supabase Auth から戻ってきた `code` + `state` を検証し、セッション確立。
+
+**認可**：未認証可。
+
+**リクエスト**：
+```typescript
+{ code: string, state: string }
+```
+
+**処理**：
+1. `state` を KV から取得・整合性確認
+2. Supabase Auth `exchangeCodeForSession` を呼ぶ
+3. JWT + refresh_token を Cookie or レスポンスで返す
+4. 続いて FE が `POST /auth/me/sync` を呼ぶ（既存フロー）
+
+**レスポンス（200）**：
+```typescript
+{
+  data: {
+    accessToken: string,
+    refreshToken: string,
+    expiresAt: number,
+  }
+}
+```
+
+**エラー**：400 (`INVALID_STATE`)、401 (`OAUTH_EXCHANGE_FAILED`)。
+
+---
+
 #### `POST /api/v1/auth/me/sync`
 
 Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**するエンドポイント。
-アプリ DB の `users` 行を作成（または存在確認）し、`audit_logs` に `login` を記録。
+アプリ DB の `users` 行を作成（または存在確認）し、`audit_logs` に `login` を記録。**v1.1 で OAuth 経由の初回登録もこのエンドポイントで処理する**（`primary_auth_method` を OAuth provider 名で設定、`oauth_identities` INSERT）。
 
 **認可**：JWT 必須（users 行は未存在の場合あり）。
 
@@ -350,7 +426,10 @@ Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**す�
     id: string,           // users.id
     authUserId: string,
     email: string,
-    displayName: string,
+    fullName: string | null,        // v1.1 OAuth 経由なら provider から取得、Magic-link 経由は complete-signup までは null
+    displayName: string | null,     // v1.1 同上
+    primaryAuthMethod: 'password' | 'google' | 'microsoft',  // v1.1
+    requiresProfileCompletion: boolean,  // v1.1：full_name/display_name 未設定なら true（FE は create-account 画面へ）
     createdAt: string,
   }
 }
@@ -359,11 +438,43 @@ Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**す�
 **処理**：
 1. JWT から `auth_user_id` 抽出
 2. `users WHERE auth_user_id = ?` で検索
-3. 存在しない場合：`auth.users` から `email` / `raw_user_meta_data.display_name` を取り、`users` INSERT
-4. `audit_logs` に `action='login'` を記録（result='success'）
+3. 存在しない場合：
+   - `auth.users` から `email` / `raw_user_meta_data`（OAuth の場合は `name` / `picture`）を取得
+   - **同一メールが別 `primary_auth_method` で既登録の場合：409 SAME_EMAIL_DIFFERENT_PROVIDER**（FR-AUTH-12）
+   - `users` INSERT（`primary_auth_method` = JWT の `app_metadata.provider` から判定）
+   - OAuth 経由なら `oauth_identities` INSERT
+   - **`requiresProfileCompletion = (full_name IS NULL OR display_name IS NULL)`** → Magic-link 経由は true（次に complete-signup を呼ぶ必要あり）、OAuth 経由で full_name/display_name 取得済みなら false
+4. `audit_logs` に `action='login'` を記録
 5. ユーザー情報を返す
 
-**エラー**：401 (`AUTH_INVALID`)。
+**エラー**：401 (`AUTH_INVALID`)、**409 (`SAME_EMAIL_DIFFERENT_PROVIDER`)**。
+
+---
+
+#### `POST /api/v1/auth/me/complete-signup` （v1.1 新規、UC-01 改訂）
+
+Magic-link でメール認証完了後、詳細情報（`full_name` / `display_name` / `password`）を入力するエンドポイント。
+
+**認可**：JWT 必須、`users.full_name IS NULL OR users.display_name IS NULL` の状態のみ実行可。
+
+**リクエスト**：
+```typescript
+{
+  fullName: string,     // 1〜100文字
+  displayName: string,  // 1〜50文字
+  password: string,     // 8文字以上、英数記号混在
+}
+```
+
+**処理**（同一トランザクション）：
+1. JWT 検証、users 行取得
+2. `users.full_name` / `display_name` を更新
+3. Supabase Auth `updateUser({ password })` を Admin SDK 経由で実行（恒久パスワード設定）
+4. `audit_logs` に `action='complete_signup'` を記録（Phase 1 で正式記録、Phase 0 は最低限の login のみ）
+
+**レスポンス（200）**：完了後の `users` 情報
+
+**エラー**：400（バリデーション）、409 `ALREADY_COMPLETED`（既に full_name/display_name 設定済み）。
 
 ---
 
@@ -379,11 +490,62 @@ Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**す�
   data: {
     id: string,
     email: string,
-    displayName: string,
+    fullName: string,                                                 // v1.1
+    displayName: string,                                              // v1.1
+    primaryAuthMethod: 'password' | 'google' | 'microsoft',           // v1.1
     projectCount: number,
   }
 }
 ```
+
+---
+
+#### `GET /api/v1/users/me/dashboard` （v1.1 新規、SC-09）
+
+ダッシュボード階層ビュー用データ取得。自分が見られる全プロジェクト × メンバー × 「今日のタスク」階層構造で返す。
+
+**認可**：JWT 必須。
+
+**クエリ**：（なし、Phase 0）
+
+**処理**：
+1. `users.id` を起点に、参加プロジェクト一覧を取得
+2. 各プロジェクトの `project_members` を取得
+3. 各 plan を取得（`status='active' AND startDate <= today <= endDate`、JST 暦日基準）
+4. プロジェクト → メンバー（Ball Holder 単位） → 予定カード の階層構造に整形
+
+**レスポンス（200）**：
+```typescript
+{
+  data: {
+    today: string,             // YYYY-MM-DD（JST 基準）
+    summary: {
+      todayTaskCount: number,
+      overdueCount: number,    // status='active' && endDate < today
+    },
+    projects: Array<{
+      id: string,
+      name: string,
+      colorHex: string,        // プロジェクトのブランドカラー（Phase 0 は固定生成）
+      memberTasks: Array<{
+        member: { id: string, name: string, organizationName: string },
+        tasks: Array<{
+          planId: string,
+          itemId: string,
+          itemName: string,    // 制作物名
+          title: string,
+          category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',
+          startDate: string,
+          endDate: string,
+          isOverdue: boolean,
+        }>,
+      }>,
+    }>,
+  }
+}
+```
+
+**パフォーマンス**：N+1 回避のため、`plans + project_members + project_items + projects` を1〜2 クエリで取得。`idx_plans_status_scheduled_date` と `idx_plans_active` を使用。
 
 ---
 
@@ -770,6 +932,7 @@ Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**す�
     id: string,
     planType: 'toss',                // Phase 0
     title: string,
+    category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',  // v1.1
     scheduledDate: string,
     dueDate: string | null,
     fromMember: { id: string, name: string, organizationName: string },
@@ -777,7 +940,8 @@ Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**す�
     status: 'active' | 'completed' | 'canceled',
     ballHolder: { id: string, name: string, organizationName: string },  // 導出値
     ballState: 'ready' | 'tossed' | 'completed',                         // 導出値
-    latestEvent: { eventType: string, occurredAt: string } | null,
+    latestEvent: { eventType: string, occurredAt: string, source: 'human' | 'auto_chain' } | null,  // v1.1 source 追加
+    successorPlanId: string | null,                                       // v1.1
     memo: string | null,
     createdAt: string,
     updatedAt: string,
@@ -803,19 +967,24 @@ Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**す�
 {
   planType: 'toss',                 // Phase 0 は固定
   title: string,
+  category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',  // v1.1 必須（FR-SCH-18）
   scheduledDate: string,            // YYYY-MM-DD
   dueDate?: string,
   fromMemberId: string,
   toMemberId: string,               // fromMemberId と異なる必須
+  successorPlanId?: string,         // v1.1 任意（FR-SCH-17）。同一プロジェクト内の plan のみ許容
   memo?: string,
 }
 ```
 
 **処理**：
 - バリデーション（章2 `ck_plans_toss_members` 同等の事前チェック）
+- `successorPlanId` 指定時：(a) 同一プロジェクト内に属するか確認、(b) `UNIQUE successor_plan_id` 制約に従い既に他 plan の successor になっていないか確認、(c) 循環参照チェック（§2.4.5）
 - `plans` INSERT（`status='active'`、Ball Holder = `fromMemberId`、`ball_events` はまだ作成しない）
 
 **レスポンス（201）**：作成された plan（GET と同形式）
+
+**エラー**：400 (`VALIDATION_ERROR`)、422 (`SUCCESSOR_OUT_OF_PROJECT` / `SUCCESSOR_ALREADY_USED` / `CIRCULAR_SUCCESSOR`)。
 
 ---
 
@@ -849,11 +1018,36 @@ Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**す�
 
 **認可**：プロジェクト参加者で、当該 plan の from/to のいずれか（or ディレクター）。
 
-**リクエスト**：`{ title?, scheduledDate?, dueDate?, memo? }`（Phase 0）
+**リクエスト**：`{ title?, category?, scheduledDate?, dueDate?, memo? }`（Phase 0）
 
 **ビジネスルール**：
 - `status === 'completed'` の予定は編集不可（422 `STATE_INVALID`）
 - TOSS 後（`ball_events.event_type='tossed'` 存在）に from/to の変更は不可（422）
+- successor_plan_id の変更は `PATCH .../successor`（後述、v1.1）で別エンドポイント
+
+---
+
+#### `PATCH /api/v1/projects/:projectId/items/:itemId/plans/:planId/successor` （v1.1 新規）
+
+後続予定の紐付け設定／解除（FR-SCH-17）。
+
+**認可**：プロジェクト参加者で、当該 plan の from/to のいずれか（or ディレクター）。
+
+**リクエスト**：
+```typescript
+{ successorPlanId: string | null }    // null で紐付け解除
+```
+
+**処理**：
+1. `successorPlanId` が指定された場合：
+   - 同一プロジェクト内に属するか確認
+   - `UNIQUE` 制約により他 plan の successor になっていないか確認
+   - 循環参照チェック（自己参照は `ck_plans_no_self_successor` で DB 拒否、長い循環はアプリ層）
+2. `plans.successor_plan_id` を更新
+
+**レスポンス（200）**：更新後の plan
+
+**エラー**：404、403、422 (`SUCCESSOR_OUT_OF_PROJECT` / `SUCCESSOR_ALREADY_USED` / `CIRCULAR_SUCCESSOR` / `SELF_SUCCESSOR`)。
 
 ---
 
@@ -865,6 +1059,7 @@ Supabase Auth で signUp / signIn 完了後、FE が **初回呼び出し**す�
 
 **ビジネスルール**：
 - TOSS 後の plan の削除は警告のみ（FE 確認モーダル）
+- **削除対象 plan を successor として参照している先行 plan があれば、その `successor_plan_id` を NULL にセット**（DB の `ON DELETE SET NULL`、v1.1）
 
 ---
 
@@ -877,22 +1072,26 @@ TOSS 実行。
 **認可**：現 Ball Holder ＝ `plans.from_member_id`（TOSS 未実行）かつ JWT ユーザーが当該 member。
 あるいはプロジェクトディレクター（override）。
 
-**リクエスト**：（ボディなし）
+**リクエスト**（v1.1 でカンバン UI からの呼び出しを想定し、to_member 指定をサポート）：
+```typescript
+{ toMemberId?: string }   // 任意。指定された場合は plans.to_member_id を更新してから TOSS。SC-17 カンバンの別メンバー DnD で使用
+```
 
 **処理**（同一トランザクション）：
 1. `plans` を SELECT FOR UPDATE
 2. 状態確認：
    - `status === 'active'` であること
    - 既に `event_type='tossed'` の `ball_events` が存在しないこと（多重 TOSS 防止）
-3. `ball_events` INSERT (`event_type='tossed'`, `actor_member_id=currentMember.id`, `occurred_at=now()`)
-4. `audit_logs` に `action='toss'` を記録
+3. `toMemberId` 指定時：`to_member_id` を更新（同プロジェクト内 member であることを検証）
+4. `ball_events` INSERT (`event_type='tossed'`, `source='human'`, `actor_member_id=currentMember.id`, `actor_user_id=currentUser.id`, `occurred_at=now()`)
+5. `audit_logs` に `action='toss'` を記録
 
 **レスポンス（200）**：
 ```typescript
 {
   data: {
     plan: { /* 更新後の plan、ballHolder は to_member に切替 */ },
-    event: { /* 作成された ball_events */ },
+    event: { /* 作成された ball_events（source 含む） */ },
   }
 }
 ```
@@ -901,23 +1100,43 @@ TOSS 実行。
 - 403 `FORBIDDEN`（権限なし）
 - 409 `ALREADY_TOSSED`（既に TOSS 済み）
 - 422 `PLAN_NOT_ACTIVE`（completed/canceled 状態）
+- 422 `INVALID_TO_MEMBER`（toMemberId が同プロジェクト外）
 
 ---
 
 #### `POST /api/v1/projects/:projectId/items/:itemId/plans/:planId/complete`
 
-予定完了。
+予定完了。**v1.1：`successor_plan_id` が設定されていれば、同一トランザクション内で後続予定に対し system actor の自動 TOSS を実行する**（FR-BALL-13、UC-25）。
 
 **認可**：現 Ball Holder（or ディレクター）。
 
-**処理**：
-1. `plans` を SELECT FOR UPDATE
+**処理**（同一トランザクション）：
+1. `plans[A]` を SELECT FOR UPDATE
 2. 状態確認：`status === 'active'` であること
-3. `ball_events` INSERT (`event_type='completed'`)
-4. `plans.status = 'completed'`、`completed_at = now()` に更新
-5. `audit_logs` に `action='complete'` を記録
+3. `ball_events` INSERT (`plan=A`, `event_type='completed'`, `source='human'`, `actor_member_id=currentMember.id`, `actor_user_id=currentUser.id`)
+4. `plans[A].status = 'completed'`、`completed_at = now()`
+5. **`plans[A].successor_plan_id = B` の場合**：
+   - `plans[B]` を SELECT FOR UPDATE
+   - `B.status === 'active'` なら：
+     - `ball_events` INSERT (`plan=B`, `event_type='tossed'`, `source='auto_chain'`, `actor_member_id=NULL`, `actor_user_id=NULL`)
+     - B の Ball Holder = `B.to_member` に切り替わる（導出ロジックで自動）
+   - `B.status` が 'completed' / 'canceled' なら：スキップ（連鎖中断）
+6. `audit_logs` に `action='complete'`（A）を記録
+7. Phase 1 で `action='auto_toss'`（B）も記録、Phase 0 は最低限のみ
 
-**レスポンス（200）**：plan + event
+**レスポンス（200）**：
+```typescript
+{
+  data: {
+    plan: { /* A の plan、status='completed' */ },
+    event: { /* A の completed event */ },
+    autoTossed?: {                                // v1.1：自動連鎖が起きた場合のみ
+      plan: { /* B の plan、ballHolder は B.to_member */ },
+      event: { /* B の tossed event、source='auto_chain' */ },
+    },
+  }
+}
+```
 
 **エラー**：403、409 `ALREADY_COMPLETED`、422。
 
@@ -1131,7 +1350,8 @@ type Plan = {
 
 type BallEvent = {
   eventType: 'tossed' | 'completed' | 'canceled' | 'returned' | 'retossed';
-  actorMemberId: string;
+  actorMemberId: string | null;       // v1.1：auto_chain では null
+  source: 'human' | 'auto_chain';     // v1.1 追加
 };
 
 type BallHolderResult = {
@@ -1146,8 +1366,11 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | latestEvent | 返り値 |
 |---|---|
 | null | { memberId: plan.fromMemberId, state: 'ready' } |
-| 'tossed' | { memberId: plan.toMemberId, state: 'tossed' } |
+| 'tossed' (source='human') | { memberId: plan.toMemberId, state: 'tossed' } |
+| 'tossed' (source='auto_chain', v1.1) | { memberId: plan.toMemberId, state: 'tossed' } — 自動 TOSS の結果も同じ Ball Holder 切替 |
 | 'completed' | { memberId: plan.toMemberId, state: 'completed' } |
+
+> `source` は導出結果（memberId / state）に影響しない（同じ TOSS イベントとして扱う）。ただし FE の表示で「自動連鎖」アイコンを出すなどには活用できる。
 
 **Phase 1 で拡張**：'returned' / 'retossed' / 'canceled' / shared / solo 対応。テストは状態遷移網羅。
 
@@ -1195,6 +1418,9 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | 9 | 警告の返し方 | **レスポンスボディの `warnings` 配列** | 多件警告・構造化データを乗せやすい、FE 型生成と相性◎ |
 | 10 | 楽観的ロック | **Phase 0 では実装しない（最後勝ち）** | 同一ボール多人数同時編集ケースが少ない。Phase 1 でコメント・差し戻し追加時に再検討 |
 | 11 | URL 階層の表現方針 | **データ上の所有関係を完全に URL に反映**（深さ上限なし） | 認可ミドルウェアの階層チェーン化、未参加リソースの 404 集約、子リソース追加時の素直な配置に有利 |
+| 12 | カンバン DnD の API マッピング（v1.1） | **既存 TOSS / 完了 API に集約**、専用 EP を作らない | UC-26 整合。`POST .../toss { toMemberId }` で別メンバー DnD を表現、状態列 DnD は `complete` / `cancel-toss`（Phase 1）を呼ぶ |
+| 13 | 自動 TOSS 連鎖の実行方式（v1.1） | **complete API 内の同一トランザクション**で連鎖、follow-up job 不採用 | FR-BALL-13 と整合。Phase 0 で Inngest 未導入、トランザクション整合性が最優先。Phase 1 で連鎖長が伸びる場合は再評価 |
+| 14 | OAuth コールバックの方式（v1.1） | **専用 EP（callback）+ Supabase Auth `exchangeCodeForSession`** で確立、`/auth/me/sync` で users 同期 | Supabase Auth の標準コールバック処理を BE 経由で扱うことで PKCE/state 検証を一元化 |
 
 ---
 
@@ -1230,4 +1456,5 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | 2026-05-09 | Draft（たたき台） | §3.10 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §3.10 全10論点を AskUserQuestion で確定（全て推奨案＝たたき台どおり） |
 | 2026-05-09 | **v1.0.1 確定** | URL 階層の表現方針を改訂：「ネスト深さ最大2階層」の縛りを撤回し、データ所有関係を完全に URL に反映する方針へ更新（plans 系・items 詳細・ball actions・Phase 1 系のパスを完全階層化）。§3.10 に論点11として記録。 |
-| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§3.5 Phase 0 必須エンドポイントに Share Links（GET/POST/DELETE）と Share Access（GET /share/:token、POST /share/:token/plans/:planId/{toss,complete}）を追加、§3.6.9〜10 に詳細仕様を新設、§3.4 認可マトリクスに share-link 行を追加、§3.2.3 未認証許容エンドポイントに `/share/:token` を追加、§3.9 から share 関連 4行を削除、§3.11 PRD 整合チェックと Phase 1+ 持ち越しを更新。 |
+| 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§3.5 Phase 0 必須エンドポイントに Share Links（GET/POST/DELETE）と Share Access（GET /share/:token、POST /share/:token/plans/:planId/{toss,complete}）を追加、§3.6.9〜10 に詳細仕様を新設、§3.4 認可マトリクスに share-link 行を追加、§3.2.3 未認証許容エンドポイントに `/share/:token` を追加、§3.9 から share 関連 4行を削除、§3.11 PRD 整合チェックと Phase 1+ 持ち越しを更新。 |
+| 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | OAuth start/callback EP 追加 / complete-signup 追加 / GET /users/me/dashboard 追加 / PATCH .../successor 追加 / POST .../toss に toMemberId 追加 / POST .../complete に自動連鎖追加 / GET .../plans レスポンスに category, successorPlanId, source 追加 / 認可マトリクス更新 / deriveBallHolder の BallEvent に source 追加 / §3.10 論点 12〜14 追加。 |

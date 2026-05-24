@@ -4,8 +4,8 @@
 |---|---|
 | プロダクト名 | TRAKON |
 | 発行元 | 株式会社おさまるカンパニー |
-| ドキュメント版 | **v1.1（非会員URL共有 Phase 0 化）** |
-| 発行日 | 2026-05-09 |
+| ドキュメント版 | **v1.1（非会員URL Phase 0 化 + プロトタイプ反映）** |
+| 発行日 | 2026-05-24 |
 | ステータス | **v1.1 確定**（全6章） |
 | 本書の位置づけ | 基本原則 > PRD > **本基本設計書** > 実装仕様書 |
 | 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) |
@@ -24,7 +24,8 @@
 | v0.5 | 2026-05-09 | 第4章「画面・コンポーネント設計」v1.0 確定（Data Router + TQ集約 / RHF+zodResolver / date-fns / Lucide / **モーダルはURL同期** / CSS Grid 縦型カレンダー / 楽観更新 Phase 0 から / 祝日 FE直接 / accent 仮確定 / i18n はjaのみ集約）。Phase 0 必須画面 SC-01,02,03,04,06,07,08,10,11 を §4.4 で詳細化、Ball Holder 楽観更新責務を §4.7 で定義。 | — |
 | v0.6 | 2026-05-09 | 第5章「セキュリティ実装設計」v1.0 確定（FE トークン localStorage + CSP厳格化 / Resend 自前送信 / パスワード Phase 0 8文字英数記号、HIBP は Phase 1 / ロックアウト Phase 1 / レート制限 Phase 1 / CSP は Phase 0 unsafe-inline 許容 / 監査ログは同期トランザクション / サインイン失敗は区別なし / 規約は同意チェックのみ / Sentry は PII scrub）。多層防御 7層・OWASP Top 10 対策・招待トークン自前管理を §5.3〜§5.7 で定義。 | — |
 | v1.0 | 2026-05-09 | 第6章「インフラ・デプロイ・運用」v1.0 確定（dev+prod 2環境 / Supabase CLI ローカル / 仮ドメイン → 商用前に本確定 / Sentry 1プロジェクト + env タグ / Phase 0 はレビュースキップ可 / 復元テスト Phase 1 から / ログは既定保管 + audit_logs のみ DB 長期 / Better Stack Uptime / app_user + app_migrator 分離 / **Production デプロイは GitHub Release 公開がトリガ**）。全6章 v1.0 確定により基本設計書 v1.0 完成。 | — |
-| v1.1 | 2026-05-09 | PRD v1.3 改訂（非会員URL共有を Phase 1 → Phase 0 へ前倒し）に追従。FR-SHARE-01〜06、SR-AUTH-08、UC-23、SC-16、`share_links` テーブルを Phase 0 スコープに取り込み、第1〜6章の Phase 区切り・テーブル定義・エンドポイント一覧・画面ツリー・認可ガード・監査ログ記録対象を更新。組織レベル統制（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09、`organizations` / `organization_settings`）は Phase 2 維持。 | — |
+| v1.1a | 2026-05-09 | **PRD v1.3 改訂（非会員URL共有を Phase 1 → Phase 0 へ前倒し）に追従**。FR-SHARE-01〜06、SR-AUTH-08、UC-23、SC-16、`share_links` テーブルを Phase 0 スコープに取り込み、第1〜6章の Phase 区切り・テーブル定義・エンドポイント一覧・画面ツリー・認可ガード・監査ログ記録対象を更新。組織レベル統制（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09、`organizations` / `organization_settings`）は Phase 2 維持。 | — |
+| v1.1b | 2026-05-24 | **Figma Make プロトタイプ反映による全章改訂**。① Google/Microsoft OAuth（FR-AUTH-10、Phase 0 から）／② 新規登録項目拡充（full_name + display_name、Magic-link 風サインアップ、FR-AUTH-11）／③ 後続紐付け自動 TOSS（plans.successor_plan_id、FR-SCH-17、FR-BALL-13、UC-25）／④ ダッシュボード階層ビュー（プロジェクト×メンバー×今日、SC-09 改訂、Phase 0 へ繰り上げ）／⑤ カテゴリ必須（plans.category 6値、FR-SCH-18）／⑥ メンバーかんばん SC-17 新規（DnD = TOSS、UC-26）／⑦ oauth_identities テーブル新規。PRD v1.3、02-database v1.1、03-api v1.1、04-frontend v1.1、05-security v1.1、06-infrastructure v1.1 を同期反映。v1.1a と統合し **v1.1 として確定**。 | — |
 
 ---
 
@@ -36,9 +37,9 @@ PRD で「**何を・誰に・なぜ作るか**」が確定した内容を、**�
 ┌──────────────────────────────────────────┐
 │  TRAKON 基本原則 v1.0（思想・判断基準の最上位）│
 ├──────────────────────────────────────────┤
-│  TRAKON PRD v1.3（要件定義）                │
+│  TRAKON PRD v1.3（要件定義：非会員URL前倒し + プロトタイプ反映）│
 ├──────────────────────────────────────────┤
-│  TRAKON 基本設計書（本書）                   │ ← ココ
+│  TRAKON 基本設計書 v1.1（本書）              │ ← ココ
 │   - 構成・スタック・スキーマ・API・画面・運用 │
 ├──────────────────────────────────────────┤
 │  実装仕様書 ／ コードベース                  │
@@ -66,12 +67,12 @@ PRD で「**何を・誰に・なぜ作るか**」が確定した内容を、**�
 | 順 | ファイル | 領域 | ステータス |
 |---|---|---|---|
 | 0 | [00-index.md](00-index.md) | 全章のINDEX・改訂履歴・前提整理 | Draft（随時更新） |
-| 1 | [01-architecture.md](01-architecture.md) | システム構成・スタック詳細・拡張戦略 | **v1.1 確定（2026-05-09）** |
-| 2 | [02-database.md](02-database.md) | テーブル定義・制約・インデックス・マイグレーション | **v1.1 確定（2026-05-09）** |
-| 3 | [03-api.md](03-api.md) | REST エンドポイント・OpenAPI・認可ガード・エラーモデル | **v1.1 確定（2026-05-09）** |
-| 4 | [04-frontend.md](04-frontend.md) | 画面ツリー・ルーティング・状態管理・モーダル制御 | **v1.1 確定（2026-05-09）** |
-| 5 | [05-security.md](05-security.md) | 認証・認可・監査・添付・XSS/CSRF・トークン管理 | **v1.1 確定（2026-05-09）** |
-| 6 | [06-infrastructure.md](06-infrastructure.md) | Vercel/Supabase 構成・環境分離・CI/CD・バックアップ・監視 | **v1.1 確定（2026-05-09）** |
+| 1 | [01-architecture.md](01-architecture.md) | システム構成・スタック詳細・拡張戦略 | **v1.0 確定（2026-05-09）** ※v1.1 で変更なし |
+| 2 | [02-database.md](02-database.md) | テーブル定義・制約・インデックス・マイグレーション | **v1.1 確定（2026-05-24）** |
+| 3 | [03-api.md](03-api.md) | REST エンドポイント・OpenAPI・認可ガード・エラーモデル | **v1.1 確定（2026-05-24）** |
+| 4 | [04-frontend.md](04-frontend.md) | 画面ツリー・ルーティング・状態管理・モーダル制御 | **v1.1 確定（2026-05-24）** |
+| 5 | [05-security.md](05-security.md) | 認証・認可・監査・添付・XSS/CSRF・トークン管理 | **v1.1 確定（2026-05-24）** |
+| 6 | [06-infrastructure.md](06-infrastructure.md) | Vercel/Supabase 構成・環境分離・CI/CD・バックアップ・監視 | **v1.1 確定（2026-05-24）** |
 
 > ステータス凡例：未着手 / Draft（たたき台） / Review中 / **v1.x 確定** / Phase 1 拡張
 
@@ -91,3 +92,18 @@ PRD で「**何を・誰に・なぜ作るか**」が確定した内容を、**�
 ## 用語
 
 PRD §1.3 と §13.3 を参照。本書で新たに定義する用語は各章の冒頭で明示する。
+
+### v1.1 で整理した用語（プロトタイプ反映に伴う追加・統一）
+
+| 用語 | 採用方針 | 注意 |
+|---|---|---|
+| 予定 / Plan / Ball / Task | **「予定（plan）」が物理テーブル名・正規用語、「ボール」は責任の概念**として両者を併用。**「タスク」はプロトタイプ UI 用語で、設計書では「予定」に統一**（PRD v1.3 §1.3 用語集に明記） | プロトタイプの「today's task」は本設計書では「今日の予定」と読み替え |
+| 制作物 / 納品物 / item / deliverable | **「制作物（project_items）」を物理／設計用語として維持**、URL も `/items/` 維持。プロトタイプの「deliverable」は画面表示文言レベルの言い換え | データモデル・API は変更なし。画面表示は「制作物」/「納品物」の選択肢があるが、Phase 0 は「制作物」で統一 |
+| メンバー | プロジェクト参加者（`project_members`）の通称、横軸／カンバン列の単位 | ユーザー（`users`）とは区別（メンバーは特定プロジェクト内、ユーザーは横断アカウント） |
+| カテゴリ | 予定の作業種別（`plans.category`、6 値 CHECK） | wireframe / design / coding / review / meeting / other |
+| 後続紐付け | 1 つの予定（先行）に対し 1 つの後続予定を紐付ける関係（`plans.successor_plan_id`、1対1、UNIQUE） | 先行完了で後続を **system actor の自動 TOSS** で受領状態に遷移（FR-BALL-13、UC-25） |
+| Magic-link サインアップ | メール先行 → 認証リンク押下 → 詳細入力 → 自動ログインの2段階フロー | UC-01 改訂、SC-01 で 7 状態統合 |
+| OAuth | Google / Microsoft の外部 ID 連携。Phase 0 から提供 | 同一メール 1 認証手段制約（FR-AUTH-12） |
+| メンバーかんばん | プロジェクト参加メンバーごとの予定を状態別かんばんで表示（SC-17、`/projects/:projectId/members`） | DnD で TOSS / 完了。SC-11 参加者管理とは別タブで併設 |
+
+> **本書の判断**：用語の物理レイヤー（DB・API・コード）は **既存命名を維持**し、画面表示文言は柔軟に運用。プロトタイプとの命名差分は実装時の翻訳テーブル（`packages/shared/i18n/messages.ja.ts`）で吸収する。

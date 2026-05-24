@@ -3,10 +3,10 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 04 |
-| ステータス | **v1.0 確定** |
-| 確定日 | 2026-05-09 |
-| 上位ドキュメント | [TRAKON PRD v1.2](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [03-api.md](03-api.md) |
-| 主参照 PRD 節 | §7（SC-01〜SC-16）／§4.4（UXR）／§13.1（画面遷移図）／§2.6（3層構造）／NFR-UX-01〜03、NFR-A11Y-01、NFR-MOBILE-01 |
+| ステータス | **v1.1 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
+| 確定日 | 2026-05-24 |
+| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [03-api.md](03-api.md) |
+| 主参照 PRD 節 | §7（SC-01〜SC-17、v1.3 で SC-09 改訂・SC-17 新規）／§4.1.1（FR-AUTH-10〜12）／§4.1.4（FR-SCH-17, 18）／§4.1.7（FR-DASH 改訂）／§4.4（UXR）／§13.1（画面遷移図）／§2.6（3層構造）／NFR-UX-01〜03、NFR-A11Y-01、NFR-MOBILE-01 |
 
 ---
 
@@ -153,40 +153,45 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 
 ## 4.3. ルーティングと画面ツリー
 
-### 4.3.1. URL 構造（Phase 0）
+### 4.3.1. URL 構造（Phase 0、v1.1 更新）
 
 | URL | 画面 | 認証 | コンポーネント |
 |---|---|:---:|---|
-| `/login` | SC-01 ログイン | ❌ | `LoginPage` |
-| `/signup` | SC-01 サインアップ | ❌ | `SignupPage` |
-| `/forgot-password` | SC-01 パスワード再発行（要求） | ❌ | `ForgotPasswordPage` |
+| `/login` | SC-01 ログイン（**7 状態統合：login / signup / email-sent / create-account / password-reset-*** ） | ❌ | `LoginPage` |
 | `/invitations/:token` | SC-02 招待受諾 | ❌ | `InvitationAcceptPage` |
-| `/share/:token` | 非会員URL閲覧（プロジェクト／制作物／ボール スコープ） | ❌ | `GuestSharePage` |
-| `/` | ルート（→ `/projects` にリダイレクト） | ✅ | — |
+| `/share/:token` **(v1.1 非会員URL前倒し)** | 非会員URL閲覧（プロジェクト／制作物／ボール スコープ） | ❌ | `GuestSharePage` |
+| `/auth/oauth/:provider/callback` **(v1.1 プロトタイプ反映)** | OAuth コールバック | ❌ | `OAuthCallbackPage`（最小、`POST /auth/oauth/:provider/callback` → `/auth/me/sync` → ダッシュボード遷移） |
+| `/` | ルート（→ **`/dashboard`** にリダイレクト、v1.1 で変更） | ✅ | — |
+| **`/dashboard`** **(v1.1 Phase 0 必須)** | **SC-09 ダッシュボード（階層ビュー、ログイン直後の起点）** | ✅ | **`DashboardPage`** |
 | `/projects` | SC-03 プロジェクト一覧 | ✅ | `ProjectListPage` |
 | `/projects/new` | SC-04 プロジェクト新規作成 | ✅ | `ProjectNewPage` |
-| `/projects/:projectId` | SC-06 各制作物画面（プロジェクト直下、最初の制作物にリダイレクト） | ✅ | `ProjectShellPage` |
+| `/projects/:projectId` | プロジェクト直下、最初の制作物にリダイレクト | ✅ | `ProjectShellPage` |
 | `/projects/:projectId/items/:itemId` | SC-06 各制作物画面（縦型スケジュール） | ✅ | `ItemSchedulePage` |
 | `/projects/:projectId/edit` | SC-10 プロジェクト編集 | ✅ | `ProjectEditPage` |
-| `/projects/:projectId/members` | SC-11 参加者管理 | ✅ | `ProjectMembersPage` |
-| `/projects/:projectId/share-links` | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（ディレクターのみ） |
+| **`/projects/:projectId/members`** **(v1.1 役割変更)** | **SC-17 メンバーかんばん（既定）／SC-11 参加者管理（タブで切替）** | ✅ | **`MemberKanbanPage`**（タブで `ProjectMembersManagePage` に切替） |
+| `/projects/:projectId/members?tab=manage` **(v1.1)** | SC-11 参加者管理 | ✅ | `ProjectMembersManagePage` |
+| `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（ディレクターのみ） |
 | `/account` | アカウント基本情報 | ✅ | `AccountPage`（最小） |
 | `*` | 404 | — | `NotFoundPage` |
 
-> Phase 1 で予約（URL は確保するが Phase 0 では空 or リダイレクト）：`/dashboard`（SC-09）。
+> Phase 1 で予約：ダッシュボードの「進行判定フィルター」タブ（FR-DASH-08）。
+>
+> **v1.1 ルーティング方針変更点（プロトタイプ反映）**：① SC-01 ログイン関連 7 状態を **`/login` に統合**（プロトタイプ仕様、`useSearchParams` で screen 切替）／② `/dashboard` を **Phase 0 必須化** し、`/` リダイレクト先を変更／③ `/projects/:projectId/members` の既定タブを **メンバーかんばん（SC-17）** に変更、SC-11 参加者管理は `?tab=manage` で切替。
+>
+> **v1.1 ルーティング方針変更点（非会員URL前倒し）**：④ `/share/:token` を Phase 0 公開ルートに追加／⑤ `/projects/:projectId/share-links` を Phase 0 ディレクター画面として追加。
 
-### 4.3.2. ルートツリー
+### 4.3.2. ルートツリー（v1.1 更新）
 
 ```
 RootLayout（グローバルヘッダー）
 ├── 公開ルート
-│   ├── /login → LoginPage
-│   ├── /signup → SignupPage
-│   ├── /forgot-password → ForgotPasswordPage
+│   ├── /login → LoginPage（7 状態統合：useSearchParams で切替）
 │   ├── /invitations/:token → InvitationAcceptPage
-│   └── /share/:token → GuestSharePage（非会員URL閲覧／FR-SHARE、Phase 0）
+│   ├── /share/:token → GuestSharePage（非会員URL閲覧／FR-SHARE、Phase 0）
+│   └── /auth/oauth/:provider/callback → OAuthCallbackPage（v1.1 プロトタイプ反映）
 ├── 認証必須ルート（<RequireAuth>）
-│   ├── / → Navigate to /projects
+│   ├── / → Navigate to /dashboard
+│   ├── /dashboard → SidebarLayout + DashboardPage（v1.1 Phase 0 必須）
 │   ├── /projects → ProjectListPage
 │   ├── /projects/new → ProjectNewPage
 │   ├── /projects/:projectId
@@ -194,32 +199,36 @@ RootLayout（グローバルヘッダー）
 │   │   ├── index → ProjectShellPage（最初の item へ Navigate）
 │   │   ├── /items/:itemId → ItemSchedulePage（SC-06）
 │   │   ├── /edit → ProjectEditPage（SC-10）
-│   │   ├── /members → ProjectMembersPage（SC-11）
-│   │   └── /share-links → ShareLinkAdminPage（SC-16、ディレクターのみ）
+│   │   ├── /members → MemberKanbanPage（SC-17 既定）or ProjectMembersManagePage（?tab=manage、SC-11）
+│   │   └── /share-links → ShareLinkAdminPage（SC-16、ディレクターのみ、v1.1 非会員URL前倒し）
 │   └── /account → AccountPage
 └── * → NotFoundPage
 ```
 
-### 4.3.3. 画面遷移図（Phase 0、PRD §13.1 の Phase 0 抜粋版）
+### 4.3.3. 画面遷移図（Phase 0、v1.1 更新）
 
 ```mermaid
 flowchart LR
-    Login[SC-01 ログイン] --> ProjectList[SC-03 プロジェクト一覧]
-    Signup[SC-01 サインアップ] --> ProjectList
-    Invitation[SC-02 招待受諾] -. 受諾 .-> Login
-    Login -. パスワード再発行 .-> Forgot[SC-01 パスワード再発行]
+    Login[SC-01 ログイン<br/>7状態統合] --> Dashboard[SC-09 ダッシュボード<br/>v1.1 Phase 0]
+    Login -. OAuth .-> OAuthCb[/auth/oauth/:p/callback] --> Dashboard
+    Invitation[SC-02 招待受諾] -. 受諾 .-> Dashboard
+    Dashboard --> ItemSchedule[SC-06 制作物画面]
+    Dashboard --> ProjectList[SC-03 プロジェクト一覧]
     ProjectList --> ProjectNew[SC-04 プロジェクト新規作成]
-    ProjectList --> ItemSchedule[SC-06 制作物画面]
+    ProjectList --> ItemSchedule
     ProjectNew --> ItemSchedule
-    ItemSchedule --> PlanCreate[SC-07 予定作成モーダル]
+    ItemSchedule --> PlanCreate[SC-07 予定作成モーダル<br/>カテゴリ+次の予定]
     ItemSchedule --> BallDetail[SC-08 ボール詳細モーダル]
     ItemSchedule --> ProjectEdit[SC-10 プロジェクト編集]
-    ProjectEdit --> Members[SC-11 参加者管理]
-    ProjectEdit --> ShareAdmin[SC-16 非会員URL 発行・管理]
+    ItemSchedule --> MemberKanban[SC-17 メンバーかんばん<br/>v1.1 新規]
+    ProjectEdit --> Members[SC-11 参加者管理<br/>?tab=manage]
+    MemberKanban -. タブ切替 .-> Members
+    ProjectEdit --> ShareAdmin[SC-16 非会員URL 発行・管理<br/>v1.1 Phase 0 前倒し]
     ShareAdmin -.発行.-> GuestEntry[非会員URL]
     GuestEntry --> GuestShare[GuestSharePage<br/>非会員URL閲覧]
     GuestShare -. TOSS／完了／差し戻し .-> GuestShare
-    BallDetail -. TOSS／完了 .-> ItemSchedule
+    BallDetail -. TOSS/完了 .-> ItemSchedule
+    MemberKanban -. DnD=TOSS/完了 .-> MemberKanban
 ```
 
 ---
@@ -228,31 +237,74 @@ flowchart LR
 
 > 各画面は次の節構成：**目的／URL／表示項目／状態（ローディング・エラー・空・成功）／API 呼び出し／インタラクション／エッジケース**。
 
-### 4.4.1. SC-01 ログイン（`/login`）
+### 4.4.1. SC-01 ログイン（`/login`、v1.1 改訂：Magic-link + OAuth、7 状態統合）
 
-**目的**：既存ユーザーのログイン（FR-AUTH-01）。
+**目的**：既存ユーザーのログイン／新規サインアップ／パスワード再発行／OAuth サインイン（FR-AUTH-01, 10, 11, 12）。
 
-**表示項目**（PRD §7 SC-01）：
+**画面状態（7 ステップ統合、`useSearchParams` で screen を切替）**：
+`login` / `signup` / `email-sent` / `create-account` / `password-reset-request` / `password-reset-email-sent` / `password-reset` / `password-reset-complete`
+
+#### `login` 画面の表示項目
+
 - メールアドレス（Email、必須）
 - パスワード（Password、必須）
-- 「ログイン」ボタン
-- 「アカウントを作成」リンク → `/signup`
-- 「パスワードを忘れた」リンク → `/forgot-password`
+- 「ログイン状態を保存する」チェックボックス
+- 「ログイン →」ボタン
+- 「パスワードをお忘れですか？」リンク → `screen=password-reset-request`
+- **「または」区切り線下に：「Google で続ける」「Microsoft で続ける」ボタン**（v1.1、FR-AUTH-10）
+- 「アカウントをお持ちでない方は新規登録」リンク → `screen=signup`
 
-**処理**：
+#### `signup` 画面（Magic-link 開始）
+
+- メールアドレスのみ入力 → 「はじめる →」
+- **OAuth ボタン（Google / Microsoft）**
+- 利用規約・プライバシー同意文言（明示の同意チェックボックスなし、ボタン押下で同意とみなす）
+
+#### `email-sent` 画面
+
+- メール送信完了表示
+- 再送ボタン（60 秒カウントダウン）
+- （開発用：直接 `screen=create-account` に進めるデバッグボタン）
+
+#### `create-account` 画面（メール認証リンク押下後）
+
+- メールアドレス（読取専用）
+- **お名前（full_name）**（必須、1〜100文字、v1.1、FR-AUTH-11）
+- **ユーザー名／表示名（display_name）**（必須、1〜50文字、v1.1、FR-AUTH-11）
+- パスワード（必須、8文字以上）
+- パスワード（確認、必須）
+- 「プロジェクト作成 →」ボタン
+
+#### `password-reset-*` 画面群
+
+- パスワード再発行フロー（4 状態：request / email-sent / new-password / complete）
+
+#### 処理フロー
+
+**login（メール+パスワード）**：
 1. submit → Supabase Auth `signInWithPassword`
-2. 成功時：
-   - `POST /api/v1/auth/me/sync`（章3 §3.6.2）
-   - `next` クエリパラメータがあればそこへ、なければ `/projects` にリダイレクト
-3. 失敗時：エラーカード表示（メール／パスワード違いは同一文言「メールアドレスまたはパスワードが正しくありません」でユーザー存在を漏らさない）
+2. 成功 → `POST /api/v1/auth/me/sync` → `next` クエリ or `/dashboard` へ
+3. 失敗 → 同一文言エラー（メール／パスワード違い区別なし）
 
-**エッジケース**：
+**signup（Magic-link）**：
+1. メール入力 → Supabase Auth `signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: APP_URL/login } })`
+2. `screen=email-sent` へ
+3. ユーザーがメールリンク押下 → `/login?token=...&type=signup` で戻る
+4. `verifyOtp(token)` → セッション確立 → `screen=create-account` へ
+5. 詳細入力 → `POST /api/v1/auth/me/complete-signup { fullName, displayName, password }` → `/dashboard` へ
+
+**OAuth**：
+1. 「Google で続ける」押下 → `POST /api/v1/auth/oauth/google/start` → returned `authorizeUrl` へ遷移
+2. プロバイダ同意 → `/auth/oauth/google/callback?code=...&state=...` に戻る
+3. FE が `POST /api/v1/auth/oauth/google/callback` → セッション確立
+4. `POST /api/v1/auth/me/sync` → users 行作成（同一メール別 provider なら 409 SAME_EMAIL_DIFFERENT_PROVIDER 表示）
+5. **requiresProfileCompletion = true なら** `screen=create-account` で display_name 設定（OAuth から full_name は取得済み）→ `/dashboard` へ
+
+#### エッジケース
+
 - メール未認証：「メール認証が完了していません。」+ 再送ボタン
 - ロックアウト（PRD SR-AUTH-04）：詳細は章5
-
-**サインアップ画面（`/signup`）**：
-- 表示項目：メール／パスワード／パスワード再入力／表示名／利用規約同意
-- 処理：Supabase Auth `signUp` → 仮登録完了画面（メール認証案内）
+- **同一メール別認証手段**（v1.1）：「このメールアドレスは Google 認証で登録済みです。Google で続けてください。」と本来の認証手段を案内
 
 ---
 
@@ -424,17 +476,19 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 **起動**：SC-06 の日付セルクリックで開く。`openModal('create-plan', { date: 'YYYY-MM-DD' })` → URL が `?modal=create-plan&date=2026-05-15` に更新される。
 
-**表示項目（Phase 0、TOSS のみ）**：
+**表示項目（Phase 0、TOSS のみ、v1.1 でカテゴリ・後続追加）**：
 
 | 項目 | 型 | 必須 | 補足 |
 |---|---|:---:|---|
 | 予定種別 | Radio | × | Phase 0 は「TOSS予定」固定表示・選択不要（Phase 1 で3種選択） |
 | 予定名 | Text | ✅ | 1〜255 文字 |
+| **カテゴリ** | **Select** | **✅** | **6種固定（wireframe / design / coding / review / meeting / other、v1.1、FR-SCH-18）** |
 | FROM | Select | ✅ | プロジェクト参加メンバーから |
 | TO | Select | ✅ | FROM と異なる必須 |
-| 予定日 | Date | ✅ | 起動時の日付がプリセット |
-| 期日 | Date | × | 任意 |
-| メモ | Textarea | × | 任意 |
+| 開始日（旧 予定日） | Date | ✅ | 起動時の日付がプリセット（プロトタイプに合わせ「開始日」表記） |
+| 終了日 | Date | ✅ | 開始日以降。プロトタイプでは必須扱い |
+| **次の予定** | **Select** | **×** | **任意。同制作物の他予定から選択、`successor_plan_id` に設定（v1.1、FR-SCH-17）**。空欄なら紐付けなし。説明文「TOSS 完了時に自動的に次の予定が開始されます」 |
+| メモ | Textarea | × | 任意（プロトタイプには未実装、Phase 0 で追加検討） |
 
 **フォーム実装**：
 - React Hook Form + Zod（`packages/shared/schemas/plans.ts` を流用）
@@ -530,12 +584,15 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 ---
 
-### 4.4.9. SC-11 参加者管理（`/projects/:projectId/members`）
+### 4.4.9. SC-11 参加者管理（`/projects/:projectId/members?tab=manage`、v1.1：SC-17 と URL を共有しタブ分離）
 
 **目的**：参加者の追加／編集／削除（FR-AUTH-07〜09）。
 
+**URL**：`/projects/:projectId/members?tab=manage`（SC-17 メンバーかんばんと同 URL、タブで切替）
+
 **表示項目（PRD SC-11）**：
-- テーブル：名前／所属名／メール／種別／sortOrder／受諾状態（accepted/pending/expired）／操作
+- 上部タブ：「**メンバー**」（既定、SC-17 メンバーかんばん）／「**管理**」（SC-11 本画面）
+- テーブル：名前／所属名／メール／種別（client/production）／sortOrder／受諾状態（accepted/pending/expired）／操作
 - ソートハンドルで `sortOrder` 変更（ドラッグ＆ドロップ、Phase 0）
 - 「+ 参加者を追加」ボタン → モーダル
 
@@ -547,7 +604,144 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 ---
 
-### 4.4.10. SC-16 非会員URL 発行・管理（`/projects/:projectId/share-links`）
+### 4.4.10. SC-09 ダッシュボード（`/dashboard`、v1.1 改訂：階層ビュー、Phase 0 必須）
+
+**目的**：ログイン直後の起点画面として、自分が見られる全プロジェクトの「今日のタスク」を俯瞰（FR-DASH-01〜09、UC-13）。
+
+**URL**：`/dashboard`
+
+**画面構成**：
+
+```
+┌────────────────────────────────────────────────┐
+│ ダッシュボード（今日 yyyy/m/d）                  │
+├────────────┬────────────────────────────────┤
+│ 今日のタスク │ 期限超過                       │
+│   42        │   3                             │
+├────────────┴────────────────────────────────┤
+│ 🔵 ECサイトリニューアル (12件)                  │
+│   👤 田中 太郎 (3件)                           │
+│     [予定カード wireframe] [予定カード design]  │
+│   👤 佐藤 花子 (5件)                           │
+│     [予定カード design]    [予定カード review] │
+│ 🟢 コーポレートサイト制作 (5件)                 │
+│   ...                                          │
+└────────────────────────────────────────────────┘
+```
+
+**主要コンポーネント**：
+
+| コンポーネント | 責務 |
+|---|---|
+| `DashboardSummaryCards` | 上部 2 サマリーカード（今日のタスク数 / 期限超過数） |
+| `DashboardProjectGroup` | プロジェクトドット + 名前 + ヘッダー、配下メンバーセクション |
+| `DashboardMemberSection` | メンバーアバター + 名前 + 配下予定カードグリッド |
+| `DashboardTaskCard` | 予定カード（カテゴリ色、期限超過時赤系）。クリックで SC-06 へ遷移 |
+
+**表示項目**：
+
+| セクション | 内容 |
+|---|---|
+| ヘッダー | 「ダッシュボード」+ 「今日（yyyy/m/d）のプロジェクトとメンバーの状況」 |
+| サマリー | 「今日のタスク」総数 + 「期限超過」数（赤系） |
+| プロジェクトグループ | プロジェクトカラードット + 名前 + (件数) |
+| メンバーセクション | アバター（イニシャル）+ 名前 + (件数) |
+| 予定カード | 予定名 + 制作物名 + 期間（yyyy/m/d 〜 yyyy/m/d）、カテゴリ色背景、期限超過時赤背景 |
+| 空状態 | 「今日のタスクはありません」 |
+
+**API**：`GET /api/v1/users/me/dashboard`
+
+**インタラクション**：
+- 予定カードクリック → `navigate('/projects/:projectId/items/:itemId', { state: { scrollToBallId: planId } })`
+- 該当制作物画面（SC-06）でハイライト + 該当位置へスクロール
+
+**カテゴリ色マップ**（章 4.9 デザイントークンに統合）：
+
+| カテゴリ | 背景 | 枠線 |
+|---|---|---|
+| wireframe | purple-50 | purple-300 |
+| design | blue-50 | blue-300 |
+| coding | green-50 | green-300 |
+| review | orange-50 | orange-300 |
+| meeting | yellow-50 | yellow-300 |
+| other | gray-50 | gray-300 |
+| **期限超過** | **red-50** | **red-400** |
+
+**Phase 1 拡張**：
+- 「進行判定フィルター」タブ（平常／要確認／遅延の3カラム、FR-DASH-08）
+- メンバー指定の絞り込み・検索（FR-DASH-09, 10）
+
+---
+
+### 4.4.11. SC-17 メンバーかんばん（`/projects/:projectId/members`、v1.1 新規、Phase 0 必須）
+
+**目的**：プロジェクト参加メンバーごとに、担当している予定を準備中／TOSS済／完了の状態で並べたかんばんビュー。DnD で TOSS・完了を実行（UC-26、FR-BALL-02, 03, 08, 11）。
+
+**URL**：`/projects/:projectId/members`（既定タブ、SC-11 参加者管理は `?tab=manage` で切替）
+
+**画面構成**：
+
+```
+┌────────────────────────────────────────────────┐
+│ プロジェクト名 | [メンバー][管理]タブ            │
+├──────────┬──────────┬──────────┬──────────┤
+│ 状態＼担当  │ 田中 太郎 │ 佐藤 花子 │ 鈴木 次郎 │
+├──────────┼──────────┼──────────┼──────────┤
+│ 準備中     │ [card][card]│         │ [card]    │
+├──────────┼──────────┼──────────┼──────────┤
+│ TOSS済    │ [card]     │ [card]   │           │
+├──────────┼──────────┼──────────┼──────────┤
+│ 完了      │ [card]     │ [card]   │ [card]    │
+└──────────┴──────────┴──────────┴──────────┘
+```
+
+**主要コンポーネント**：
+
+| コンポーネント | 責務 |
+|---|---|
+| `MemberKanbanGrid` | グリッドレイアウト（CSS Grid：縦軸=状態、横軸=メンバー） |
+| `KanbanColumn` | 状態×メンバーのセル（DnD ドロップターゲット） |
+| `KanbanCard` | 予定カード（DnD ドラッグソース）、カテゴリ色 |
+| `MemberColumnHeader` | メンバーヘッダー（クライアント／制作グルーピング） |
+
+**DnD ライブラリ**：react-dnd（プロトタイプと同じ）
+
+**DnD 操作のドメインマッピング**（章 §4.7.4 と整合）：
+
+| DnD 操作 | API 呼び出し | event_type |
+|---|---|---|
+| メンバー A 列 → メンバー B 列（同状態） | `POST .../plans/:planId/toss { toMemberId: B }` | tossed (source='human') |
+| 準備中 → TOSS済（同メンバー、自分 = currentMember） | `POST .../plans/:planId/toss { toMemberId: currentMemberId }` | 同上 |
+| TOSS済 → 完了（同メンバー） | `POST .../plans/:planId/complete` | completed (source='human') |
+| 完了 → TOSS済（Phase 1 取消） | `POST .../plans/:planId/cancel-toss` | canceled |
+| メンバー＋状態を同時に動かす | 2 つの API を順次（FE 側で sequential mutation） | 各イベント |
+
+**認可・エラー処理**：
+- すべての DnD 操作は既存 API のミドルウェアで認可される（Ball Holder でない／状態遷移不可なら 403/422）
+- 失敗時：トースト「操作できませんでした：{エラーメッセージ}」+ カード位置を元に戻す（楽観更新ロールバック）
+
+**楽観更新**：
+- DnD でドロップした瞬間にカードを新位置に移動（`setQueryData`）
+- API 成功で確定、失敗で元に戻す（§4.7 と整合）
+
+**API**：
+- 一覧：`GET /api/v1/projects/:projectId/items/{各itemId}/plans` を全制作物分まとめて取得（or 専用 EP `/projects/:projectId/plans` を Phase 1 で検討）
+- 各 DnD：上記マッピング表参照
+
+**空状態**：「このプロジェクトには予定がまだありません」 + 「最初の予定を作成」リンク → SC-06 への導線
+
+**A11Y**：
+- DnD は **キーボード操作（矢印キー）** にも対応（react-dnd の HTML5Backend + KeyboardBackend）
+- カード移動時に `aria-live="polite"` で読み上げ「{予定名} を {新メンバー} に TOSS しました」
+
+**議論ポイント（§4.10）**：
+- カンバンでメンバー多数時の UX（横スクロール vs グルーピング）
+- 自己 TOSS（同一メンバー列内の状態移動）の API 表現
+- 状態カラム名の表示文言（「準備中」「TOSS済」「完了」が PRD ボール状態名と一致するか確認）
+
+---
+
+### 4.4.12. SC-16 非会員URL 発行・管理（`/projects/:projectId/share-links`、v1.1 非会員URL前倒し）
 
 **目的**：クライアント向けの非会員URLの発行・有効期限管理・個別失効・アクセスログ確認（FR-SHARE-01〜04、UC-23）。
 
@@ -575,7 +769,7 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 ---
 
-### 4.4.11. 非会員URL 閲覧画面（`/share/:token`）
+### 4.4.13. 非会員URL 閲覧画面（`/share/:token`、v1.1 非会員URL前倒し）
 
 **目的**：非会員URL閲覧者（クライアント）が、共有スコープに応じてプロジェクト・制作物・ボールを閲覧し、自分が Ball Holder のボールに対して TOSS／完了／差し戻しを実行する（FR-SHARE-05、UC-23、SR-AUTHZ-02）。
 
@@ -702,7 +896,7 @@ const tossMutation = useMutation({
     const previous = queryClient.getQueryData(planKey);
     queryClient.setQueryData(planKey, (old) => {
       // 章3 §3.8 の deriveBallHolder を共通関数として呼び出す
-      const optimisticEvent = { eventType: 'tossed', actorMemberId: currentMember.id };
+      const optimisticEvent = { eventType: 'tossed', actorMemberId: currentMember.id, source: 'human' };  // v1.1 source 追加
       const newHolder = deriveBallHolder(old.plan, optimisticEvent);
       return { ...old, plan: { ...old.plan, ballHolder: newHolder, ballState: 'tossed' } };
     });
@@ -727,7 +921,75 @@ const tossMutation = useMutation({
 
 これにより、**FE と BE で同じロジックが Ball Holder を導出**するため、楽観更新の表示と API 確定後の表示が一致する。
 
-### 4.7.3. 競合した場合（API が 409 等を返した場合）
+### 4.7.3a. 自動 TOSS 連鎖（auto_chain）の楽観更新（v1.1 新規）
+
+`complete` API は v1.1 で **successor_plan_id が設定されていれば同一トランザクションで後続自動 TOSS を実行**（章3 §3.6.8、UC-25、FR-BALL-13）。レスポンスに `autoTossed: { plan, event }` が含まれる。
+
+FE の `useCompleteMutation` は以下のように扱う：
+
+```typescript
+const completeMutation = useMutation({
+  mutationFn: () => api.complete({ projectId, itemId, planId }),
+  onMutate: async () => {
+    // 自分の plan を completed に楽観更新
+    queryClient.setQueryData(planKey, (old) => /* ... ballState: 'completed' */);
+    // 後続 plan のキャッシュも先読みで更新（plan.successorPlanId があれば）
+    if (currentPlan.successorPlanId) {
+      const successorKey = ['projects', projectId, 'items', itemId, 'plans', currentPlan.successorPlanId];
+      queryClient.setQueryData(successorKey, (old) => {
+        if (!old || old.plan.status !== 'active') return old;
+        const optimisticEvent = { eventType: 'tossed', actorMemberId: null, source: 'auto_chain' };
+        const newHolder = deriveBallHolder(old.plan, optimisticEvent);
+        return { ...old, plan: { ...old.plan, ballHolder: newHolder, ballState: 'tossed' } };
+      });
+    }
+  },
+  onSuccess: (data) => {
+    // サーバが auto_chain を行ったらトースト表示
+    if (data.autoTossed) {
+      toast.success(`次の予定「${data.autoTossed.plan.title}」に自動 TOSS しました`);
+    }
+  },
+  onSettled: () => {
+    // 両 plan を invalidate
+    queryClient.invalidateQueries({ queryKey: planKey });
+    if (currentPlan.successorPlanId) {
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'items', itemId, 'plans', currentPlan.successorPlanId] });
+    }
+    queryClient.invalidateQueries({ queryKey: plansKey });  // 一覧
+  },
+});
+```
+
+**UI 表現**：
+- 自動 TOSS の結果のイベントは `source: 'auto_chain'` で識別。SC-08 ボール詳細モーダルの履歴に「🔗 自動連鎖」アイコンを表示
+- ダッシュボード（SC-09）でも、auto_chain で TOSS された予定の Ball Holder 表示は通常 TOSS と区別なし（責任は移動済み）
+
+### 4.7.4. カンバン DnD の楽観更新（v1.1 新規、SC-17）
+
+SC-17 メンバーかんばんでの DnD 操作は、内部的に `useTossMutation` / `useCompleteMutation` を呼ぶ。
+
+**DnD ハンドラの実装イメージ**：
+
+```typescript
+function handleCardDrop(planId: string, fromMemberId: string, toMemberId: string, fromState: string, toState: string) {
+  if (fromMemberId !== toMemberId) {
+    // メンバー間移動 → toss with toMemberId
+    tossMutation.mutate({ planId, toMemberId });
+  }
+  if (fromState !== toState && toState === 'completed') {
+    completeMutation.mutate({ planId });
+  }
+  // 両方同時の場合は順次（toss → complete）
+}
+```
+
+**楽観更新**：
+- ドロップ即座にカード位置を変更（kanban state を更新）
+- mutation の `onError` でロールバック
+- 章 §4.4.11 SC-17 と整合
+
+### 4.7.5. 競合した場合（API が 409 等を返した場合）
 
 - 楽観更新をロールバック（`onError`）
 - トースト「他の操作と競合しました。最新の状態を取得します」
@@ -870,6 +1132,11 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 | 8 | 楽観更新 | **Phase 0 から実装**（TOSS / 完了、`packages/shared/domain/ball-holder.ts` を共有） | PRD SC-08「TOSS中…→相手にTOSSしました→自動クローズ」体験の確保 |
 | 9 | ブランドカラー（accent） | **仮確定 #1F6FEB（青系）** | 実装を止めない。デザイン確定後にトークン1点更新で全体反映 |
 | 10 | 国際化（i18n） | **`packages/shared/i18n/messages.ja.ts` に集約、ライブラリは未導入** | Phase 0 は日本語固定、文字列定数化のみで将来 EN 化への下地 |
+| 11 | カンバン DnD の意味論（v1.1、SC-17） | **既存 TOSS / 完了 API に集約、専用 EP なし** | UC-26 と整合。メンバー列移動 = `POST .../toss { toMemberId }`、状態列移動 = `POST .../complete` 等。認可・監査ログが既存ガードに乗る |
+| 12 | 「次の予定」選択肢の範囲（v1.1） | **同制作物内に限定**（Phase 0、プロトタイプ仕様と一致） | 異なる制作物・プロジェクトを跨ぐ後続は Phase 1+ で検討（議論ポイントとして残置） |
+| 13 | カンバンのメンバー多数時の UX（v1.1） | **横スクロール許容 + Sticky 状態カラム見出し**（Phase 0） | 5〜10 名は横スクロールなしで収まる前提。Phase 1 でグルーピング・フィルタを追加検討 |
+| 14 | カテゴリの導入範囲（v1.1） | **Phase 0 から必須項目、6 値固定**（FR-SCH-18） | 中立色の `other` を用意することで全予定に必ず1つ割当可能 |
+| 15 | OAuth ボタン配置（v1.1、SC-01） | **「または」区切り下、メール+パスワードの後**（プロトタイプ仕様） | スクリーン構成の慣例、メイン認証手段（password）を上に置く |
 
 ---
 
@@ -888,16 +1155,18 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 | FR-BALL-12 | §4.4.7 SC-08 削除は物理削除＋FE 確認モーダル |
 | §13.1 画面遷移図 | §4.3.3 に Phase 0 抜粋版で記載 |
 
-### Phase 1+ 持ち越し
+### Phase 1+ 持ち越し（v1.1 で SC-09 / SC-17 が Phase 0 へ繰り上げ）
 
 - SC-05 プロジェクトTOP（代表ボール表示）
-- SC-09 ダッシュボード（3カラム）
+- SC-09 「進行判定フィルター」タブ（平常／要確認／遅延の3カラム、FR-DASH-08）
 - SC-12 アーカイブ一覧
 - SC-13 コメント／ファイル共有パネル
 - SC-14 通知設定
 - SC-07 の予定種別3種対応（共同予定／単独予定）
 - SC-08 の TOSS 取消／差し戻し／再 TOSS
+- SC-17 メンバーかんばんのフィルタ・グルーピング（メンバー多数時 UX）
 - ダッシュボードのモバイル最適化（NFR-MOBILE-01 本格対応）
+- 異プロジェクト間の successor 紐付け
 
 ### PRD 整合メモ（PRD 改訂提案）
 
@@ -911,4 +1180,5 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 |---|---|---|
 | 2026-05-09 | Draft（たたき台） | §4.10 議論ポイント10項目を未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §4.10 全10論点を AskUserQuestion で確定。モーダル管理は推奨案「Zustand ベース」から **「URL 同期方式」に変更**、他9項目は推奨案どおり。§4.2.4 / §4.4.6 SC-07 / §4.4.7 SC-08 / §4.8.1 を URL 同期方式に書き換え。 |
-| 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§4.3.1 URL 構造に `/share/:token` と `/projects/:projectId/share-links` を追加、§4.3.2 ルートツリーを更新、§4.3.3 画面遷移図に SC-16 と GuestEntry / GuestSharePage を追加、§4.4.10 SC-16 非会員URL 発行・管理／§4.4.11 非会員URL 閲覧画面を新設、§4.11 Phase 1+ 持ち越しから SC-16 を除外。 |
+| 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§4.3.1 URL 構造に `/share/:token` と `/projects/:projectId/share-links` を追加、§4.3.2 ルートツリーを更新、§4.3.3 画面遷移図に SC-16 と GuestEntry / GuestSharePage を追加、§4.4.12 SC-16 非会員URL 発行・管理／§4.4.13 非会員URL 閲覧画面を新設、§4.11 Phase 1+ 持ち越しから SC-16 を除外。 |
+| 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | SC-01 改訂（Magic-link + OAuth、7状態統合）／SC-07 改訂（カテゴリ + 次の予定）／SC-09 改訂（階層ビュー、Phase 0 必須化）／SC-11 改訂（タブ分離）／SC-17 新規（メンバーかんばん DnD = TOSS）／§4.3 ルーティング更新（/dashboard 必須化、/login 7状態統合、members タブ切替）／§4.7.3a 自動 TOSS 楽観更新／§4.7.4 カンバン DnD 楽観更新／§4.10 論点 11〜15 追加。 |

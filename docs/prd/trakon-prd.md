@@ -7,7 +7,7 @@
 | プロダクト名 | TRAKON |
 | 発行元 | 株式会社おさまるカンパニー |
 | ドキュメント版 | v1.3 |
-| 発行日 | 2026-05-09 |
+| 発行日 | 2026-05-24 |
 | ステータス | Draft |
 | 本書の位置づけ | 基本原則 > **本PRD** > 個別仕様書 |
 
@@ -18,7 +18,8 @@
 | v1.0 | 2026-04-19 | 初版（基本原則・正規仕様書・MVP仕様書・ピッチ資料を統合） | — |
 | v1.1 | 2026-04-25 | 非会員URL共有を Phase 1 で正式採用。組織管理者による機能 On/OFF トグルを Phase 2 で提供。§3／§4.1／§4.3／§9.1〜9.4／§10.3〜10.4／§11／§12 を該当箇所書き換え。 | — |
 | v1.2 | 2026-04-25 | データモデルの命名整合：`schedules` テーブル → `plans` に改名（概念「予定」と整合）。関連カラム `schedule_type / schedule_id` → `plan_type / plan_id`。`organization_settings`、`share_links` テーブルを追加。§8.1〜8.5 を全面書き換え。各テーブルに「司る機能・情報」コメントを付与。改名対応表を §8.2 末尾に追加。 | — |
-| v1.3 | 2026-05-09 | 非会員URL共有（FR-SHARE-01〜06、SR-AUTH-08、UC-23、SC-16、`share_links` テーブル）を Phase 1 → Phase 0 へ前倒し。組織レベル統制（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09、`organizations` / `organization_settings`）は Phase 2 維持。§3／§4.1／§4.3／§5／§6／§7／§8／§9／§10／§11／§13 を該当箇所書き換え。 | — |
+| v1.3a | 2026-05-09 | **非会員URL共有（FR-SHARE-01〜06、SR-AUTH-08、UC-23、SC-16、`share_links` テーブル）を Phase 1 → Phase 0 へ前倒し**。組織レベル統制（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09、`organizations` / `organization_settings`）は Phase 2 維持。§3／§4.1／§4.3／§5／§6／§7／§8／§9／§10／§11／§13 を該当箇所書き換え。 | — |
+| v1.3b | 2026-05-24 | **Figma Make プロトタイプ反映による機能追加**：① **OAuth (Google/Microsoft) を Phase 0 から提供**（FR-AUTH-10、SR-AUTH-10）／② **新規登録項目を拡充**（full_name + display_name 2列、Magic-link 風サインアップ、FR-AUTH-11、UC-01 改訂）／③ **タスク後続紐付けによる自動 TOSS 遷移**（plans.successor_plan_id、FR-SCH-17、FR-BALL-13、UC-25）／④ **ダッシュボードを Phase 0 へ繰り上げ**、仕様を「プロジェクト×メンバー×今日」階層ビューに改訂（FR-DASH-01〜10、SC-09）／⑤ **カテゴリ概念追加**（plans.category 6値必須、FR-SCH-18）／⑥ **メンバーかんばん画面 SC-17 新規**（カンバン DnD = TOSS、UC-26）／⑦ **oauth_identities テーブル新規**。§1.3／§4.1.1／§4.1.4／§4.1.5／§4.1.7／§6／§7／§8／§9.3／§10.2 を該当箇所改訂。v1.3a と統合して **v1.3 として確定**。 | — |
 
 ## 参照元ドキュメント
 
@@ -101,6 +102,12 @@
 | **TOSS取消（Canceled）** | 誤って実行した TOSS を無効化し、直前状態に戻す操作 |
 | **制作物** | プロジェクトに紐づく成果物単位（Webページ／ドキュメント／バナー 等） |
 | **プロジェクト** | 参加者・制作物・ボール・予定を束ねる親単位 |
+| **タスク** | UI 上で「予定」を指す通称。設計書／DB上は「予定（plan）」に統一する（v1.3 追加） |
+| **カテゴリ** | 予定の作業種別。`wireframe / design / coding / review / meeting / other` の6値（v1.3 追加、FR-SCH-18） |
+| **後続紐付け** | 1つの予定（先行）に対し1つの後続予定を紐付ける関係。先行が完了したとき後続を **system actor による自動 TOSS** で受領状態に遷移させる（v1.3 追加、FR-SCH-17／FR-BALL-13） |
+| **メンバーかんばん** | プロジェクト参加メンバーごとに「準備中／TOSS済／完了」状態で予定を並べたかんばんビュー（SC-17）。DnD によるメンバー間移動は TOSS、状態間移動は完了などのドメイン操作にマッピングされる（v1.3 追加） |
+| **Magic-link サインアップ** | メールアドレス入力 → 認証メールリンク押下 → 詳細入力（full_name／display_name／password）→ 自動ログインの2段階フロー（v1.3 追加、UC-01） |
+| **OAuth プロバイダ** | Google / Microsoft 等の外部ID連携。Phase 0 から Google / Microsoft の2プロバイダを提供（v1.3 追加、FR-AUTH-10／SR-AUTH-10） |
 
 ### 1.4. 関連仕様書との対応表
 
@@ -280,6 +287,9 @@ Phase 0 では、まず ③ 各制作物画面 で「ボールの受け渡しが
 | FR-AUTH-07 | プロジェクトの参加者追加時、未登録メールには招待メールを送る（招待＝FR-AUTH-02） | **0** | プロジェクト仕様書 v1.2 §6 |
 | FR-AUTH-08 | 参加者は所属名・表示名・種別（client / production）・役割（role_type）を持つ | **0** | プロジェクト仕様書 v1.2 §6 |
 | FR-AUTH-09 | 参加者は一時非表示（is_active=false）／論理削除（deleted_at）ができる | 1 | プロジェクト仕様書 v1.2 §6 |
+| FR-AUTH-10 | ユーザーは Google / Microsoft の OAuth プロバイダでサインアップ／ログインできる | **0** | 新規定義（SR-AUTH-10 連携） |
+| FR-AUTH-11 | サインアップ時のアカウント詳細項目は `full_name`（本名）／`display_name`（表示名）／`password` を持つ。サインアップは Magic-link 風2段階（メール先行 → リンク押下 → 詳細入力 → 自動ログイン）で実行する | **0** | 新規定義（UC-01 連携） |
+| FR-AUTH-12 | 同一メールアドレスは1つの認証手段（`password` / `google` / `microsoft` のいずれか）にのみ紐付ける。別認証手段でのサインインは拒否し、本来の認証手段を案内する | **0** | 新規定義（SR-AUTH-10、§5.3） |
 
 #### 4.1.2. プロジェクト系（FR-PRJ）
 
@@ -320,6 +330,8 @@ Phase 0 では、まず ③ 各制作物画面 で「ボールの受け渡しが
 | FR-SCH-09 | 予定に Draft 状態は持たない（保存した時点で有効） | **0** | 予定種別仕様書 v1.1 §2 |
 | FR-SCH-10 | 同一日に複数の予定は3件まで表示し、4件目以降は「+N」で集約 | 1 | カレンダー表示仕様 v1.0 §10 |
 | FR-SCH-11 | 月の切り替わりに区切り線を表示する | **0** | カレンダー表示仕様 v1.0 §4 |
+| FR-SCH-17 | 予定は **1つの後続予定（successor_plan_id）** を持てる。先行予定の完了で、後続予定への自動 TOSS が走る（FR-BALL-13）。Phase 0 では同一プロジェクト内に限定 | **0** | 新規定義（SC-07／FR-BALL-13 連携） |
+| FR-SCH-18 | 予定は **カテゴリ**を必須項目として持つ。値は `wireframe / design / coding / review / meeting / other` の6種（DB側は CHECK 制約で可変）。カレンダー・カンバン・ダッシュボードの色分けに用いる | **0** | 新規定義（SC-06／SC-07／SC-09／SC-17 連携） |
 
 #### 4.1.5. ボール状態遷移系（FR-BALL）
 
@@ -337,6 +349,7 @@ Phase 0 では、まず ③ 各制作物画面 で「ボールの受け渡しが
 | FR-BALL-10 | ボール履歴は削除せず保持する | 1 | ボール状態遷移仕様書 v1.1.1 §5 |
 | FR-BALL-11 | Ball Holder は常に1名に定まり、「空」にならない | 1 | 予定種別仕様書 v1.1 §7 |
 | FR-BALL-12 | MVP ではボール削除は即時物理削除・確認モーダルなし（簡易実装） | **0** | MVP仕様書 §6.3 |
+| FR-BALL-13 | **後続自動 TOSS**：先行予定が `completed` になったとき、同一トランザクション内で `successor_plan_id` が指す後続予定に対し **system actor（`ball_events.source='auto_chain'`、`actor_user_id=NULL`）** で TOSS を実行する。後続が `completed` / `canceled` ならスキップ。Phase 0 では1段のみ（A→B→C の C は B 完了時に自動 TOSS） | **0** | 新規定義（FR-SCH-17／UC-25） |
 
 #### 4.1.6. 共同予定／単独予定系（Phase 1 以降）
 
@@ -350,18 +363,20 @@ Phase 0 では、まず ③ 各制作物画面 で「ボールの受け渡しが
 
 #### 4.1.7. ダッシュボード／進行判定系（FR-DASH）
 
+> **v1.3 改訂**：仕様を「プロジェクト×メンバー×今日」**階層ビュー**に書き換え、**Phase 0 へ繰り上げ**。3カラム（平常／要確認／遅延）仕様は将来「進行判定フィルター」として Phase 1+ で併設可能（FR-DASH-08）。
+
 | ID | 概要 | 対応Phase | 参照仕様 |
 |---|---|---|---|
-| FR-DASH-01 | ダッシュボードは全プロジェクト横断、ログインユーザーが Ball Holder である未完了予定を対象 | 1 | ダッシュボード仕様 v1.0 §5 |
-| FR-DASH-02 | 初期表示対象は「未完了」かつ「Ball Holder = 自分」かつ「監視基準日を持つ」予定 | 1 | ダッシュボード仕様 v1.0 §5 |
-| FR-DASH-03 | 画面上部にサマリー文言を動的表示する | 1 | ダッシュボード仕様 v1.0 §7-2 |
-| FR-DASH-04 | 3カラム（平常／要確認／遅延）で予定カードを表示する | 1 | ダッシュボード仕様 v1.0 §7-3 |
-| FR-DASH-05 | 進行判定：要確認＝基準日から前日・当日・翌日、遅延＝2日以上前かつ未完了 | 1 | ダッシュボード仕様 v1.0 §6-5, §6-6 |
-| FR-DASH-06 | 進行判定区分の並び順と、各カラム内の並び順を定義する | 1 | ダッシュボード仕様 v1.0 §9 |
-| FR-DASH-07 | 予定カードは プロジェクト名／予定名／期日／Ball Holder を表示 | 1 | ダッシュボード仕様 v1.0 §8 |
-| FR-DASH-08 | 予定カード押下で各制作物画面へ遷移、該当位置までスクロール＋ハイライト | 1 | ダッシュボード仕様 v1.0 §10 |
-| FR-DASH-09 | ダッシュボードは監視・確認の起点であり、個別ボール操作は行わない | 1 | ダッシュボード仕様 v1.0 §10 |
-| FR-DASH-10 | チーム全体ビュー（他者のターン横断）は将来拡張 | 2 | ダッシュボード仕様 v1.0 §11 |
+| FR-DASH-01 | ダッシュボードはログイン直後の起点画面（`/dashboard`）。**自分が見られる全プロジェクト**を横断対象とする | **0** | 新規定義（v1.3 改訂） |
+| FR-DASH-02 | 画面上部に **2 つのサマリーカード**を表示：① 今日のタスク総数 ② 期限超過タスク数 | **0** | 新規定義（SC-09） |
+| FR-DASH-03 | 本体は **プロジェクト → メンバー → 予定カード** の階層ビュー。「今日が期間内（startDate ≤ today ≤ endDate）かつ未完了」の予定のみを対象 | **0** | 新規定義（SC-09） |
+| FR-DASH-04 | 予定カードは プロジェクト名／予定名／制作物名／期間／Ball Holder を表示。**カテゴリ（FR-SCH-18）に応じた色分け**、期限超過は赤系で強調 | **0** | 新規定義（SC-09） |
+| FR-DASH-05 | 期限超過判定：`status='active'` かつ `endDate < today`（JST 暦日基準） | **0** | 新規定義 |
+| FR-DASH-06 | 予定カード押下で各制作物画面（SC-06）へ遷移、該当位置までスクロール＋ハイライト（ナビゲーション state `scrollToBallId` 経由） | **0** | 新規定義（SC-06／SC-09） |
+| FR-DASH-07 | ダッシュボードは監視・確認の起点であり、個別ボール操作は SC-08（ボール詳細モーダル）へ遷移してから行う | **0** | 新規定義 |
+| FR-DASH-08 | 「進行判定フィルター」（平常／要確認／遅延の3区分、進行判定ロジックは旧 FR-DASH-05 を踏襲）を Phase 1 で追加。階層ビューとフィルタータブ切替で提供する | 1 | ダッシュボード仕様 v1.0 §6, §7（旧仕様を Phase 1 機能として再採用） |
+| FR-DASH-09 | プロジェクト・メンバー多数時の UX（フィルタ／グルーピング／検索）は Phase 1 で詳細化 | 1 | 新規定義 |
+| FR-DASH-10 | チーム全体ビュー（他者のターン横断視点）は階層ビュー（FR-DASH-03）で既に表現済み。Phase 1 で「メンバー指定の絞り込み」「組織横断ビュー」を追加 | 1 | 新規定義（v1.3 でスコープ整理） |
 
 #### 4.1.8. プロジェクト代表ボール系（FR-PRJ-SUM）
 
@@ -453,6 +468,7 @@ Phase 0 では、まず ③ 各制作物画面 で「ボールの受け渡しが
 | SR-AUTH-09 | 組織管理者は組織レベルで非会員URL共有機能を On/OFF できる（FR-ORG-04, 05） |
 | SR-AUTH-02 | 招待リンクは有効期限付き・ワンタイム利用とする |
 | SR-AUTH-03 | パスワードポリシーを強制する（長さ・複雑性・既知流出照合） |
+| SR-AUTH-10 | OAuth プロバイダ（Google / Microsoft）認証を提供する。**PKCE フロー必須・state パラメータ検証必須・同一メールは1認証手段に限定**（FR-AUTH-10, 12 連携） |
 | SR-AUTHZ-01 | プロジェクト単位の参加認可、ロール別の操作権限を最小権限原則で設計 |
 | SR-AUTHZ-02 | クライアントおよび非会員URL閲覧者は、自分が Ball Holder の予定への操作と、発行者が指定した範囲のプロジェクト閲覧のみ可 |
 | SR-DATA-01 | 転送時 TLS1.2 以上必須 |
@@ -584,11 +600,18 @@ flowchart LR
     UC21[UC-21 PDF出力]
     UC22[UC-22 権限管理]
     UC23[UC-23 非会員URLでの確認・差し戻し]
+    UC24[UC-24 OAuth サインアップ／ログイン]
+    UC25[UC-25 後続予定の自動 TOSS 連鎖]
+    UC26[UC-26 メンバーかんばんでの担当者変更／完了]
 
-    D & M & C --> UC01
+    D & M & C --> UC01 & UC24
     D --> UC21 & UC22 & UC23
     C --> UC23
+    D & M --> UC25
+    D & M & C --> UC26
 ```
+
+> **v1.3 追加**：UC-24（OAuth）／UC-25（後続自動 TOSS）／UC-26（メンバーかんばん DnD）。詳細は §6 各 UC を参照。
 
 ---
 
@@ -597,38 +620,41 @@ flowchart LR
 > 各ユースケースは次の統一フォーマットで記述する。
 > **フェーズ列**は要件ID と連動。Phase 0 の UC は見出しに `✅ Phase 0` を付す。
 
-### UC-01: アカウント作成・ログイン（✅ Phase 0）
+### UC-01: アカウント作成・ログイン（✅ Phase 0、v1.3 改訂：Magic-link 風 + OAuth）
 
 | 項目 | 内容 |
 |---|---|
 | アクター | 全ロール |
 | 事前条件 | なし（招待経由または自主登録） |
 | トリガ | サインアップ／ログインURLにアクセス |
-| メインフロー | ①メール・パスワード入力 ②メール認証 ③ログイン成功 |
-| 例外 | ③-a 認証失敗、③-b 未認証メール、③-c パスワード再発行 |
-| 事後条件 | セッション確立、ダッシュボード／プロジェクト一覧へ遷移 |
-| 関連要件 | FR-AUTH-01, 03, 04, 05、SR-AUTH-01, 03 |
+| メインフロー（メール+パスワード） | ① メール入力（Magic-link 開始）② 認証メール内リンク押下 ③ **詳細入力（full_name / display_name / password）** ④ 自動ログイン完了、ダッシュボードへ |
+| メインフロー（OAuth） | ① 「Google で続ける」or「Microsoft で続ける」押下 ② プロバイダ同意画面 ③ アプリへリダイレクト ④ 初回ログイン時のみ詳細入力（display_name のみ。full_name は OAuth から取得） ⑤ ダッシュボードへ |
+| 例外 | ③-a 認証失敗、③-b 認証メールリンク失効、③-c パスワード再発行、③-d OAuth プロバイダで拒否、**③-e 同一メールが別認証手段で既登録（FR-AUTH-12）→ 本来の認証手段を案内** |
+| 事後条件 | セッション確立、ダッシュボードへ遷移、`audit_logs` に `login` 記録 |
+| 関連要件 | FR-AUTH-01, 03, 04, 05, 10, 11, 12、SR-AUTH-01, 03, 10、UC-24 |
 
 ```mermaid
 sequenceDiagram
+    autonumber
     participant U as ユーザー
     participant FE as TRAKON フロント
     participant API as TRAKON API
-    participant Mail as メール配信
-    U->>FE: サインアップ画面を開く
-    U->>FE: メール・パスワード入力
-    FE->>API: サインアップ要求
-    API->>API: 入力検証・ハッシュ化・保存
-    API->>Mail: 認証メール送信
-    API-->>FE: 仮登録完了
-    Mail-->>U: 認証URL
-    U->>FE: 認証URL押下
-    FE->>API: 認証トークン検証
-    API-->>FE: 有効化完了
-    U->>FE: ログイン
-    FE->>API: 認証要求
-    API-->>FE: セッション発行
-    FE-->>U: プロジェクト一覧 or ダッシュボード
+    participant SAuth as Supabase Auth
+    participant Mail as Resend
+    U->>FE: サインアップ画面でメール入力
+    FE->>SAuth: signInWithOtp(email)（Magic-link 送信要求）
+    SAuth->>Mail: 認証メール送信（TRAKON ブランド）
+    Mail-->>U: メール内リンク（token 付き）
+    U->>FE: リンク押下 → /login?token=...&type=signup
+    FE->>SAuth: verifyOtp(token)
+    SAuth-->>FE: セッション確立
+    FE->>FE: 詳細入力画面（full_name / display_name / password）
+    U->>FE: 詳細入力 → 「プロジェクト作成 →」
+    FE->>API: POST /auth/me/complete-signup
+    API->>SAuth: updateUser({ password })
+    API->>API: users INSERT (full_name, display_name, primary_auth_method='password')
+    API-->>FE: 完了
+    FE-->>U: ダッシュボードへ遷移
 ```
 
 ### UC-02: プロジェクト作成（✅ Phase 0）
@@ -974,29 +1000,139 @@ sequenceDiagram
     end
 ```
 
+### UC-24: OAuth サインアップ／ログイン（✅ Phase 0、v1.3 新規）
+
+| 項目 | 内容 |
+|---|---|
+| アクター | 全ロール |
+| 事前条件 | OAuth プロバイダ（Google / Microsoft）にユーザーアカウントを持つこと |
+| トリガ | ログイン／サインアップ画面の「Google で続ける」or「Microsoft で続ける」押下 |
+| メインフロー | ① FE が Supabase Auth `signInWithOAuth` を呼ぶ ② プロバイダで同意 ③ アプリにリダイレクト＋セッション確立 ④ BE が `users` 行を作成 or 取得、`oauth_identities` を INSERT ⑤ 初回は `display_name` 設定画面、それ以外はダッシュボードへ |
+| 例外 | プロバイダで拒否、**同一メールが別認証手段で既登録**（FR-AUTH-12、409 SAME_EMAIL_DIFFERENT_PROVIDER）、`state` 検証失敗 |
+| 事後条件 | セッション確立、`oauth_identities` 行作成、`audit_logs` に `oauth_login`（Phase 1 で正式記録、Phase 0 は最低限 `login`）を記録 |
+| 関連要件 | FR-AUTH-10, 12、SR-AUTH-10、UC-01 |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as ユーザー
+    participant FE as フロント
+    participant SAuth as Supabase Auth
+    participant Provider as Google/Microsoft
+    participant API as TRAKON API
+    U->>FE: 「Google で続ける」押下
+    FE->>SAuth: signInWithOAuth({ provider: 'google' })
+    SAuth->>Provider: PKCE + state でリダイレクト
+    U->>Provider: 同意
+    Provider->>SAuth: code + state
+    SAuth->>SAuth: state 検証・トークン交換
+    SAuth-->>FE: セッション確立
+    FE->>API: POST /auth/me/sync
+    alt 同一メールが別 provider で既登録
+        API-->>FE: 409 SAME_EMAIL_DIFFERENT_PROVIDER
+        FE-->>U: 「このメールは password 認証で登録済み」
+    else 新規 or 同 provider
+        API->>API: users 行 INSERT、oauth_identities INSERT
+        API-->>FE: ユーザー情報
+        FE-->>U: ダッシュボードへ
+    end
+```
+
+### UC-25: 後続予定の自動 TOSS 連鎖（✅ Phase 0、v1.3 新規）
+
+| 項目 | 内容 |
+|---|---|
+| アクター | 先行予定の Ball Holder（人間）／システム（自動 TOSS） |
+| 事前条件 | 先行予定（A）に `successor_plan_id` が設定済み。後続予定（B）が `active` 状態 |
+| トリガ | 先行予定 A を完了する操作（SC-08 ボール詳細モーダルから「完了する」） |
+| メインフロー | ① ユーザーが A を `complete` → ② BE が同一トランザクションで A.status='completed'、ball_events INSERT(event_type='completed', source='human') ③ A の successor_plan_id が指す B を SELECT FOR UPDATE ④ B.status='active' なら ball_events INSERT(event_type='tossed', source='auto_chain', actor_user_id=NULL) ⑤ Ball Holder = B.to_member に切り替わる ⑥ 監査ログに `auto_toss` 記録（Phase 1） |
+| 例外 | B が `completed`/`canceled` → スキップ。循環参照（A→…→A）→ INSERT 時にアプリ層で拒否（409） |
+| 事後条件 | A.status='completed'、B にも tossed イベントが追加され、Ball Holder が B.to_member |
+| 関連要件 | FR-SCH-17、FR-BALL-13、SC-07、SC-08 |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as ユーザー
+    participant API as TRAKON API
+    participant DB as Postgres
+    U->>API: POST /plans/:planA/complete
+    API->>DB: BEGIN TRANSACTION
+    API->>DB: plans[A].status='completed'
+    API->>DB: ball_events INSERT(plan=A, type='completed', source='human', actor=U)
+    API->>DB: SELECT plans[A].successor_plan_id (=B)
+    alt B.status='active'
+        API->>DB: ball_events INSERT(plan=B, type='tossed', source='auto_chain', actor=NULL)
+        Note over DB: Ball Holder = B.to_member に切り替わる（導出ロジック）
+    else B が completed/canceled
+        Note over API: 何もしない（連鎖スキップ）
+    end
+    API->>DB: audit_logs INSERT (action='complete', actor=U)
+    API->>DB: COMMIT
+    API-->>U: 完了レスポンス（B の Ball Holder も含む）
+```
+
+### UC-26: メンバーかんばんでの担当者変更／完了（✅ Phase 0、v1.3 新規）
+
+| 項目 | 内容 |
+|---|---|
+| アクター | プロジェクト参加者（ディレクター／メンバー／クライアント） |
+| 事前条件 | プロジェクト参加、SC-17 メンバーかんばん画面を開いている |
+| トリガ | カンバン上でカード（予定）をドラッグ＆ドロップ |
+| メインフロー | **メンバー列間移動**：別メンバーへドロップ → `POST /plans/:planId/toss { toMemberId }`（既存 TOSS API を呼ぶ） / **状態列間移動**（準備中→TOSS済 など）：対応するドメイン API を呼ぶ（toss / complete / cancel-toss） / **両方同時**：2 つの API を順次呼ぶ |
+| 例外 | 認可エラー（Ball Holder でない、ロール不足）、状態遷移不可（既に completed） |
+| 事後条件 | 該当予定のステータスと Ball Holder が更新され、楽観更新でカードが新位置に表示される。サーバ確定後に最終状態へ反映 |
+| 関連要件 | FR-BALL-02, 03, 08, 11、SC-17、SR-AUTHZ-01 |
+
+> **重要**：カンバン UI は専用 API を持たず、**全てのドメイン操作を既存の TOSS / 完了 / 取消エンドポイントに集約**する。認可ガード・状態遷移ガード・監査ログは既存の章3 §3.3 / 章5 §5.4 のミドルウェアに乗る（基本設計書 04-frontend §4.10 議論ポイント参照）。
+
 ---
 
 ## 7. 画面ごとの機能要件・画面項目要件
 
 各画面について、アクター／目的／機能要件（FR-ID紐付け）／画面項目／状態・例外／権限制御を定義する。
 
-### SC-01: サインアップ／ログイン（✅ Phase 0）
+### SC-01: サインアップ／ログイン（✅ Phase 0、v1.3 改訂：Magic-link + OAuth）
 
 - **アクター**：全ロール（未認証状態）
-- **目的**：アカウント作成・ログイン・パスワード再発行
-- **主機能**：FR-AUTH-01, 03, 04, 05
-- **画面項目**：
+- **目的**：アカウント作成・ログイン・パスワード再発行・OAuth サインイン
+- **主機能**：FR-AUTH-01, 03, 04, 05, 10, 11, 12
+- **画面状態（7 ステップ）**：`login` / `signup` / `email-sent` / `create-account` / `password-reset-request` / `password-reset-email-sent` / `password-reset` / `password-reset-complete`
+
+**ログイン画面（`login`）の項目**：
 
 | 項目 | 型 | 必須 | バリデーション |
 |---|---|---|---|
-| メールアドレス | Email | ○ | 形式検証、重複登録不可 |
-| パスワード | Password | ○ | 長さ8以上／英数記号／既知流出照合（Phase 1） |
-| パスワード再入力（サインアップ時） | Password | ○ | 上記と一致 |
-| 利用規約・プライバシー同意 | Check | ○ | — |
+| メールアドレス | Email | ○ | 形式検証 |
+| パスワード | Password | ○ | — |
+| ログイン状態を保存する | Check | × | — |
+| 「Google で続ける」ボタン | Button | — | OAuth 開始（FR-AUTH-10） |
+| 「Microsoft で続ける」ボタン | Button | — | OAuth 開始（FR-AUTH-10） |
+| パスワード再発行リンク | Link | — | `password-reset-request` へ遷移 |
+| 新規登録リンク | Link | — | `signup` へ遷移 |
 
-- **状態**：未入力／入力中／送信中／成功／エラー（認証失敗・ロック）
+**サインアップ画面（`signup`、Magic-link 開始）の項目**：
+
+| 項目 | 型 | 必須 | バリデーション |
+|---|---|---|---|
+| メールアドレス | Email | ○ | 形式検証 |
+| 「Google で続ける」「Microsoft で続ける」 | Button | — | OAuth 経由のサインアップ |
+| 利用規約・プライバシー同意（文言で明示） | Text | — | 「続けることで〜に同意したものとみなされます」 |
+
+**詳細入力画面（`create-account`、メール認証リンク押下後）の項目**：
+
+| 項目 | 型 | 必須 | バリデーション |
+|---|---|---|---|
+| メールアドレス | Email（読取専用） | ○ | 認証済みメール |
+| お名前（full_name） | Text | ○ | 1〜100文字、本名／請求書類用（FR-AUTH-11） |
+| ユーザー名（display_name） | Text | ○ | 1〜50文字、表示名（FR-AUTH-11） |
+| パスワード | Password | ○ | 長さ8以上／英数記号／既知流出照合（Phase 1） |
+| パスワード（確認） | Password | ○ | 上記と一致 |
+
+- **状態**：未入力／入力中／送信中／成功／エラー（認証失敗・ロック・**SAME_EMAIL_DIFFERENT_PROVIDER**）
 - **権限**：未認証のみアクセス可能
-- **例外／エラー表示**：認証失敗回数制限、メール未認証時の再送導線
+- **例外／エラー表示**：認証失敗回数制限、メール再送導線（60秒カウントダウン）、同一メール別認証手段の案内
+- **送信成功後**：`/dashboard` へ自動遷移
 
 ### SC-02: 招待受諾（✅ Phase 0）
 
@@ -1083,6 +1219,8 @@ sequenceDiagram
 | TOSS予定 | TO（同上） | ○ |
 | TOSS予定 | 予定日 | ○ |
 | TOSS予定 | 期日 | 任 |
+| TOSS予定 | **カテゴリ**（wireframe/design/coding/review/meeting/other） | ○（FR-SCH-18） |
+| TOSS予定 | **次の予定（successor_plan_id）** | 任（FR-SCH-17、選択肢は同制作物の他予定） |
 | TOSS予定 | メモ | 任 |
 | 共同予定 | 予定名 | ○ |
 | 共同予定 | 主担当者（1名） | ○ |
@@ -1119,31 +1257,43 @@ sequenceDiagram
 - **履歴表示**：TOSS／取消／差し戻し／再TOSS／完了の時系列ログ
 - **コメント／添付**（Phase 1）：同モーダル内タブで表示
 
-### SC-09: ダッシュボード（3カラム）（Phase 1）
+### SC-09: ダッシュボード（✅ Phase 0、v1.3 改訂：階層ビュー）
 
-- **アクター**：全ロール
-- **主機能**：FR-DASH-01〜09
+- **アクター**：全ロール（ログイン直後の起点画面）
+- **目的**：今日のタスク状況をプロジェクト・メンバー単位で俯瞰する
+- **主機能**：FR-DASH-01〜09（v1.3 改訂版）
+- **URL**：`/dashboard`
 - **画面構成**：
 
 ```
-┌──────────────────────────────────────────┐
-│ ▼ サマリー文言（例：「いくつかの予定が遅延しています」）  │
-├────────────┬────────────┬────────────┤
-│ 平常        │ 要確認      │ 遅延        │
-│ ─────────  │ ─────────  │ ─────────  │
-│ [カード]    │ [カード]    │ [カード]    │
-│  PRJ名     │  PRJ名     │  PRJ名     │
-│  予定名     │  予定名     │  予定名     │
-│  期日      │  期日      │  期日      │
-│  Ball Holder│  Ball Holder│  Ball Holder│
-│ ...        │ ...        │ ...        │
-└────────────┴────────────┴────────────┘
+┌────────────────────────────────────────────────┐
+│ ダッシュボード（今日 yyyy/m/d）                  │
+├────────────┬────────────────────────────────┤
+│ 今日のタスク │ 期限超過                       │
+│   42        │   3                             │
+├────────────┴────────────────────────────────┤
+│ 🔵 ECサイトリニューアル (12件)                  │
+│   👤 田中 太郎 (3件)                           │
+│     [予定カード wireframe] [予定カード design]  │
+│   👤 佐藤 花子 (5件)                           │
+│     [予定カード design]    [予定カード review] │
+│ 🟢 コーポレートサイト制作 (5件)                 │
+│   ...                                          │
+└────────────────────────────────────────────────┘
 ```
 
-- **カード項目**：プロジェクト名／予定名／期日／Ball Holder（所属名＋表示名）
-- **並び順**：カラム内は監視基準日が古い順→last_action_at が古い順→id 昇順
-- **遷移**：カード押下→各制作物画面（該当位置スクロール・ハイライト）
-- **空状態**：「すべての予定は平常で進行しています。」
+- **サマリーカード**（2枚）：今日のタスク総数／期限超過数（赤系強調）
+- **本体**：プロジェクト → メンバー → 予定カード の3階層
+  - 対象：`status='active' AND startDate <= today <= endDate`（JST 暦日基準）
+  - プロジェクトはブランドカラードット付きで識別
+  - メンバーはイニシャルアバター付き
+  - 予定カードの色分けはカテゴリ（FR-SCH-18）に応じる
+- **カード項目**：予定名／制作物名／期間（startDate〜endDate）
+- **期限超過カード**：背景赤系、文字赤、期間が `endDate < today` のもの
+- **遷移**：カード押下 → 各制作物画面（SC-06）へ、ナビゲーション state `scrollToBallId` でハイライト
+- **空状態**：「今日のタスクはありません」
+- **権限**：認証済みの全ロール
+- **進行判定フィルター**（Phase 1）：3カラム（平常／要確認／遅延）への切替タブを追加可能（FR-DASH-08）
 
 ### SC-10: プロジェクト編集（✅ Phase 0：基本、Phase 1：終了・アーカイブ）
 
@@ -1156,11 +1306,36 @@ sequenceDiagram
   - 「削除」（Archived時、Phase 1、確認必須）
 - **警告**：終了日変更で範囲外ボール、終了操作時の未完了ボール件数
 
-### SC-11: 参加者管理（✅ Phase 0：基本、Phase 1：詳細）
+### SC-11: 参加者管理（✅ Phase 0：基本、Phase 1：詳細、v1.3：SC-17 と URL 階層を共有しタブ分離）
 
 - **アクター**：ディレクター
+- **目的**：プロジェクト参加者の追加・編集・削除
 - **主機能**：FR-AUTH-07, 08, 09
-- **画面項目**：名前／所属名／メール／種別／役割（Phase 1）／sort_order（カレンダー列順）／is_active／削除（論理）
+- **URL**：`/projects/:projectId/members?tab=manage`（または `/manage` サブパス）。**SC-17 メンバーかんばんと同じ親 URL を共有**し、タブで切替
+- **画面項目**：名前／所属名／メール／種別（client/production）／役割（Phase 1）／sort_order（カレンダー列順）／is_active（Phase 1）／削除（Phase 1：論理削除、Phase 0：物理削除＋アクティブボール存在時 409）
+
+### SC-17: メンバーかんばん（✅ Phase 0、v1.3 新規）
+
+- **アクター**：プロジェクト参加者（ディレクター／メンバー／クライアント、自分が見える範囲のみ）
+- **目的**：プロジェクト参加メンバーごとに、担当している予定の進行状況をかんばん形式で俯瞰／DnD 操作で TOSS・完了を実行
+- **主機能**：FR-BALL-02, 03, 08, 11、UC-26
+- **URL**：`/projects/:projectId/members`（既定タブ）
+- **画面構成**：
+  - 横軸：プロジェクト参加メンバー列（client / production グルーピング、所属名見出し）
+  - 縦軸：状態カラム（準備中（=Ready）／TOSS済（=Tossed）／完了（=Completed））
+  - カード：予定タイトル、制作物名、カテゴリ色分け、期限表示
+- **DnD 操作のドメインマッピング**：
+
+| DnD 操作 | 呼び出される API | ball_events |
+|---|---|---|
+| 別メンバー列へドラッグ（同状態） | `POST .../plans/:planId/toss { toMemberId }` | event_type='tossed', source='human' |
+| 別状態列へドラッグ（同メンバー） | `POST .../plans/:planId/complete` 等 | 状態に応じたイベント |
+| 両方同時 | 2 API を順次 | — |
+
+- **権限**：プロジェクト参加者のみ。各 DnD 操作は背後で既存 TOSS / 完了 API のガード（章3 §3.3 / 章5 §5.4）を通る
+- **整合性**：カンバン UI は専用 API を持たず、すべて既存ドメイン API に集約（UC-26）
+- **空状態**：「このプロジェクトには予定がまだありません」 → SC-06 への導線
+- **参加者管理画面（SC-11）への切替**：上部タブ「メンバー」「管理」
 
 ### SC-12: アーカイブ一覧（Phase 1）
 
@@ -1215,6 +1390,7 @@ sequenceDiagram
 ```mermaid
 erDiagram
     users ||--o{ project_members : "has"
+    users ||--o{ oauth_identities : "links"
     organizations ||--o{ users : "belongs"
     organizations ||--o{ projects : "owns"
     organizations ||--|| organization_settings : "configures"
@@ -1225,6 +1401,7 @@ erDiagram
     plans ||--o{ ball_events : "logs"
     plans ||--o{ comments : "has"
     plans ||--o{ attachments : "has"
+    plans }o--|| plans : "successor_plan_id (v1.3)"
     users ||--o{ notifications : "receives"
     users ||--o{ audit_logs : "performs"
     plans }o--|| project_members : "from_member / to_member / owner_member"
@@ -1241,20 +1418,39 @@ erDiagram
 
 #### users（認証ユーザー）
 
-> **コメント**：システムに永続参加するアカウントの認証情報を管理する。プロジェクトの永続参加・編集を行う全ロール（ディレクター／メンバー／クライアント）が必ず1行を持つ。非会員URL閲覧者（FR-SHARE）は本テーブルに行を持たない。
-> **司る機能**：UC-01 アカウント作成・ログイン／FR-AUTH-01〜06／SR-AUTH-01〜07
-> **関連**：`project_members.user_id`, `audit_logs.actor_user_id`, `notifications.user_id`
+> **コメント**：システムに永続参加するアカウントの認証情報を管理する。プロジェクトの永続参加・編集を行う全ロール（ディレクター／メンバー／クライアント）が必ず1行を持つ。非会員URL閲覧者（FR-SHARE）は本テーブルに行を持たない。**v1.3 で `full_name`（本名）と `display_name`（表示名）を2列に分離、`primary_auth_method` を追加**。
+> **司る機能**：UC-01 アカウント作成・ログイン／UC-24 OAuth ログイン／FR-AUTH-01〜06, 10〜12／SR-AUTH-01〜07, 10
+> **関連**：`project_members.user_id`, `oauth_identities.user_id`, `audit_logs.actor_user_id`, `notifications.user_id`
 
 | カラム | 説明 |
 |---|---|
 | id | PK |
 | email | ログインID／一意 |
-| password_hash | パスワード（ハッシュ化） |
-| display_name | 表示名 |
+| password_hash | パスワード（ハッシュ化）。OAuth ユーザーは NULL |
+| **full_name** | 本名（招待・請求書類用、v1.3 追加、FR-AUTH-11） |
+| **display_name** | 表示名・ハンドル（画面表示用、v1.3 で本名と分離） |
+| **primary_auth_method** | 'password' / 'google' / 'microsoft'（CHECK、同一メール1認証制約／v1.3 追加、FR-AUTH-12） |
 | email_verified_at | メール認証完了日時 |
 | mfa_enabled / mfa_secret | 多要素認証（Phase 2、SR-AUTH-06） |
 | organization_id | FK（Phase 2、組織所属） |
 | created_at / updated_at / deleted_at | 監査・論理削除 |
+
+#### oauth_identities（OAuth 連携／✅ Phase 0、v1.3 新規）
+
+> **コメント**：Supabase Auth が管理する `auth.identities` の補完情報を、アプリ DB 側にミラーする。1 ユーザー = 1 identity が Phase 0 制約（FR-AUTH-12）。Phase 1+ で複数プロバイダ同時連携 UI を提供する場合はこのテーブルを多対多に拡張する。
+> **司る機能**：FR-AUTH-10, 12／UC-24 OAuth ログイン／SR-AUTH-10
+> **関連**：`users.id`
+
+| カラム | 説明 |
+|---|---|
+| id | PK |
+| user_id | FK → users.id |
+| provider | 'google' / 'microsoft'（CHECK） |
+| provider_user_id | OAuth プロバイダの subject（一意） |
+| email | OAuth から取得したメール（users.email と一致） |
+| created_at / updated_at | 監査 |
+
+- UNIQUE：(provider, provider_user_id)、(user_id, provider)
 
 #### organizations（組織・テナント／Phase 2）
 
@@ -1355,21 +1551,25 @@ erDiagram
 | participants | 参加者リスト（共同・将来用、JSON または別テーブル） |
 | location_or_url | 場所／URL（共同予定用） |
 | status | active / completed / canceled |
+| **category** | wireframe / design / coding / review / meeting / other（CHECK、NOT NULL、v1.3 追加、FR-SCH-18） |
+| **successor_plan_id** | 後続予定の FK（self、NULL 可、UNIQUE、v1.3 追加、FR-SCH-17）。Phase 0 では同一プロジェクト内に限定 |
 | memo / started_at / completed_at | 補助 |
 | deleted_at | 論理削除（Phase 1 以降。Phase 0 MVP は物理削除：FR-BALL-12） |
 
 #### ball_events（ボール責任移動履歴）
 
-> **コメント**：「ボール」（責任の所在）の移動・操作を時系列で **追記専用** に記録する履歴テーブル。物理削除しない。差し戻し（Returned）／TOSS取消（Canceled）／再TOSS／完了などの遷移を全て記録し、現在の Ball Holder は `plans` ＋本テーブルから導出する。
-> **司る機能**：FR-BALL-04〜10／UC-08 TOSS実行／UC-09 TOSS取消／UC-10 差し戻し／UC-11 再TOSS／UC-12 予定完了
-> **関連**：`plans.id`, `project_members.id`
+> **コメント**：「ボール」（責任の所在）の移動・操作を時系列で **追記専用** に記録する履歴テーブル。物理削除しない。差し戻し（Returned）／TOSS取消（Canceled）／再TOSS／完了などの遷移を全て記録し、現在の Ball Holder は `plans` ＋本テーブルから導出する。**v1.3 で `source` 列を追加（human / auto_chain）、`actor_user_id` を NULL 許容化**（system actor 対応、FR-BALL-13）。
+> **司る機能**：FR-BALL-04〜10, 13／UC-08 TOSS実行／UC-09 TOSS取消／UC-10 差し戻し／UC-11 再TOSS／UC-12 予定完了／UC-25 後続自動TOSS連鎖
+> **関連**：`plans.id`, `project_members.id`, `users.id`（actor、NULL 可）
 
 | カラム | 説明 |
 |---|---|
 | id | PK |
 | plan_id | FK（旧 `schedule_id`） |
 | event_type | tossed / canceled / returned / retossed / completed |
-| actor_member_id | 実行者（FK：project_members） |
+| actor_member_id | 実行者（FK：project_members、自動連鎖時は NULL） |
+| **actor_user_id** | NULL 可（system actor のため、v1.3 追加） |
+| **source** | 'human' / 'auto_chain'（CHECK、NOT NULL、v1.3 追加、FR-BALL-13）|
 | occurred_at | 実行日時 |
 | note | メモ（差し戻し理由など） |
 
@@ -1709,47 +1909,56 @@ gantt
 
 > 目安スケジュール。実際の着手日・期間は TBD。
 
-### 10.2. Phase 0：MVP ✅ **本PRDの着手スコープ**
+### 10.2. Phase 0：MVP ✅ **本PRDの着手スコープ**（v1.3 拡充）
 
-- **目的**：「縦型スケジュール上でボールの受け渡しを可視化できる」ことの最速検証
-- **予算・期間**：50万円（税込）／2〜3週間（MVP仕様書 v1.0 §10）
+- **目的**：「縦型スケジュール上でボールの受け渡しを可視化できる」ことの最速検証 + プロトタイプ反映機能の検証
+- **予算・期間**：50万円（税込）／2〜3週間（MVP仕様書 v1.0 §10） + プロトタイプ反映分（v1.3 追加分）の上振れは別途見積
 - **対象ユーザー**：制作ディレクター（メインテスター）、付随してクライアント・制作メンバー
 - **提供機能（要件ID）**：
-  - 認証：FR-AUTH-01, 02, 03, 04, 05, 07, 08（基本型のみ）
+  - 認証：FR-AUTH-01, 02, 03, 04, 05, 07, 08、**10（OAuth）**、**11（詳細登録項目）**、**12（同一メール1認証）**
   - プロジェクト：FR-PRJ-01, 02, 03, 09
   - 制作物：FR-ITEM-01, 03, 05
-  - スケジュール：FR-SCH-01, 02, 03, 04, 05, 06, 08, 09, 11
-  - ボール：FR-BALL-01, 02, 03, 08, 12
-  - 共有・アクセス制御：FR-SHARE-01, 02, 03, 04, 05, 06（v1.3 で Phase 1 → Phase 0 へ前倒し。組織レベル On/OFF＝FR-SHARE-07 は Phase 2 維持）
-  - セキュリティ：SR-AUTH-01, 02, 03, 04, **08**、SR-AUTHZ-01, 02、SR-DATA-01, 02、SR-AUDIT-01（最低限）、SR-PRIVACY-01〜03
-- **対象画面**：SC-01, 02, 03, 04, 06, 07（TOSS相当のみ）, 08（TOSS実行・完了のみ）, 10（基本編集）, 11（基本）, **16（非会員URL 発行・管理）**
-- **対象ユースケース**：UC-01, 02, 03, 04（登録・編集）, 05（TOSS相当）, 08（TOSS実行）, 12（予定完了）, 15（制作物画面での俯瞰）, 16（クライアント確認の基本動線）, **23（非会員URLでの確認・差し戻し）**
+  - スケジュール：FR-SCH-01, 02, 03, 04, 05, 06, 08, 09, 11、**17（後続紐付け）**、**18（カテゴリ必須）**
+  - ボール：FR-BALL-01, 02, 03, 08, 12、**13（後続自動 TOSS）**
+  - **ダッシュボード：FR-DASH-01〜07, 09（v1.3 で Phase 0 へ繰り上げ、階層ビュー）**
+  - 共有・アクセス制御：**FR-SHARE-01, 02, 03, 04, 05, 06**（v1.3 で Phase 1 → Phase 0 へ前倒し。組織レベル On/OFF＝FR-SHARE-07 は Phase 2 維持）
+  - セキュリティ：SR-AUTH-01, 02, 03, 04, **08**（非会員URL）、**10（OAuth PKCE）**、SR-AUTHZ-01, 02、SR-DATA-01, 02、SR-AUDIT-01（最低限）、SR-PRIVACY-01〜03
+- **対象画面**：SC-01（**Magic-link + OAuth 拡充**）, 02, 03, 04, 06, 07（TOSS相当のみ + **カテゴリ + successor**）, 08（TOSS実行・完了のみ）, **09（階層ビュー、新規）**, 10（基本編集）, 11（タブ化）, **16（非会員URL 発行・管理）**, **17（メンバーかんばん、新規）**
+- **対象ユースケース**：UC-01（改訂）, 02, 03, 04（登録・編集）, 05（TOSS相当）, 08（TOSS実行）, 12（予定完了）, 15（制作物画面での俯瞰）, 16（クライアント確認の基本動線）, **23（非会員URLでの確認・差し戻し）**、**UC-24（OAuth）**、**UC-25（後続自動TOSS）**、**UC-26（カンバン操作）**
 - **除外事項（Phase 1 以降）**：
   - 予定種別（共同予定・単独予定）
   - 差し戻し／TOSS取消／再TOSS
-  - ダッシュボード3カラム
+  - ダッシュボード「進行判定フィルター」（3カラム平常／要確認／遅延、FR-DASH-08）
   - プロジェクトTOP・代表ボール表示
   - 通知（メール）
   - コメント／ファイル添付
   - PDF出力
   - プロジェクト終了・アーカイブ・削除
   - MFA・組織・権限・プラン
-- **成功基準**（MVP仕様書 §8 受け入れ条件に本PRDのセキュリティ条件を追加）：
+  - 複数チェーン（A→B→C）の連鎖（v1.3：Phase 0 は1段のみ）
+  - 異プロジェクト間 successor
+- **成功基準**（v1.3 拡充）：
   1. ディレクターがプロジェクトを1件作成できる
   2. 期間に応じた縦の日付一覧が表示される
   3. 参加者が所属名とともに横に並んで表示される
-  4. 任意の日付にボールを追加できる／FROM・TO を設定できる
+  4. 任意の日付にボールを追加できる／FROM・TO・**カテゴリ・後続予定**を設定できる
   5. ボールが該当担当者列に表示される
   6. 最新のボールから Ball Holder がヘッダー表示される
   7. **Phase 0 では永続参加の全ユーザー（ディレクター／メンバー／クライアント）に認証を必須とし、未認証アクセスは §9.2 統制下の非会員URL共有経路に限定する**（SR-AUTH-01、FR-SHARE-01〜06、SR-AUTH-08）
   8. **通信は TLS、保管は暗号化、主要操作は監査ログに記録される**（SR-DATA-01, 02、SR-AUDIT-01）
   9. **クライアントは、招待ログイン経路と非会員URL経路のいずれでも確認・差し戻しを完結できる**（FR-SHARE-01〜06、UC-23）
   10. **全ての非会員URLアクセスが監査ログから時系列で再現できる**（FR-SHARE-04、SR-AUDIT-01）
+  11. **Google / Microsoft でサインアップ・ログインできる**（FR-AUTH-10、UC-24）
+  12. **先行予定の完了で、紐付けた後続予定が自動 TOSS される**（FR-BALL-13、UC-25）
+  13. **ダッシュボードに「プロジェクト×メンバー×今日」階層ビューが表示される**（FR-DASH-03、SC-09）
+  14. **メンバーかんばん（SC-17）でカードを別メンバーへドラッグすると TOSS が走る**（UC-26）
 - **重要な設計判断**：
   - MVP版のボール削除は即時物理削除（§6.3）
   - Ball Holder 判定は「最新ボールの to_member」で簡易実装（MVP §6 後フェーズで正規化）
   - 共同予定・単独予定・予定種別選択は未実装。Phase 0 の UI は「TOSS相当」のみに簡素化
   - **非会員URL共有は組織レベル統制を持たず**（Phase 0 では `organizations` / `organization_settings` 未導入）、URL 単位の安全装置（短時間有効期限・個別失効・監査ログ）のみで運用する。組織レベル On/OFF（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09）は Phase 2 で追加導入する
+  - **後続自動 TOSS は同一トランザクション内で実行、失敗時は全巻き戻し**（FR-BALL-13）
+  - **OAuth と password 認証は同一メールで併用不可**（FR-AUTH-12、ユーザー体験のシンプル化）
   - **セキュリティは短期実装でも妥協しない**（上記 7., 8., 9., 10.）
 
 ### 10.3. Phase 1：ディレクターツール（正規仕様 v1.x 本格適用）
