@@ -25,4 +25,14 @@ module.exports = {
     '@typescript-eslint/consistent-type-imports': 'warn',
   },
   ignorePatterns: ['dist/', 'node_modules/', '.vercel/'],
+  overrides: [
+    {
+      // shadcn 由来 UI primitives は元スタイル維持
+      files: ['src/components/ui/**/*.{ts,tsx}'],
+      rules: {
+        '@typescript-eslint/consistent-type-imports': 'off',
+        'react-refresh/only-export-components': 'off',
+      },
+    },
+  ],
 };

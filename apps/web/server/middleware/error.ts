@@ -1,7 +1,10 @@
 import type { Context, ErrorHandler, NotFoundHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { ZodError } from 'zod';
 
 import type { ApiError } from '@trakon/shared';
+
+import { ApiException } from '../lib/errors.js';
 
 export const notFoundHandler: NotFoundHandler = (c: Context) =>
   c.json<ApiError>(
@@ -15,26 +18,36 @@ export const notFoundHandler: NotFoundHandler = (c: Context) =>
   );
 
 export const errorMiddleware: ErrorHandler = (err, c) => {
-  if (err instanceof HTTPException) {
+  if (err instanceof ApiException) {
+    return c.json<ApiError>(
+      { error: { code: err.code, message: err.message, details: err.details } },
+      err.status,
+    );
+  }
+
+  if (err instanceof ZodError) {
     return c.json<ApiError>(
       {
         error: {
-          code: codeFromStatus(err.status),
-          message: err.message,
+          code: 'UNPROCESSABLE_ENTITY',
+          message: 'Validation failed.',
+          details: err.flatten(),
         },
       },
+      422,
+    );
+  }
+
+  if (err instanceof HTTPException) {
+    return c.json<ApiError>(
+      { error: { code: codeFromStatus(err.status), message: err.message } },
       err.status,
     );
   }
 
   console.error('[trakon] unhandled error', err);
   return c.json<ApiError>(
-    {
-      error: {
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'An unexpected error occurred.',
-      },
-    },
+    { error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred.' } },
     500,
   );
 };
