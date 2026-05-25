@@ -41,9 +41,119 @@ model User {
 
   oauthIdentities OAuthIdentity[]
   auditLogs       AuditLog[]
+  projectsCreated Project[]       @relation("ProjectsCreatedBy")
+  memberships     ProjectMember[]
 
   @@index([authUserId], map: "idx_users_auth_user_id")
   @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// projects — プロジェクト本体
+// 設計書 §2.4.2
+// -----------------------------------------------------------------------------
+model Project {
+  id             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  name           String
+  startDate      DateTime  @map("start_date") @db.Date
+  endDate        DateTime  @map("end_date") @db.Date
+  /// 'active' | 'closed' (CHECK 制約)
+  status         String    @default("active")
+  createdBy      String    @map("created_by") @db.Uuid
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  creator     User            @relation("ProjectsCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict, map: "fk_projects_created_by")
+  members     ProjectMember[]
+  items       ProjectItem[]
+  invitations Invitation[]
+
+  @@index([organizationId], map: "idx_projects_organization_id")
+  @@index([createdBy, status], map: "idx_projects_created_by_status")
+  @@map("projects")
+}
+
+// -----------------------------------------------------------------------------
+// project_members — プロジェクト参加者 (招待中は user_id NULL)
+// 設計書 §2.4.3
+// -----------------------------------------------------------------------------
+model ProjectMember {
+  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  /// 招待受諾前は NULL
+  userId           String?   @map("user_id") @db.Uuid
+  name             String
+  email            String
+  organizationName String    @map("organization_name")
+  /// 'client' | 'production' (CHECK 制約)
+  memberType       String    @map("member_type")
+  /// Phase 1+ で権限細分化に使用
+  roleType         String?   @map("role_type")
+  sortOrder        Int       @default(0) @map("sort_order")
+  isActive         Boolean   @default(true) @map("is_active")
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_pm_project_id")
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_pm_user_id")
+  invitations Invitation[]
+
+  @@unique([projectId, email], map: "uq_pm_project_email")
+  @@index([projectId, sortOrder], map: "idx_pm_project_sort")
+  @@index([userId], map: "idx_pm_user_id")
+  @@map("project_members")
+}
+
+// -----------------------------------------------------------------------------
+// project_items — 制作物
+// 設計書 §2.4.4
+// -----------------------------------------------------------------------------
+model ProjectItem {
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  projectId String    @map("project_id") @db.Uuid
+  name      String
+  /// Phase 1+ (page|document|banner|other)
+  itemType  String?   @map("item_type")
+  sortOrder Int       @default(0) @map("sort_order")
+  startDate DateTime? @map("start_date") @db.Date
+  endDate   DateTime? @map("end_date") @db.Date
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_pi_project_id")
+
+  @@index([projectId, sortOrder], map: "idx_pi_project_sort")
+  @@map("project_items")
+}
+
+// -----------------------------------------------------------------------------
+// invitations — プロジェクト招待トークン (自前管理)
+// 設計書 §2.4.8
+// -----------------------------------------------------------------------------
+model Invitation {
+  id              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  projectId       String    @map("project_id") @db.Uuid
+  invitedMemberId String    @map("invited_member_id") @db.Uuid
+  email           String
+  /// SHA-256 ハッシュ。生トークンは保存しない
+  tokenHash       String    @unique(map: "uq_inv_token_hash") @map("token_hash")
+  roleType        String?   @map("role_type")
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz
+  acceptedAt      DateTime? @map("accepted_at") @db.Timestamptz
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_inv_project_id")
+  invitedMember ProjectMember @relation(fields: [invitedMemberId], references: [id], onDelete: Cascade, map: "fk_inv_invited_member_id")
+
+  @@index([projectId], map: "idx_inv_project_id")
+  @@map("invitations")
 }
 
 // -----------------------------------------------------------------------------
