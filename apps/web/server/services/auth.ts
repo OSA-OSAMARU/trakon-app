@@ -34,13 +34,35 @@ function toDTO(user: {
   };
 }
 
+type TrakonProvider = 'google' | 'microsoft';
+
+function toTrakonProvider(supabaseProvider: string): TrakonProvider | null {
+  if (supabaseProvider === 'google') return 'google';
+  if (supabaseProvider === 'azure') return 'microsoft';
+  return null;
+}
+
+function deriveOAuthNames(meta: Record<string, unknown>, email: string) {
+  const localPart = email.split('@')[0] ?? email;
+  const full =
+    (typeof meta.full_name === 'string' && meta.full_name) ||
+    (typeof meta.name === 'string' && meta.name) ||
+    localPart;
+  const display = (typeof meta.name === 'string' && meta.name) || full;
+  return {
+    fullName: full.slice(0, 100),
+    displayName: display.slice(0, 50),
+  };
+}
+
 /**
  * Supabase auth.users と public.users を同期する。
  * - users 行があれば返す
  * - 無ければ provider に応じて
  *   - 'email' / 'magiclink' → `requires_profile_completion` を返す
  *     (FE は SC-01 の create-account に遷移し complete-signup を呼ぶ)
- *   - 'google' / 'azure' → Sub-Phase 0.1 後半で実装。今は 422 を返す
+ *   - 'google' / 'azure' → users + oauth_identities + audit_logs を 1 トランザクションで INSERT
+ *     (FR-AUTH-12: 同一メール別プロバイダは 409)
  */
 export async function syncUser(authUserId: string, jwtEmail: string): Promise<SyncResult> {
   const existing = await prisma.user.findUnique({ where: { authUserId } });
@@ -54,18 +76,60 @@ export async function syncUser(authUserId: string, jwtEmail: string): Promise<Sy
     throw new ApiException('AUTH_INVALID', 401, 'Supabase auth user not found.');
   }
   const email = data.user.email ?? jwtEmail;
-  const provider = data.user.app_metadata?.provider ?? 'email';
+  const supabaseProvider = data.user.app_metadata?.provider ?? 'email';
+  const trakonProvider = toTrakonProvider(supabaseProvider);
 
-  if (provider === 'google' || provider === 'azure') {
-    // Sub-Phase 0.1 後半 (OAuth) で実装予定
+  if (!trakonProvider) {
+    // Magic-link / password / etc.
+    return { status: 'requires_profile_completion', email };
+  }
+
+  // OAuth フロー
+  // 同一メール別プロバイダ衝突チェック (FR-AUTH-12)
+  const emailOwner = await prisma.user.findFirst({
+    where: { email, deletedAt: null },
+  });
+  if (emailOwner && emailOwner.primaryAuthMethod !== trakonProvider) {
     throw new ApiException(
-      'OAUTH_SIGNUP_NOT_IMPLEMENTED',
-      422,
-      'OAuth signup will be available in the next release.',
+      'SAME_EMAIL_DIFFERENT_PROVIDER',
+      409,
+      `Email is already registered with ${emailOwner.primaryAuthMethod}.`,
+      { primaryAuthMethod: emailOwner.primaryAuthMethod },
     );
   }
 
-  return { status: 'requires_profile_completion', email };
+  // provider 由来 subject
+  const identity = data.user.identities?.find((i) => i.provider === supabaseProvider);
+  if (!identity) {
+    throw new ApiException('OAUTH_IDENTITY_NOT_FOUND', 500, 'Provider identity not found.');
+  }
+  const providerUserId = identity.id;
+  const meta = (data.user.user_metadata ?? {}) as Record<string, unknown>;
+  const { fullName, displayName } = deriveOAuthNames(meta, email);
+
+  // audit_logs の login 記録はルート側 recordLogin で書く (重複防止)
+  const created = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        authUserId,
+        email,
+        fullName,
+        displayName,
+        primaryAuthMethod: trakonProvider,
+      },
+    });
+    await tx.oAuthIdentity.create({
+      data: {
+        userId: user.id,
+        provider: trakonProvider,
+        providerUserId,
+        email,
+      },
+    });
+    return user;
+  });
+
+  return { status: 'ready', user: toDTO(created) };
 }
 
 /**
