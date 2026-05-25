@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { ApiClientError } from '@/lib/api';
 import { useAuthSession } from './useAuthSession';
 import { authApi } from './api';
+import { OAuthButtons } from './OAuthButtons';
 
 // =============================================================================
 // SC-01 ログイン/サインアップ統合画面
@@ -122,6 +123,9 @@ function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, strin
             ログイン
           </Button>
         </form>
+        <div className="mt-6">
+          <OAuthButtons />
+        </div>
         <div className="mt-6 flex flex-col items-center gap-2 text-sm">
           <button
             type="button"
@@ -194,6 +198,9 @@ function SignupForm({
             認証メールを送る
           </Button>
         </form>
+        <div className="mt-6">
+          <OAuthButtons />
+        </div>
         <div className="mt-6 text-center text-sm">
           <button
             type="button"
