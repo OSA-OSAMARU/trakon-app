@@ -27,6 +27,7 @@ import {
   updateItem,
 } from '../../services/items.js';
 import { ApiException } from '../../lib/errors.js';
+import { membersRoute } from './members.js';
 
 export const projectsRoute = new Hono()
   .use('*', requireAuth())
@@ -123,4 +124,7 @@ export const projectsRoute = new Hono()
       await deleteItem({ itemId, projectId: project.projectId });
       return c.body(null, 204);
     },
-  );
+  )
+
+  // ----------------------------- /projects/:projectId/members -----------------------------
+  .route('/:projectId/members', membersRoute);
