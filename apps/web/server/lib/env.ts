@@ -8,6 +8,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url().optional(),
   DIRECT_URL: z.string().url().optional(),
   SERVER_PORT: z.coerce.number().default(3001),
+  /** 招待 URL の組み立てに使用 (FE オリジン) */
+  PUBLIC_APP_URL: z.string().url().default('http://localhost:5173'),
 });
 
 export type ServerEnv = z.infer<typeof envSchema>;

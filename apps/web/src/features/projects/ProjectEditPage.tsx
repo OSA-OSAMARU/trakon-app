@@ -137,12 +137,12 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            参加者の追加・編集・招待メール送信は次回リリースで有効化されます。
+            参加者の追加・招待・削除を行います。
           </p>
-          <Button variant="outline" size="sm" disabled asChild>
+          <Button variant="outline" size="sm" asChild>
             <Link to={`/projects/${projectId}/members?tab=manage`}>
               <Users className="size-4" />
-              参加者管理（準備中）
+              参加者管理を開く
             </Link>
           </Button>
         </CardContent>
