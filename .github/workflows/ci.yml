@@ -32,7 +32,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # NOTE: prisma generate は Sub-Phase 0.1 で実モデルが入った時点で有効化する
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Validate Prisma schema
+        run: pnpm --filter @trakon/db exec prisma format --check
 
       - name: Lint
         run: pnpm lint

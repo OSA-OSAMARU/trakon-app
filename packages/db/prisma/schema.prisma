@@ -1,13 +1,15 @@
 // =============================================================================
 // TRAKON — Prisma Schema
 // -----------------------------------------------------------------------------
-// 詳細は docs/design/02-database.md を参照。
-// Sub-Phase 0.0 では空スキーマで初期化のみ。
-// 各サブフェーズで必要なテーブルを段階的に追加していく：
-//   0.1: users, oauth_identities, audit_logs (login のみ)
-//   0.2: projects, project_members, project_items, invitations
-//   0.3: plans, ball_events
-//   0.5: share_links
+// 詳細: docs/design/02-database.md
+// Sub-Phase 0.1: users / oauth_identities / audit_logs を追加
+// -----------------------------------------------------------------------------
+// 設計書方針:
+//   * 主キーは UUID v7 (Prisma 5.14+ の `@default(uuid(7))`)
+//   * ENUM は Postgres `text + CHECK 制約` で実体化 (Postgres native enum は不採用)
+//     → Prisma 上は String、許容値はマイグレーション SQL の CHECK 制約で強制
+//   * `updated_at` は DB トリガで自動更新 (Prisma `@updatedAt` は使わない)
+//   * `audit_logs` は append-only (UPDATE / DELETE をトリガで拒否)
 // =============================================================================
 
 generator client {
@@ -19,4 +21,77 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+
+// -----------------------------------------------------------------------------
+// users — アプリ側のユーザー本体 (Supabase auth.users と 1:1)
+// 設計書 §2.4.1
+// -----------------------------------------------------------------------------
+model User {
+  id                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  authUserId        String    @unique(map: "uq_users_auth_user_id") @map("auth_user_id") @db.Uuid
+  email             String    @unique(map: "uq_users_email")
+  fullName          String    @map("full_name")
+  displayName       String    @map("display_name")
+  /// 'password' | 'google' | 'microsoft' (CHECK 制約)
+  primaryAuthMethod String    @default("password") @map("primary_auth_method")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
+
+  oauthIdentities OAuthIdentity[]
+  auditLogs       AuditLog[]
+
+  @@index([authUserId], map: "idx_users_auth_user_id")
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// oauth_identities — OAuth 連携 (v1.1, Phase 0)
+// 設計書 §2.4.X
+// -----------------------------------------------------------------------------
+model OAuthIdentity {
+  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  /// 'google' | 'microsoft' (CHECK 制約)
+  provider       String
+  providerUserId String   @map("provider_user_id")
+  email          String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_oauth_identities_user_id")
+
+  @@unique([provider, providerUserId], map: "uq_oauth_identities_provider_provider_user_id")
+  @@unique([userId, provider], map: "uq_oauth_identities_user_id_provider")
+  @@index([userId], map: "idx_oauth_identities_user_id")
+  @@map("oauth_identities")
+}
+
+// -----------------------------------------------------------------------------
+// audit_logs — 監査ログ (append-only)
+// 設計書 §2.4.7
+// -----------------------------------------------------------------------------
+model AuditLog {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  actorUserId  String?  @map("actor_user_id") @db.Uuid
+  /// share_links FK は Sub-Phase 0.5 で実装 (share_links テーブル追加時)
+  shareLinkId  String?  @map("share_link_id") @db.Uuid
+  /// Phase 0 許可値: login | logout | toss | complete | share_access | share_create | share_revoke | share_toss | share_complete
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id") @db.Uuid
+  /// 'success' | 'failure' (CHECK 制約)
+  result       String
+  ip           String?  @db.Inet
+  userAgent    String?  @map("user_agent")
+  extra        Json     @default("{}")
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull, map: "fk_al_actor_user_id")
+
+  @@index([occurredAt(sort: Desc)], map: "idx_al_occurred_at_desc")
+  @@index([actorUserId, occurredAt(sort: Desc)], map: "idx_al_actor_user_id_occurred_at")
+  @@index([resourceType, resourceId], map: "idx_al_resource")
+  @@map("audit_logs")
 }
