@@ -9,17 +9,19 @@
     ".": "./src/index.ts",
     "./constants": "./src/constants/index.ts",
     "./types": "./src/types/index.ts",
-    "./schemas": "./src/schemas/index.ts"
+    "./schemas": "./src/schemas/index.ts",
+    "./domain": "./src/domain/ballHolder.ts"
   },
   "scripts": {
     "lint": "echo '(shared) no lint configured yet'",
     "type-check": "tsc --noEmit",
-    "test": "echo '(shared) no tests yet'"
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.4"
   }
 }

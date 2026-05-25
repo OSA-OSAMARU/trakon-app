@@ -28,6 +28,7 @@ import {
 } from '../../services/items.js';
 import { ApiException } from '../../lib/errors.js';
 import { membersRoute } from './members.js';
+import { plansRoute } from './plans.js';
 
 export const projectsRoute = new Hono()
   .use('*', requireAuth())
@@ -127,4 +128,7 @@ export const projectsRoute = new Hono()
   )
 
   // ----------------------------- /projects/:projectId/members -----------------------------
-  .route('/:projectId/members', membersRoute);
+  .route('/:projectId/members', membersRoute)
+
+  // ----------------------------- /projects/:projectId/items/:itemId/plans -----------------------------
+  .route('/:projectId/items/:itemId/plans', plansRoute);

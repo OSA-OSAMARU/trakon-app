@@ -43,6 +43,7 @@ model User {
   auditLogs       AuditLog[]
   projectsCreated Project[]       @relation("ProjectsCreatedBy")
   memberships     ProjectMember[]
+  ballEvents      BallEvent[]
 
   @@index([authUserId], map: "idx_users_auth_user_id")
   @@map("users")
@@ -99,9 +100,12 @@ model ProjectMember {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_pm_project_id")
-  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_pm_user_id")
-  invitations Invitation[]
+  project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_pm_project_id")
+  user              User?        @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_pm_user_id")
+  invitations       Invitation[]
+  plansFrom         Plan[]       @relation("PlanFromMember")
+  plansTo           Plan[]       @relation("PlanToMember")
+  ballEventsAsActor BallEvent[]
 
   @@unique([projectId, email], map: "uq_pm_project_email")
   @@index([projectId, sortOrder], map: "idx_pm_project_sort")
@@ -127,9 +131,78 @@ model ProjectItem {
   updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_pi_project_id")
+  plans   Plan[]
 
   @@index([projectId, sortOrder], map: "idx_pi_project_sort")
   @@map("project_items")
+}
+
+// -----------------------------------------------------------------------------
+// plans — 予定 (Phase 0 は plan_type='toss' のみ)
+// 設計書 §2.4.5
+// -----------------------------------------------------------------------------
+model Plan {
+  id              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  itemId          String    @map("item_id") @db.Uuid
+  /// 'toss' (Phase 0 / CHECK 制約)
+  planType        String    @default("toss") @map("plan_type")
+  title           String
+  /// 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other' (CHECK 制約)
+  category        String
+  scheduledDate   DateTime  @map("scheduled_date") @db.Date
+  dueDate         DateTime? @map("due_date") @db.Date
+  fromMemberId    String?   @map("from_member_id") @db.Uuid
+  toMemberId      String?   @map("to_member_id") @db.Uuid
+  /// 後続紐付け (UNIQUE, 自己参照 CHECK で禁止)
+  successorPlanId String?   @unique(map: "uq_plans_successor_plan_id") @map("successor_plan_id") @db.Uuid
+  /// 'active' | 'completed' | 'canceled' (CHECK 制約)
+  status          String    @default("active")
+  memo            String?
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  item        ProjectItem    @relation(fields: [itemId], references: [id], onDelete: Cascade, map: "fk_plans_item_id")
+  fromMember  ProjectMember? @relation("PlanFromMember", fields: [fromMemberId], references: [id], onDelete: Restrict, map: "fk_plans_from_member_id")
+  toMember    ProjectMember? @relation("PlanToMember", fields: [toMemberId], references: [id], onDelete: Restrict, map: "fk_plans_to_member_id")
+  successor   Plan?          @relation("PlanSuccessor", fields: [successorPlanId], references: [id], onDelete: SetNull, map: "fk_plans_successor_plan_id")
+  predecessor Plan?          @relation("PlanSuccessor")
+  ballEvents  BallEvent[]
+
+  @@index([itemId, scheduledDate], map: "idx_plans_item_scheduled")
+  @@index([fromMemberId], map: "idx_plans_from_member")
+  @@index([toMemberId], map: "idx_plans_to_member")
+  @@index([category], map: "idx_plans_category")
+  @@index([status, scheduledDate], map: "idx_plans_status_scheduled")
+  @@map("plans")
+}
+
+// -----------------------------------------------------------------------------
+// ball_events — ボール責任移動履歴 (append-only)
+// 設計書 §2.4.6
+// -----------------------------------------------------------------------------
+model BallEvent {
+  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  planId        String   @map("plan_id") @db.Uuid
+  /// 'tossed' | 'completed' (CHECK 制約)
+  eventType     String   @map("event_type")
+  /// 'human' | 'auto_chain' (CHECK 制約 + actor_consistency)
+  source        String   @default("human")
+  /// source='auto_chain' のときは NULL (system actor)
+  actorMemberId String?  @map("actor_member_id") @db.Uuid
+  /// source='auto_chain' のときは NULL (system actor)
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz
+  note          String?
+
+  plan        Plan           @relation(fields: [planId], references: [id], onDelete: Restrict, map: "fk_be_plan_id")
+  actorMember ProjectMember? @relation(fields: [actorMemberId], references: [id], onDelete: Restrict, map: "fk_be_actor_member_id")
+  actorUser   User?          @relation(fields: [actorUserId], references: [id], onDelete: SetNull, map: "fk_be_actor_user_id")
+
+  @@index([planId, occurredAt(sort: Desc)], map: "idx_be_plan_occurred_desc")
+  @@index([source], map: "idx_be_source")
+  @@map("ball_events")
 }
 
 // -----------------------------------------------------------------------------
