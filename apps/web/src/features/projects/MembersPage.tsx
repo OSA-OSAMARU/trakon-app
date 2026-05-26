@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Mail, Plus, Trash2, UsersRound, ArrowLeft } from 'lucide-react';
+import { Loader2, Mail, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare } from 'lucide-react';
+import { MemberKanbanTab } from '@/features/plans/MemberKanbanTab';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -60,11 +61,18 @@ export function MembersPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'manage' ? 'manage' : 'kanban';
+  const selectedItemId = params.get('itemId');
+
+  const membersQuery = useQuery({
+    queryKey: membersQueryKey.list(projectId ?? ''),
+    queryFn: () => membersApi.list(projectId!),
+    enabled: !!projectId,
+  });
 
   if (!projectId) return <NotFound projectId={undefined} />;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5 px-8 py-10">
+    <div className="mx-auto max-w-6xl space-y-5 px-8 py-10">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">参加者</h1>
@@ -91,21 +99,27 @@ export function MembersPage() {
       >
         <TabsList>
           <TabsTrigger value="kanban">
-            <UsersRound className="size-4" />
+            <KanbanSquare className="size-4" />
             メンバー
           </TabsTrigger>
-          <TabsTrigger value="manage">管理</TabsTrigger>
+          <TabsTrigger value="manage">
+            <UsersRound className="size-4" />
+            管理
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
       {tab === 'kanban' ? (
-        <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            メンバーかんばん（SC-17）は Sub-Phase 0.4 で実装予定です。
-            <br />
-            参加者の追加・編集は「管理」タブから行えます。
-          </CardContent>
-        </Card>
+        <MemberKanbanTab
+          projectId={projectId}
+          members={membersQuery.data ?? []}
+          selectedItemId={selectedItemId}
+          onChangeItem={(itemId) => {
+            const sp = new URLSearchParams(params);
+            sp.set('itemId', itemId);
+            setParams(sp, { replace: true });
+          }}
+        />
       ) : (
         <ManageTab projectId={projectId} />
       )}
