@@ -11,6 +11,8 @@ import { MembersPage } from './features/projects/MembersPage';
 import { ProjectCreatePage } from './features/projects/ProjectCreatePage';
 import { ProjectEditPage } from './features/projects/ProjectEditPage';
 import { ProjectListPage } from './features/projects/ProjectListPage';
+import { ShareLinksPage } from './features/shareLinks/ShareLinksPage';
+import { SharePage } from './features/shareLinks/SharePage';
 
 export function App() {
   return (
@@ -18,6 +20,7 @@ export function App() {
       <Route path="/login" element={<SC01LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
+      <Route path="/share/:token" element={<SharePage />} />
 
       <Route
         element={
@@ -31,6 +34,7 @@ export function App() {
         <Route path="/projects/new" element={<ProjectCreatePage />} />
         <Route path="/projects/:projectId/edit" element={<ProjectEditPage />} />
         <Route path="/projects/:projectId/members" element={<MembersPage />} />
+        <Route path="/projects/:projectId/share-links" element={<ShareLinksPage />} />
         <Route
           path="/projects/:projectId/items/:itemId"
           element={<ItemSchedulePage />}
