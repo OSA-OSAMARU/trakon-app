@@ -1,54 +1,210 @@
-import { useCurrentUser } from '@/features/auth/useCurrentUser';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/lib/supabase';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
+import { ja } from 'date-fns/locale';
+import { AlertTriangle, CheckCircle2, ListChecks } from 'lucide-react';
+
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/components/ui/utils';
+import { CATEGORY_STYLE } from '@/features/plans/categoryColor';
+import {
+  dashboardApi,
+  dashboardQueryKey,
+  type DashboardMemberSection,
+  type DashboardTask,
+} from '@/features/dashboard/api';
 
 /**
- * Sub-Phase 0.1: ダッシュボードはプレースホルダ。
- * 本実装は Sub-Phase 0.4 (SC-09) で行う。
+ * SC-09 ダッシュボード (/dashboard)
+ * 設計書 §4.4 SC-09 + §3.6 GET /users/me/dashboard
  */
 export function DashboardPage() {
-  const { data } = useCurrentUser();
-  const user = data && !data.requiresProfileCompletion ? data.user : null;
+  const { data, isLoading, error } = useQuery({
+    queryKey: dashboardQueryKey.base(),
+    queryFn: () => dashboardApi.get(),
+  });
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-6 py-12">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">TRAKON</h1>
-        <Button variant="outline" size="sm" onClick={() => supabase.auth.signOut()}>
-          サインアウト
-        </Button>
+    <div className="mx-auto max-w-5xl space-y-6 px-8 py-10">
+      <header>
+        <h1 className="text-xl font-semibold tracking-tight">ダッシュボード</h1>
+        <p className="text-sm text-muted-foreground">
+          {data
+            ? `${format(parseISO(data.today), 'yyyy年 M月d日 (E)', { locale: ja })} 時点で進行中のボール`
+            : '今日のボールを集計中…'}
+        </p>
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">ようこそ</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          {user ? (
-            <>
-              <p>
-                <span className="text-muted-foreground">表示名 / </span>
-                <span className="font-medium">{user.displayName}</span>
-              </p>
-              <p>
-                <span className="text-muted-foreground">メール / </span>
-                <span className="font-medium">{user.email}</span>
-              </p>
-              <p>
-                <span className="text-muted-foreground">認証方式 / </span>
-                <span className="font-medium">{user.primaryAuthMethod}</span>
-              </p>
-            </>
+      {isLoading && <Loading />}
+      {error && (
+        <Card>
+          <CardContent className="py-6 text-sm text-destructive">
+            ダッシュボードの取得に失敗しました。
+          </CardContent>
+        </Card>
+      )}
+
+      {data && (
+        <>
+          <SummaryCards
+            todayCount={data.summary.todayTaskCount}
+            overdueCount={data.summary.overdueCount}
+          />
+
+          {data.projects.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-sm text-muted-foreground">
+                <CheckCircle2 className="size-6 text-emerald-500" />
+                今日のタスクはありません。
+              </CardContent>
+            </Card>
           ) : (
-            <p className="text-muted-foreground">ユーザー情報を取得中…</p>
+            <ul className="space-y-5">
+              {data.projects.map((p) => (
+                <li key={p.id}>
+                  <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <span className="inline-block size-2 rounded-full bg-primary" />
+                    <Link to={`/projects/${p.id}/edit`} className="hover:underline">
+                      {p.name}
+                    </Link>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({p.memberSections.reduce((s, m) => s + m.tasks.length, 0)} 件)
+                    </span>
+                  </h2>
+                  <ul className="space-y-3">
+                    {p.memberSections.map((s) => (
+                      <li key={s.member.id}>
+                        <MemberSection projectId={p.id} section={s} />
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
           )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+function SummaryCards({
+  todayCount,
+  overdueCount,
+}: {
+  todayCount: number;
+  overdueCount: number;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Card>
+        <CardContent className="flex items-center gap-3 py-4">
+          <ListChecks className="size-5 text-primary" />
+          <div>
+            <p className="text-xs text-muted-foreground">今日のタスク</p>
+            <p className="text-2xl font-semibold">{todayCount}</p>
+          </div>
         </CardContent>
       </Card>
+      <Card
+        className={cn(
+          overdueCount > 0 ? 'border-rose-300 bg-rose-50' : '',
+        )}
+      >
+        <CardContent className="flex items-center gap-3 py-4">
+          <AlertTriangle
+            className={cn(
+              'size-5',
+              overdueCount > 0 ? 'text-rose-500' : 'text-muted-foreground',
+            )}
+          />
+          <div>
+            <p className="text-xs text-muted-foreground">期限超過</p>
+            <p
+              className={cn(
+                'text-2xl font-semibold',
+                overdueCount > 0 && 'text-rose-700',
+              )}
+            >
+              {overdueCount}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
-      <p className="text-sm text-muted-foreground">
-        ダッシュボード本体は Sub-Phase 0.4 で実装します。
-      </p>
-    </main>
+function MemberSection({
+  projectId,
+  section,
+}: {
+  projectId: string;
+  section: DashboardMemberSection;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs">
+        <span className="font-medium">{section.member.name}</span>
+        <span className="text-muted-foreground">
+          ({section.member.organizationName || '—'})
+        </span>
+        <Badge variant="secondary" className="ml-auto">
+          {section.tasks.length} 件
+        </Badge>
+      </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {section.tasks.map((t) => (
+          <TaskCard key={t.planId} projectId={projectId} task={t} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TaskCard({ projectId, task }: { projectId: string; task: DashboardTask }) {
+  const style = CATEGORY_STYLE[task.category];
+  return (
+    <Link
+      to={`/projects/${projectId}/items/${task.itemId}?modal=ball-detail&planId=${task.planId}`}
+      className={cn(
+        'block rounded-md border px-3 py-2 text-xs transition-colors',
+        task.isOverdue
+          ? 'border-rose-400 bg-rose-50 text-rose-700 hover:bg-rose-100'
+          : `${style.bg} ${style.border} ${style.text} hover:brightness-95`,
+      )}
+    >
+      <div className="mb-1 flex items-center gap-1">
+        <Badge variant="secondary" className="px-1 py-0 text-[10px]">
+          {style.label}
+        </Badge>
+        {task.isOverdue && (
+          <Badge variant="destructive" className="px-1 py-0 text-[10px]">
+            期限超過
+          </Badge>
+        )}
+      </div>
+      <p className="line-clamp-2 font-medium">{task.title}</p>
+      <p className="mt-0.5 line-clamp-1 text-[11px] opacity-80">{task.itemName}</p>
+      {task.dueDate && (
+        <p className="mt-1 text-[10px] opacity-70">期日 {task.dueDate}</p>
+      )}
+    </Link>
+  );
+}
+
+function Loading() {
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Skeleton className="h-20 rounded-xl" />
+        <Skeleton className="h-20 rounded-xl" />
+      </div>
+      <Skeleton className="h-40 rounded-xl" />
+      <Skeleton className="h-40 rounded-xl" />
+    </div>
   );
 }
