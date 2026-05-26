@@ -6,6 +6,7 @@ import { SidebarLayout } from './app/SidebarLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { SC01LoginPage } from './features/auth/SC01LoginPage';
 import { InvitationAcceptPage } from './features/invitations/InvitationAcceptPage';
+import { ItemSchedulePage } from './features/plans/ItemSchedulePage';
 import { MembersPage } from './features/projects/MembersPage';
 import { ProjectCreatePage } from './features/projects/ProjectCreatePage';
 import { ProjectEditPage } from './features/projects/ProjectEditPage';
@@ -30,7 +31,11 @@ export function App() {
         <Route path="/projects/new" element={<ProjectCreatePage />} />
         <Route path="/projects/:projectId/edit" element={<ProjectEditPage />} />
         <Route path="/projects/:projectId/members" element={<MembersPage />} />
-        {/* 詳細画面 (SC-06 縦型カレンダー) は Sub-Phase 0.3 で実装。当面は edit に飛ばす */}
+        <Route
+          path="/projects/:projectId/items/:itemId"
+          element={<ItemSchedulePage />}
+        />
+        {/* /projects/:projectId は当面 edit に飛ばす (詳細ダッシュボードは Phase 1) */}
         <Route path="/projects/:projectId" element={<ProjectRedirectToEdit />} />
       </Route>
 
