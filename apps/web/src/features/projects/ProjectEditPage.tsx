@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -227,6 +227,12 @@ function ItemsSection({
             <li key={it.id} className="flex items-center justify-between gap-2 py-2">
               <div className="text-sm">{it.name}</div>
               <div className="flex gap-1">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to={`/projects/${projectId}/items/${it.id}`}>
+                    <CalendarDays className="size-4" />
+                    スケジュール
+                  </Link>
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"

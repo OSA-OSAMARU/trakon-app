@@ -1,0 +1,305 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { CheckCircle2, Loader2, Pencil, Send, Trash2, Zap } from 'lucide-react';
+import { toast } from 'sonner';
+
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ApiClientError } from '@/lib/api';
+import { useCurrentUser } from '@/features/auth/useCurrentUser';
+import type { ProjectMember } from '@/features/projects/membersApi';
+import { plansApi, plansQueryKey, type BallEvent } from './api';
+import { CATEGORY_STYLE } from './categoryColor';
+import { useCompletePlan, useTossPlan } from './useOptimisticBallAction';
+
+/**
+ * SC-08 ボール詳細・TOSS/完了モーダル
+ *  - ボール状態・履歴表示
+ *  - 認可: Ball Holder 本人 or ディレクター
+ */
+export function BallDetailModal({
+  projectId,
+  itemId,
+  planId,
+  members,
+  onClose,
+  onEdit,
+}: {
+  projectId: string;
+  itemId: string;
+  planId: string;
+  members: ProjectMember[];
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const qc = useQueryClient();
+  const [deleting, setDeleting] = useState(false);
+
+  const { data: currentUser } = useCurrentUser();
+  const myUserId = currentUser && !currentUser.requiresProfileCompletion ? currentUser.user.id : null;
+  const myMember = members.find((m) => m.userId === myUserId);
+
+  const detailQuery = useQuery({
+    queryKey: plansQueryKey.detail(projectId, itemId, planId),
+    queryFn: () => plansApi.get(projectId, itemId, planId),
+  });
+
+  const tossMut = useTossPlan({ projectId, itemId, planId });
+  const completeMut = useCompletePlan({ projectId, itemId, planId });
+
+  const deleteMut = useMutation({
+    mutationFn: () => plansApi.remove(projectId, itemId, planId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+      toast.success('予定を削除しました');
+      setDeleting(false);
+      onClose();
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '削除に失敗しました'),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg">
+        {detailQuery.isLoading && <DetailSkeleton />}
+        {detailQuery.error && (
+          <DialogHeader>
+            <DialogTitle>取得に失敗しました</DialogTitle>
+            <DialogDescription>時間をおいて再度お試しください。</DialogDescription>
+          </DialogHeader>
+        )}
+        {detailQuery.data &&
+          (() => {
+            const { plan, events } = detailQuery.data;
+            const isBallHolder =
+              !!plan.ballHolder && !!myMember && plan.ballHolder.id === myMember.id;
+            const canAct = plan.status === 'active' && (isBallHolder /* director は BE 側で許可 */);
+            const style = CATEGORY_STYLE[plan.category];
+
+            const handleToss = () => tossMut.mutate(undefined);
+            const handleComplete = () => completeMut.mutate();
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Badge variant="secondary" className={`${style.bg} ${style.text}`}>
+                      {style.label}
+                    </Badge>
+                    {plan.title}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {format(new Date(plan.scheduledDate), 'yyyy/M/d')}
+                    {plan.dueDate && ` 〜 期日 ${format(new Date(plan.dueDate), 'yyyy/M/d')}`}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-3 text-sm">
+                  <BallHolderBanner plan={plan} />
+
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                    <dt className="text-muted-foreground">FROM</dt>
+                    <dd>
+                      {plan.fromMember
+                        ? `${plan.fromMember.name} (${plan.fromMember.organizationName || '—'})`
+                        : '—'}
+                    </dd>
+                    <dt className="text-muted-foreground">TO</dt>
+                    <dd>
+                      {plan.toMember
+                        ? `${plan.toMember.name} (${plan.toMember.organizationName || '—'})`
+                        : '—'}
+                    </dd>
+                  </dl>
+                  {plan.memo && (
+                    <div className="rounded-md border border-border bg-muted/40 p-3 text-xs whitespace-pre-wrap">
+                      {plan.memo}
+                    </div>
+                  )}
+                  <Section title="履歴">
+                    <EventTimeline events={events} />
+                  </Section>
+                </div>
+
+                <DialogFooter className="flex w-full justify-between gap-2 sm:justify-between">
+                  <div className="flex gap-1">
+                    {plan.status === 'active' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onEdit}
+                        aria-label="編集"
+                      >
+                        <Pencil className="size-4" />
+                      </Button>
+                    )}
+                    {plan.status === 'active' && events.length === 0 && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleting(true)}
+                        aria-label="削除"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {plan.ballState === 'ready' && canAct && (
+                      <Button onClick={handleToss} disabled={tossMut.isPending}>
+                        {tossMut.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Send className="size-4" />
+                        )}
+                        TOSS する
+                      </Button>
+                    )}
+                    {plan.ballState === 'tossed' && canAct && (
+                      <Button
+                        onClick={handleComplete}
+                        disabled={completeMut.isPending}
+                      >
+                        {completeMut.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="size-4" />
+                        )}
+                        完了する
+                      </Button>
+                    )}
+                    <Button variant="outline" onClick={onClose}>
+                      閉じる
+                    </Button>
+                  </div>
+                </DialogFooter>
+              </>
+            );
+          })()}
+      </DialogContent>
+
+      <AlertDialog open={deleting} onOpenChange={(o) => !o && setDeleting(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>予定を削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              この操作は取り消せません。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                deleteMut.mutate();
+              }}
+              disabled={deleteMut.isPending}
+            >
+              削除する
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Dialog>
+  );
+}
+
+function BallHolderBanner({
+  plan,
+}: {
+  plan: { ballHolder: { name: string } | null; ballState: 'ready' | 'tossed' | 'completed'; status: string };
+}) {
+  if (plan.status === 'completed') {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-700">
+        <CheckCircle2 className="size-4" /> 完了済み
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2 text-xs">
+      <span className="text-muted-foreground">現在のホルダー</span>
+      <span className="font-medium">{plan.ballHolder?.name ?? '—'}</span>
+      <Badge variant="secondary" className="ml-auto">
+        {plan.ballState === 'tossed' ? 'TOSS 済み' : 'TOSS 待ち'}
+      </Badge>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h3 className="mb-1.5 text-xs font-medium text-muted-foreground">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function EventTimeline({ events }: { events: BallEvent[] }) {
+  if (events.length === 0) {
+    return <p className="text-xs text-muted-foreground">まだイベントはありません。</p>;
+  }
+  return (
+    <ol className="space-y-1.5">
+      {events.map((e) => (
+        <li
+          key={e.id}
+          className="flex items-center gap-2 rounded-md border border-border px-2 py-1 text-xs"
+        >
+          {e.eventType === 'tossed' ? (
+            <Send className="size-3.5 text-sky-600" />
+          ) : (
+            <CheckCircle2 className="size-3.5 text-emerald-600" />
+          )}
+          <span className="font-medium">
+            {e.eventType === 'tossed' ? 'TOSS' : '完了'}
+          </span>
+          {e.source === 'auto_chain' && (
+            <Badge variant="secondary" className="px-1 py-0 text-[10px]">
+              <Zap className="size-3" />
+              自動連鎖
+            </Badge>
+          )}
+          <span className="text-muted-foreground">
+            by {e.actor?.name ?? 'system'}
+          </span>
+          <span className="ml-auto text-muted-foreground">
+            {format(new Date(e.occurredAt), 'yyyy/M/d HH:mm')}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="space-y-3">
+      <Skeleton className="h-6 w-1/2" />
+      <Skeleton className="h-20 w-full" />
+      <Skeleton className="h-20 w-full" />
+    </div>
+  );
+}
