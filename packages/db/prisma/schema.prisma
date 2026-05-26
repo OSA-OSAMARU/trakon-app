@@ -72,6 +72,7 @@ model Project {
   members     ProjectMember[]
   items       ProjectItem[]
   invitations Invitation[]
+  shareLinks  ShareLink[]
 
   @@index([organizationId], map: "idx_projects_organization_id")
   @@index([createdBy, status], map: "idx_projects_created_by_status")
@@ -106,6 +107,7 @@ model ProjectMember {
   plansFrom         Plan[]       @relation("PlanFromMember")
   plansTo           Plan[]       @relation("PlanToMember")
   ballEventsAsActor BallEvent[]
+  shareLinksIssued  ShareLink[]
 
   @@unique([projectId, email], map: "uq_pm_project_email")
   @@index([projectId, sortOrder], map: "idx_pm_project_sort")
@@ -271,10 +273,38 @@ model AuditLog {
   userAgent    String?  @map("user_agent")
   extra        Json     @default("{}")
 
-  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull, map: "fk_al_actor_user_id")
+  actor     User?      @relation(fields: [actorUserId], references: [id], onDelete: SetNull, map: "fk_al_actor_user_id")
+  shareLink ShareLink? @relation(fields: [shareLinkId], references: [id], onDelete: SetNull, map: "fk_al_share_link_id")
 
   @@index([occurredAt(sort: Desc)], map: "idx_al_occurred_at_desc")
   @@index([actorUserId, occurredAt(sort: Desc)], map: "idx_al_actor_user_id_occurred_at")
   @@index([resourceType, resourceId], map: "idx_al_resource")
   @@map("audit_logs")
+}
+
+// -----------------------------------------------------------------------------
+// share_links — 非会員 URL 共有 (v1.1, Phase 0)
+// 設計書 §2.4.9
+// -----------------------------------------------------------------------------
+model ShareLink {
+  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  /// 'project' | 'item' | 'plan' (CHECK 制約)
+  scopeType        String    @map("scope_type")
+  /// scope_type='project' なら NULL (整合性 CHECK で強制)
+  scopeTargetId    String?   @map("scope_target_id") @db.Uuid
+  /// SHA-256 ハッシュ。生トークンは保存しない
+  tokenHash        String    @unique(map: "uq_sl_token_hash") @map("token_hash")
+  issuedByMemberId String    @map("issued_by_member_id") @db.Uuid
+  issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
+  lastAccessedAt   DateTime? @map("last_accessed_at") @db.Timestamptz
+
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_sl_project_id")
+  issuedByMember ProjectMember @relation(fields: [issuedByMemberId], references: [id], onDelete: Restrict, map: "fk_sl_issued_by_member_id")
+  auditLogs      AuditLog[]
+
+  @@index([projectId], map: "idx_sl_project_id")
+  @@map("share_links")
 }

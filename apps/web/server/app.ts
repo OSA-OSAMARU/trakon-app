@@ -8,6 +8,7 @@ import { dashboardRoute } from './routes/v1/dashboard.js';
 import { healthRoute } from './routes/v1/healthz.js';
 import { invitationsRoute } from './routes/v1/invitations.js';
 import { projectsRoute } from './routes/v1/projects.js';
+import { shareRoute } from './routes/v1/share.js';
 
 export function createApp() {
   const app = new Hono();
@@ -20,6 +21,7 @@ export function createApp() {
   app.route('/api/v1/projects', projectsRoute);
   app.route('/api/v1/invitations', invitationsRoute);
   app.route('/api/v1/users/me', dashboardRoute);
+  app.route('/api/v1/share', shareRoute);
 
   app.notFound(notFoundHandler);
   app.onError(errorMiddleware);

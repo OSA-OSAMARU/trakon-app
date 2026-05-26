@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -143,6 +143,23 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
             <Link to={`/projects/${projectId}/members?tab=manage`}>
               <Users className="size-4" />
               参加者管理を開く
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">共有リンク</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            非会員クライアント向けに閲覧・操作用 URL を発行します。
+          </p>
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/projects/${projectId}/share-links`}>
+              <Link2 className="size-4" />
+              共有リンクを管理
             </Link>
           </Button>
         </CardContent>
