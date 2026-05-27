@@ -1,0 +1,77 @@
+name: Release Deploy
+
+# GitHub Release 公開で Production にデプロイする。
+# 設計書 §6.5.4 デプロイ戦略。
+#
+# 必要な GitHub Secrets:
+#   VERCEL_TOKEN           — Vercel CLI のトークン (Personal Settings → Tokens)
+#   VERCEL_ORG_ID          — Vercel チーム ID
+#   VERCEL_PROJECT_ID      — 対象 Vercel プロジェクト ID
+#   PROD_DATABASE_URL      — 本番 DB の DATABASE_URL (Prisma 接続)
+#   PROD_DIRECT_URL        — 本番 DB の DIRECT_URL (migrate 用)
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: release-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: prisma migrate deploy + vercel deploy --prod
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.release.prerelease }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.19.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Run database migrations (production)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
+        run: pnpm --filter @trakon/db exec prisma migrate deploy
+
+      - name: Install Vercel CLI
+        run: pnpm add -g vercel@latest
+
+      - name: Pull Vercel project settings (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+
+      - name: Build (Vercel)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --prod --token=$VERCEL_TOKEN
+
+      - name: Deploy (Vercel)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          DEPLOY_URL=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN)
+          echo "DEPLOY_URL=$DEPLOY_URL" >> $GITHUB_OUTPUT
+          echo "✅ Production deployed: $DEPLOY_URL"
