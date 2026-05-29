@@ -16,6 +16,7 @@ Sub-Phase 0.0〜0.6 の実装過程で、基本設計書 v1.1 から意図的に
 | **HIBP / ロックアウト / レート制限** | Phase 1 | **未実装**（設計書通り） | — | Phase 1 で Upstash + Edge Functions 検討 |
 | **Resend 送信失敗時のリトライ** | Phase 1 で Inngest 非同期化 | **同期送信 + 失敗で transaction rollback** | Phase 0 は単純さ優先 | Inngest で非同期化、再送ジョブ追加 |
 | **マイグレーション diff の自動生成** | `prisma migrate dev` 推奨 | **手書き SQL** で CHECK 制約・トリガを明示 | `prisma migrate dev` だけでは CHECK / トリガ / 部分インデックスを自動生成できない | 設計書 §6.9 に追記想定 |
+| **Supabase キー新方式移行（Phase 1 直前）** | 設計書 §6 は Legacy API keys（`anon` JWT / `service_role` JWT）前提 | **新方式 `sb_publishable_*` / `sb_secret_*` へ移行**。BE 側 env は `SUPABASE_SECRET_KEY` 優先 / `SUPABASE_SERVICE_ROLE_KEY` フォールバック、FE 側は `VITE_SUPABASE_PUBLISHABLE_KEY` に完全切替。JWT 署名キーとは独立管理になったため、`server/middleware/auth.ts` の iss/aud/JWKS 検証ロジックは不変 | Supabase Legacy API keys は 2026 年末でサポート終了予定。商用デプロイ前に新方式へ寄せて将来負債を回避。supabase-js は ^2.106.2 へ更新（新キー形式は apikey ヘッダーに渡すだけで透過対応） | 設計書 v1.2 § 6 環境変数表を新方式に書き換え |
 
 ## 設計書 v1.2 で追加・改訂すべき項目（提案）
 

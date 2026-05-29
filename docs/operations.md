@@ -32,7 +32,9 @@ Phase 0 商用リリースに必要な **外部サービスのセットアップ
 
 1. <https://supabase.com/dashboard> で **Tokyo リージョン** にプロジェクト作成
 2. Database → Connection Pooling から `DATABASE_URL`（Transaction）と `DIRECT_URL`（Session）を控える
-3. Settings → API から `Project URL` / `anon key` / `service_role key` を控える
+3. Settings → API から `Project URL` / **`Publishable key`**（`sb_publishable_*`）/ **`Secret key`**（`sb_secret_*`）を控える
+   - **新方式 API キー（Publishable / Secret）を使用すること**。旧 Legacy API keys（`anon` / `service_role` JWT）は 2026 年末でサポート終了予定
+   - BE は旧 `SUPABASE_SERVICE_ROLE_KEY` への後方互換を残しているが、新規プロジェクトは Secret key で投入する
 4. 初回のみ DB ロール分離 SQL を実行（[2.5 節](#25-db-ロール分離)）
 5. Prisma マイグレーションを `migrate deploy` で適用：
    ```bash

@@ -21,7 +21,9 @@ Supabase CLI が必要（未導入の場合 `brew install supabase/tap/supabase`
 supabase start                # Postgres / Auth / Studio / Inbucket をローカル起動
 ```
 
-起動後、Supabase CLI が表示する `service_role key` / `anon key` / `Studio URL` / `Inbucket URL` を控える。
+起動後、Supabase CLI が表示する `Publishable key` (`sb_publishable_*`) / `Secret key` (`sb_secret_*`) / `Studio URL` / `Inbucket URL` を控える。
+
+> 旧 Legacy API keys（`anon` / `service_role` JWT）を使っている場合、BE は `SUPABASE_SERVICE_ROLE_KEY` への後方互換を残しているのでそのまま動く（2026 年末でサポート終了予定）。新方式への切替推奨。
 
 ### 3. 環境変数を `.env.local` に設定
 
@@ -30,8 +32,8 @@ supabase start                # Postgres / Auth / Studio / Inbucket をローカ
 ```bash
 cp .env.example apps/web/.env.local
 # 編集:
-#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-#   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+#   SUPABASE_URL, SUPABASE_SECRET_KEY (sb_secret_*)
+#   VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY (sb_publishable_*)
 #   DATABASE_URL, DIRECT_URL
 ```
 
