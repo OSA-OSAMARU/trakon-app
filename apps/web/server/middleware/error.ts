@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import type { ApiError } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
+import { captureServerError } from '../lib/sentry.js';
 
 export const notFoundHandler: NotFoundHandler = (c: Context) =>
   c.json<ApiError>(
@@ -46,6 +47,7 @@ export const errorMiddleware: ErrorHandler = (err, c) => {
   }
 
   console.error('[trakon] unhandled error', err);
+  captureServerError(err, { path: c.req.path, method: c.req.method });
   return c.json<ApiError>(
     { error: { code: 'INTERNAL_SERVER_ERROR', message: 'An unexpected error occurred.' } },
     500,

@@ -11,8 +11,21 @@
 | 項目 | 状態 |
 |---|---|
 | PRD | v1.2（[docs/prd/trakon-prd.md](docs/prd/trakon-prd.md)） |
-| 基本設計 | **v1.0 確定**（全6章、[docs/design/00-index.md](docs/design/00-index.md)） |
-| 実装 | Phase 0（MVP）着手前 |
+| 基本設計 | **v1.1 確定**（全6章、[docs/design/00-index.md](docs/design/00-index.md)）／実装差分は [implementation-notes](docs/design/implementation-notes.md) |
+| 実装 | **Phase 0（MVP）完了** ✅ — 商用デプロイ準備中 |
+| 運用手順 | [docs/operations.md](docs/operations.md) — Vercel / Supabase / Resend / Sentry / Better Stack |
+
+### Sub-Phase 進捗
+
+| Sub-Phase | 内容 | 状態 |
+|---|---|---|
+| **0.0** | 基盤セットアップ（モノレポ / Vite + Hono / Prisma / CI） | ✅ |
+| **0.1** | 認証基盤（Magic-link / OAuth Google・Microsoft / JWT 検証） | ✅ |
+| **0.2** | プロジェクト・制作物・参加者・招待受諾 | ✅ |
+| **0.3** | 予定 / TOSS / 完了 / 自動連鎖 / SC-06 縦型カレンダー | ✅ |
+| **0.4** | ダッシュボード SC-09 / メンバーかんばん SC-17（DnD） | ✅ |
+| **0.5** | 非会員 URL 共有 SC-16 / `/share/:token` | ✅ |
+| **0.6** | 仕上げ（Resend / Sentry / Release Deploy / DB ロール分離） | ✅ |
 
 ---
 
