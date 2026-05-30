@@ -105,11 +105,81 @@ trakon-app/
 
 ---
 
-## セットアップ
+## ローカルセットアップ
 
-> Phase 0 実装着手とともに整備します。
+Supabase ローカルスタック（Postgres / Auth / Studio / メール確認）にフル接続して、FE + API を一度に立ち上げる手順。FE/API は同一オリジン（Vite が `/api` を Hono にプロキシ）なので追加設定は不要。
 
-設計上の方針：
+### 前提
+
+| ツール | 要件 | 確認 |
+|---|---|---|
+| Node.js | 20〜22（`.nvmrc` 準拠） | `node -v` |
+| pnpm | 10 系 | `pnpm -v` |
+| Docker | **起動していること**（Supabase ローカルが利用） | `docker info` |
+| Supabase CLI | `pnpm dlx supabase`（都度実行）または `brew install supabase/tap/supabase`（常設） | `pnpm dlx supabase --version` |
+
+### 手順
+
+```bash
+# 1. 依存インストール + Prisma クライアント生成
+pnpm install
+pnpm db:generate
+
+# 2. Supabase ローカルスタックを起動（初回は Docker イメージ取得で数分）
+pnpm dlx supabase start
+#   → 出力される Project URL / Publishable key / Secret key / DB URL を控える
+
+# 3. 環境変数ファイルを作成し、上記の値を反映
+cp .env.example apps/web/.env.local
+#   apps/web/.env.local を編集:
+#     SUPABASE_URL / SUPABASE_SECRET_KEY            (sb_secret_*)
+#     VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY (sb_publishable_*)
+#     DATABASE_URL / DIRECT_URL                     (postgresql://postgres:postgres@127.0.0.1:54322/postgres?schema=public)
+
+# 4. マイグレーションをローカル DB へ適用
+pnpm db:deploy
+
+# 5. 開発サーバ起動（Vite 5173 + Hono 3001 を同時起動）
+pnpm dev
+```
+
+ブラウザで **http://localhost:5173** を開く。
+
+### アクセス先
+
+| 用途 | URL |
+|---|---|
+| アプリ（SPA） | http://localhost:5173 |
+| API ヘルスチェック | http://localhost:5173/api/v1/healthz |
+| Supabase Studio（DB GUI） | http://127.0.0.1:54323 |
+| 受信メール確認（Magic-link 等） | http://127.0.0.1:54324 |
+
+### Magic-link でログインを試す
+
+1. http://localhost:5173/login?screen=signup でメールアドレスを入力して送信
+2. http://127.0.0.1:54324 （メール確認 UI）に届いたメールのリンクを開く
+3. プロフィール入力後 `/dashboard` へ
+
+> 詳細な認証フロー・OAuth 設定は [apps/web/README.md](apps/web/README.md) を参照。
+
+### 環境変数の読み込み（仕組み）
+
+実値は **`apps/web/.env.local`**（gitignore）に集約する。Vite（FE）はこのファイルを自動ロードする。Hono dev サーバと Prisma は自動ロードしないため、`dotenv-cli` 経由で同ファイルを注入している（`dev:server` / `db:*` スクリプトに配線済み）。
+
+### よく使うコマンド
+
+| コマンド | 内容 |
+|---|---|
+| `pnpm dev` | FE + API を同時起動 |
+| `pnpm db:deploy` | 既存マイグレーションをローカル DB へ非対話で適用（初回セットアップ向け） |
+| `pnpm db:migrate` | 新規マイグレーション作成（スキーマ変更を伴う開発時） |
+| `pnpm db:studio` | Prisma Studio を起動 |
+| `pnpm dlx supabase stop` | Supabase ローカルスタックを停止 |
+| `Ctrl + C` | 開発サーバ停止 |
+
+> 補足: `pnpm db:migrate`（`prisma migrate dev`）は、`schema.prisma` の `@unique` と生 SQL の部分ユニークインデックスの差分により非対話環境で確認プロンプトを返すことがある。初回適用・ローカル再構築では `pnpm db:deploy` を使う。
+
+設計上の方針（背景）：
 - ローカル開発 DB：[docs/design/06-infrastructure.md](docs/design/06-infrastructure.md)（§6.3.4、Supabase CLI でフルローカル）
 - 環境変数：[docs/design/06-infrastructure.md](docs/design/06-infrastructure.md)（§6.5.3 / §6.7）
 - マイグレーション運用：[docs/design/06-infrastructure.md](docs/design/06-infrastructure.md)（§6.9）
