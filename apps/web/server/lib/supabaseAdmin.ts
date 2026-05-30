@@ -7,7 +7,7 @@ let cached: SupabaseClient | undefined;
 export function getSupabaseAdmin(): SupabaseClient {
   if (cached) return cached;
   const env = getServerEnv();
-  cached = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+  cached = createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   return cached;
