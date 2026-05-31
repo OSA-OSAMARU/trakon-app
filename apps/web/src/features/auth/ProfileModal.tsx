@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Avatar } from '@/components/ui/avatar';
 import {
   Dialog,
   DialogContent,
@@ -93,13 +94,13 @@ function ViewMode({
   onSignOut: () => void;
   onClose: () => void;
 }) {
-  const initial = (user.displayName || user.fullName || user.email).charAt(0).toUpperCase();
   return (
     <>
       <div className="flex items-center gap-3">
-        <div className="flex size-12 items-center justify-center rounded-full bg-primary text-base font-semibold text-primary-foreground">
-          {initial}
-        </div>
+        <Avatar
+          name={user.displayName || user.fullName || user.email}
+          className="size-12 text-base"
+        />
         <div className="min-w-0">
           <p className="truncate font-medium">{user.displayName}</p>
           <p className="truncate text-sm text-muted-foreground">{user.email}</p>

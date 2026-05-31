@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { LayoutDashboard, Plus } from 'lucide-react';
 
 import { Toaster } from '@/components/ui/sonner';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/components/ui/utils';
 import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
@@ -49,19 +51,22 @@ export function SidebarLayout() {
   };
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-border">
-        <Link to="/dashboard" className="px-5 py-5 text-xl font-bold tracking-tight">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border">
+        <Link
+          to="/dashboard"
+          className="shrink-0 px-5 py-5 text-xl font-bold tracking-tight"
+        >
           TRAKON
         </Link>
 
-        <nav className="px-3">
+        <nav className="shrink-0 px-3">
           <SideLink to="/dashboard" icon={<LayoutDashboard className="size-4" />}>
             ダッシュボード
           </SideLink>
         </nav>
 
-        <div className="mt-4 flex items-center justify-between px-5 py-1">
+        <div className="mt-4 flex shrink-0 items-center justify-between px-5 py-1">
           <span className="text-xs font-medium text-muted-foreground">プロジェクト</span>
           <Link
             to="/projects/new"
@@ -100,24 +105,35 @@ export function SidebarLayout() {
           </nav>
         </div>
 
-        {user && (
-          <button
-            type="button"
-            onClick={() => setProfileOpen(true)}
-            className="flex items-center gap-2 border-t border-border px-4 py-3 text-left hover:bg-accent/40"
-          >
-            <span className="flex size-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-              {(user.displayName || user.email).charAt(0).toUpperCase()}
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium">{user.displayName}</span>
-              <span className="block truncate text-[11px] text-muted-foreground">{user.email}</span>
-            </span>
-          </button>
-        )}
+        {/* ユーザー情報フッター: 全ページ共通で常時表示 (読込中は Skeleton) */}
+        <div className="shrink-0 border-t border-border">
+          {user ? (
+            <button
+              type="button"
+              onClick={() => setProfileOpen(true)}
+              className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-accent/40"
+            >
+              <Avatar name={user.displayName || user.email} className="size-8 text-xs" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{user.displayName}</span>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  {user.email}
+                </span>
+              </span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 px-4 py-3">
+              <Skeleton className="size-8 rounded-full" />
+              <div className="flex-1 space-y-1">
+                <Skeleton className="h-3.5 w-24" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+            </div>
+          )}
+        </div>
       </aside>
 
-      <main className="flex-1 overflow-auto">
+      <main className="h-full flex-1 overflow-auto">
         <Outlet />
       </main>
 

@@ -49,6 +49,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ApiClientError } from '@/lib/api';
+import { PageContainer } from '@/components/layout/PageContainer';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { membersApi, membersQueryKey, type ProjectMember } from './membersApi';
 
 const STATUS_LABEL: Record<ProjectMember['inviteStatus'], { text: string; tone: 'default' | 'secondary' | 'destructive' }> = {
@@ -72,21 +74,19 @@ export function MembersPage() {
   if (!projectId) return <NotFound projectId={undefined} />;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 px-8 py-10">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">参加者</h1>
-          <p className="text-sm text-muted-foreground">
-            プロジェクトのメンバーを管理します
-          </p>
-        </div>
-        <Button variant="ghost" size="sm" asChild>
-          <Link to={`/projects/${projectId}/edit`}>
-            <ArrowLeft className="size-4" />
-            プロジェクト設定に戻る
-          </Link>
-        </Button>
-      </header>
+    <PageContainer width="xl">
+      <PageHeader
+        title="参加者・かんばん"
+        description="プロジェクトのメンバーとボールを管理します"
+        actions={
+          <Button variant="ghost" size="sm" asChild>
+            <Link to={`/projects/${projectId}/edit`}>
+              <ArrowLeft className="size-4" />
+              プロジェクト設定に戻る
+            </Link>
+          </Button>
+        }
+      />
 
       <Tabs
         value={tab}
@@ -124,7 +124,7 @@ export function MembersPage() {
       ) : (
         <ManageTab projectId={projectId} />
       )}
-    </div>
+    </PageContainer>
   );
 }
 

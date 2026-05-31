@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DateField } from '@/components/ui/date-field';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -111,17 +112,20 @@ export function ProjectCreatePage() {
   };
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} className="mx-auto max-w-3xl space-y-6 px-8 py-10">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">プロジェクトを新規作成</h1>
-          <p className="text-sm text-muted-foreground">基本情報・制作物・参加者をまとめて入力します</p>
-        </div>
-        <Button type="button" variant="ghost" size="sm" onClick={() => setCancelOpen(true)}>
-          <ArrowLeft className="size-4" />
-          一覧に戻る
-        </Button>
-      </header>
+    <form
+      onSubmit={form.handleSubmit(onSubmit)}
+      className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8"
+    >
+      <PageHeader
+        title="プロジェクトを新規作成"
+        description="基本情報・制作物・参加者をまとめて入力します"
+        actions={
+          <Button type="button" variant="ghost" size="sm" onClick={() => setCancelOpen(true)}>
+            <ArrowLeft className="size-4" />
+            一覧に戻る
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>
