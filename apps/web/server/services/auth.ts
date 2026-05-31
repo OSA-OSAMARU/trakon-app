@@ -194,6 +194,56 @@ export async function completeSignup(input: {
   return toDTO(user);
 }
 
+/**
+ * プロフィール / 認証情報を更新する。
+ * - newPassword: Supabase Auth 側を admin 更新 (completeSignup と同方針)
+ * - fullName / displayName: public.users を更新
+ * いずれも任意。1 件以上の指定はスキーマで担保。
+ */
+export async function updateProfile(input: {
+  authUserId: string;
+  fullName?: string;
+  displayName?: string;
+  newPassword?: string;
+}): Promise<CurrentUserDTO> {
+  const existing = await prisma.user.findUnique({ where: { authUserId: input.authUserId } });
+  if (!existing) {
+    throw new ApiException('PROFILE_NOT_COMPLETED', 404, 'User profile not found.');
+  }
+
+  if (input.newPassword) {
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase.auth.admin.updateUserById(input.authUserId, {
+      password: input.newPassword,
+    });
+    if (error) {
+      throw new ApiException('SUPABASE_UPDATE_FAILED', 500, error.message);
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.fullName !== undefined && { fullName: input.fullName }),
+        ...(input.displayName !== undefined && { displayName: input.displayName }),
+      },
+    });
+    await tx.auditLog.create({
+      data: {
+        actorUserId: u.id,
+        action: 'update_profile',
+        resourceType: 'user',
+        resourceId: u.id,
+        result: 'success',
+      },
+    });
+    return u;
+  });
+
+  return toDTO(updated);
+}
+
 export async function getCurrentUser(authUserId: string): Promise<CurrentUserDTO | null> {
   const user = await prisma.user.findUnique({ where: { authUserId } });
   return user ? toDTO(user) : null;

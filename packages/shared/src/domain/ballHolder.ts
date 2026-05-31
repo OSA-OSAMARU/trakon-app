@@ -5,8 +5,10 @@
 
 export type PlanState = 'ready' | 'tossed' | 'completed';
 
+export type BallEventType = 'tossed' | 'completed' | 'toss_undone';
+
 export type BallEventLike = {
-  eventType: 'tossed' | 'completed';
+  eventType: BallEventType;
   source: 'human' | 'auto_chain';
   occurredAt: string | Date;
 };
@@ -29,9 +31,13 @@ export type BallHolderResult = {
  *   - イベント未発生: from_member が Ball Holder, state = 'ready'
  *   - 最新 = tossed: to_member が Ball Holder, state = 'tossed'
  *   - 最新 = completed: to_member が Ball Holder (完了者), state = 'completed'
+ *   - 最新 = toss_undone (差し戻し): from_member に戻る, state = 'ready'
+ *
+ * 各イベントは「遷移後の状態」を表すため、最新イベント 1 件で現状態が決まる
+ * (toss_undone は直前の tossed を打ち消し ready に戻す)。
  */
 export function deriveBallHolder(plan: PlanLike, latestEvent?: BallEventLike | null): BallHolderResult {
-  if (!latestEvent) {
+  if (!latestEvent || latestEvent.eventType === 'toss_undone') {
     return { memberId: plan.fromMemberId, state: 'ready' };
   }
   if (latestEvent.eventType === 'tossed') {

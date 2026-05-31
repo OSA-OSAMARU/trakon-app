@@ -334,6 +334,7 @@ function DraggablePlanCard({
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
   const cat = CATEGORY_STYLE[plan.category];
+  const tossed = plan.ballState === 'tossed';
   const overdue =
     plan.ballState === 'ready' &&
     !!plan.dueDate &&
@@ -345,7 +346,7 @@ function DraggablePlanCard({
       style={style}
       className={cn(
         'rounded-md border bg-card shadow-sm',
-        overdue ? 'border-red-400' : cat.border,
+        overdue ? 'border-red-400' : tossed ? 'border-slate-300' : cat.border,
         isDragging && 'opacity-60',
       )}
     >
@@ -353,8 +354,7 @@ function DraggablePlanCard({
       <div
         className={cn(
           'flex items-center gap-1 rounded-t-md px-2 py-1 text-[10px]',
-          cat.bg,
-          cat.text,
+          tossed ? 'bg-slate-100 text-slate-600' : cn(cat.bg, cat.text),
         )}
         {...listeners}
         {...attributes}

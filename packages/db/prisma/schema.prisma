@@ -187,7 +187,7 @@ model Plan {
 model BallEvent {
   id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   planId        String   @map("plan_id") @db.Uuid
-  /// 'tossed' | 'completed' (CHECK 制約)
+  /// 'tossed' | 'completed' | 'toss_undone' (CHECK 制約)
   eventType     String   @map("event_type")
   /// 'human' | 'auto_chain' (CHECK 制約 + actor_consistency)
   source        String   @default("human")

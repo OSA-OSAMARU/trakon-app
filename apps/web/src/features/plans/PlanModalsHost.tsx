@@ -30,7 +30,7 @@ export function PlanModalsHost({
   const closeModal = () => {
     setParams(
       (sp) => {
-        for (const k of ['modal', 'date', 'fromMemberId', 'itemId', 'planId']) sp.delete(k);
+        for (const k of ['modal', 'date', 'due', 'fromMemberId', 'itemId', 'planId']) sp.delete(k);
         return sp;
       },
       { replace: true },
@@ -52,6 +52,7 @@ export function PlanModalsHost({
         plans={plans}
         mode={modal === 'edit-plan' ? 'edit' : 'create'}
         defaultDate={params.get('date') ?? undefined}
+        defaultDueDate={params.get('due') ?? undefined}
         defaultFromMemberId={params.get('fromMemberId') ?? undefined}
         planId={planId}
         onClose={closeModal}

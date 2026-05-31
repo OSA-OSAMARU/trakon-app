@@ -1,12 +1,13 @@
 import { Hono } from 'hono';
 
 import { requireAuth } from '../../middleware/auth.js';
-import { completeSignupBodySchema } from '../../schemas/auth.js';
+import { completeSignupBodySchema, updateProfileBodySchema } from '../../schemas/auth.js';
 import {
   completeSignup,
   getCurrentUser,
   recordLogin,
   syncUser,
+  updateProfile,
 } from '../../services/auth.js';
 import { ApiException } from '../../lib/errors.js';
 
@@ -51,6 +52,19 @@ export const authRoute = new Hono()
         email: result.email,
       },
     });
+  })
+
+  /** プロフィール / 認証情報の更新 (氏名・表示名・パスワード) */
+  .patch('/me', async (c) => {
+    const authUser = c.get('authUser');
+    const body = updateProfileBodySchema.parse(await c.req.json());
+    const user = await updateProfile({
+      authUserId: authUser.authUserId,
+      fullName: body.fullName,
+      displayName: body.displayName,
+      newPassword: body.newPassword,
+    });
+    return c.json({ data: user });
   })
 
   /** Magic-link サインアップ詳細入力受け取り (users INSERT + パスワード設定) */

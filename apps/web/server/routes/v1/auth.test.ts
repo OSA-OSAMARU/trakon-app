@@ -23,4 +23,14 @@ describe('auth routes', () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('AUTH_INVALID');
   });
+
+  it('requires authentication for PATCH /me', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/auth/me', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: 'x' }),
+    });
+    expect(res.status).toBe(401);
+  });
 });

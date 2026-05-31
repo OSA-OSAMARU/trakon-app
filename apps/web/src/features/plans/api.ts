@@ -139,6 +139,11 @@ export const plansApi = {
       method: 'POST',
       body: {},
     }),
+  undoToss: (projectId: string, itemId: string, planId: string) =>
+    apiRequest<{ plan: Plan }>(`${basePath(projectId, itemId)}/${planId}/toss-undo`, {
+      method: 'POST',
+      body: {},
+    }),
 };
 
 export const plansQueryKey = {

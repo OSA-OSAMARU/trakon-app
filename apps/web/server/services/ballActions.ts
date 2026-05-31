@@ -38,22 +38,26 @@ async function loadPlanWithIncludes(
   return row;
 }
 
-function ballAlreadyTossed(plan: PlanWithIncludes): boolean {
-  return plan.ballEvents.some((e) => e.eventType === 'tossed');
+/**
+ * 最新イベント 1 件で現在の ball state を判定する。
+ * toss_undone (差し戻し) は直前の tossed を打ち消し ready に戻す。
+ * ball_events は occurredAt DESC で取得しているので [0] が最新。
+ */
+function currentBallState(plan: PlanWithIncludes): 'ready' | 'tossed' | 'completed' {
+  const latest = plan.ballEvents[0];
+  if (!latest || latest.eventType === 'toss_undone') return 'ready';
+  if (latest.eventType === 'tossed') return 'tossed';
+  return 'completed';
 }
 
 function ballHolderMemberId(plan: PlanWithIncludes): string | null {
-  if (plan.ballEvents.length === 0) return plan.fromMemberId;
-  // ball_events は occurredAt DESC で取得しているので [0] が最新
-  const latest = plan.ballEvents[0];
-  if (latest?.eventType === 'tossed') return plan.toMemberId;
-  return plan.toMemberId; // completed も to
+  return currentBallState(plan) === 'ready' ? plan.fromMemberId : plan.toMemberId;
 }
 
 async function recordAudit(input: {
   tx: Prisma.TransactionClient;
   actorUserId: string;
-  action: 'toss' | 'complete' | 'auto_toss';
+  action: 'toss' | 'complete' | 'auto_toss' | 'untoss';
   planId: string;
 }): Promise<void> {
   await input.tx.auditLog.create({
@@ -85,7 +89,7 @@ export async function tossPlan(input: {
     if (plan.status !== 'active') {
       throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not active.');
     }
-    if (ballAlreadyTossed(plan)) {
+    if (currentBallState(plan) !== 'ready') {
       throw new ApiException('ALREADY_TOSSED', 409, 'Ball has already been tossed.');
     }
 
@@ -203,7 +207,7 @@ export async function completePlan(input: {
         where: { id: plan.successorPlanId, itemId: input.itemId, deletedAt: null },
         include: PLAN_INCLUDE,
       });
-      if (successor && successor.status === 'active' && !ballAlreadyTossed(successor)) {
+      if (successor && successor.status === 'active' && currentBallState(successor) === 'ready') {
         await tx.ballEvent.create({
           data: {
             planId: successor.id,
@@ -231,4 +235,58 @@ export async function completePlan(input: {
     plan: toPlanDTO(result.completed, []),
     autoTossed: result.autoTossed ? toPlanDTO(result.autoTossed, []) : null,
   };
+}
+
+// -----------------------------------------------------------------------------
+// Undo TOSS (差し戻し)
+// -----------------------------------------------------------------------------
+export async function undoTossPlan(input: {
+  itemId: string;
+  projectId: string;
+  planId: string;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<{ plan: PlanDTO }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+
+    if (plan.status !== 'active') {
+      throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not active.');
+    }
+    if (currentBallState(plan) !== 'tossed') {
+      throw new ApiException('NOT_TOSSED', 409, 'Ball is not in a tossed state.');
+    }
+
+    // 認可: 現在の Ball Holder (= toMember, 差し戻す本人) または ディレクター
+    const holder = ballHolderMemberId(plan);
+    if (!input.isDirector && holder !== input.currentMemberId) {
+      throw new ApiException(
+        'FORBIDDEN',
+        403,
+        'Only the current ball holder or director can undo a toss.',
+      );
+    }
+
+    // append-only のため、行削除ではなく toss_undone を追記して ready に戻す
+    await tx.ballEvent.create({
+      data: {
+        planId: plan.id,
+        eventType: 'toss_undone',
+        source: 'human',
+        actorMemberId: input.currentMemberId,
+        actorUserId: input.currentUserId,
+      },
+    });
+    await recordAudit({
+      tx,
+      actorUserId: input.currentUserId,
+      action: 'untoss',
+      planId: plan.id,
+    });
+
+    return loadPlanWithIncludes(tx, plan.id, input.itemId);
+  });
+
+  return { plan: toPlanDTO(result, []) };
 }

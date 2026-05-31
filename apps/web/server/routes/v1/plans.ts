@@ -21,7 +21,7 @@ import {
   setPlanSuccessor,
   updatePlan,
 } from '../../services/plans.js';
-import { completePlan, tossPlan } from '../../services/ballActions.js';
+import { completePlan, tossPlan, undoTossPlan } from '../../services/ballActions.js';
 
 /**
  * `/projects/:projectId/items/:itemId/plans` 配下のエンドポイント。
@@ -109,6 +109,22 @@ export const plansRoute = new Hono()
       projectId: project.projectId,
       planId,
       body,
+      currentUserId: c.get('currentUserId'),
+      currentMemberId: project.memberId,
+      isDirector: project.isDirector,
+    });
+    return c.json({ data: result });
+  })
+
+  .post('/:planId/toss-undo', async (c) => {
+    const itemId = c.get('itemId');
+    const project = c.get('project');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const result = await undoTossPlan({
+      itemId,
+      projectId: project.projectId,
+      planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
       isDirector: project.isDirector,

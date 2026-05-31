@@ -37,4 +37,12 @@ describe('plans routes', () => {
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe('AUTH_MISSING');
   });
+
+  it('requires authentication for POST /toss-undo', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/projects/abc/items/def/plans/xyz/toss-undo', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(401);
+  });
 });
