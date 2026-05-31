@@ -10,9 +10,10 @@
   },
   "scripts": {
     "generate": "prisma generate",
-    "migrate": "prisma migrate dev",
+    "migrate": "dotenv -e ../../apps/web/.env.local -- prisma migrate dev",
+    "migrate:local": "dotenv -e ../../apps/web/.env.local -- prisma migrate deploy",
     "migrate:deploy": "prisma migrate deploy",
-    "studio": "prisma studio",
+    "studio": "dotenv -e ../../apps/web/.env.local -- prisma studio",
     "lint": "echo '(db) no lint configured yet'",
     "type-check": "tsc --noEmit",
     "test": "echo '(db) no tests yet'"

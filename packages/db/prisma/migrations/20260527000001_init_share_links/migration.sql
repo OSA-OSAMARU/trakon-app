@@ -38,8 +38,8 @@ COMMENT ON TABLE "share_links" IS '非会員 URL 共有 (token_hash = SHA-256, s
 CREATE UNIQUE INDEX "uq_sl_token_hash" ON "share_links"("token_hash");
 CREATE INDEX "idx_sl_project_id" ON "share_links"("project_id");
 -- 有効な共有のみを高速検索 (リンク受信時の検証用)
--- NOTE: now() は STABLE 関数のためインデックス述語に使用不可 (PostgreSQL制約)。
--- expires_at のフィルタはクエリ側で行う。
+-- 注: expires_at > now() は now() が非 IMMUTABLE のため部分インデックス述語に置けない
+--     (有効期限の判定はクエリ側で行う)。
 CREATE INDEX "idx_sl_token_hash_active" ON "share_links"("token_hash")
   WHERE "revoked_at" IS NULL;
 

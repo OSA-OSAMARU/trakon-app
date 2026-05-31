@@ -16,11 +16,13 @@
     "test": "pnpm -r --parallel test",
     "db:generate": "pnpm --filter @trakon/db generate",
     "db:migrate": "pnpm --filter @trakon/db migrate",
+    "db:deploy": "pnpm --filter @trakon/db migrate:local",
     "db:studio": "pnpm --filter @trakon/db studio",
     "format": "prettier --write \"apps/**/*.{ts,tsx,js,jsx,json,css}\" \"packages/**/*.{ts,tsx,js,jsx,json}\" \"*.{json,md}\""
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
+    "dotenv-cli": "^11.0.0",
     "prettier": "^3.3.3",
     "typescript": "^5.5.4"
   },

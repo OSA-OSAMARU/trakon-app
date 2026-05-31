@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently -n web,api -c blue,magenta \"pnpm dev:web\" \"pnpm dev:server\"",
     "dev:web": "vite",
-    "dev:server": "tsx watch server/dev.ts",
+    "dev:server": "dotenv -e .env.local -- tsx watch server/dev.ts",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
