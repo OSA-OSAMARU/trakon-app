@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -301,6 +302,7 @@ type CreateAccountInput = z.infer<typeof createAccountSchema>;
 
 function CreateAccountForm() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { session, isLoading } = useAuthSession();
   const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<CreateAccountInput>({ resolver: zodResolver(createAccountSchema) });
@@ -327,6 +329,10 @@ function CreateAccountForm() {
         displayName: values.displayName,
         password: values.password,
       });
+      // キャッシュの sync 結果（requiresProfileCompletion: true）を無効化する。
+      // これをしないと RequireAuth が古いキャッシュを見て
+      // /login?screen=create-account に戻してしまう。
+      await queryClient.invalidateQueries({ queryKey: ['auth', 'sync'] });
       navigate('/dashboard', { replace: true });
     } catch (err) {
       if (err instanceof ApiClientError && err.code === 'SAME_EMAIL_DIFFERENT_PROVIDER') {
