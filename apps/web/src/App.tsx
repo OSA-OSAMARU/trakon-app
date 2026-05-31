@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, Navigate as Nav, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 
 import { AuthCallbackPage } from './app/AuthCallbackPage';
 import { DashboardPage } from './app/DashboardPage';
@@ -11,6 +12,7 @@ import { MembersPage } from './features/projects/MembersPage';
 import { ProjectCreatePage } from './features/projects/ProjectCreatePage';
 import { ProjectEditPage } from './features/projects/ProjectEditPage';
 import { ProjectListPage } from './features/projects/ProjectListPage';
+import { projectsApi, projectsQueryKey } from './features/projects/api';
 import { ShareLinksPage } from './features/shareLinks/ShareLinksPage';
 import { SharePage } from './features/shareLinks/SharePage';
 
@@ -39,8 +41,8 @@ export function App() {
           path="/projects/:projectId/items/:itemId"
           element={<ItemSchedulePage />}
         />
-        {/* /projects/:projectId は当面 edit に飛ばす (詳細ダッシュボードは Phase 1) */}
-        <Route path="/projects/:projectId" element={<ProjectRedirectToEdit />} />
+        {/* /projects/:projectId は先頭の制作物スケジュール (縦型カレンダー) へ */}
+        <Route path="/projects/:projectId" element={<ProjectRedirectToSchedule />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -49,7 +51,28 @@ export function App() {
   );
 }
 
-function ProjectRedirectToEdit() {
+/**
+ * プロジェクト直下 → 先頭の制作物スケジュールへリダイレクト。
+ * 制作物が無ければプロジェクト編集へフォールバック。
+ */
+function ProjectRedirectToSchedule() {
   const { projectId } = useParams<{ projectId: string }>();
-  return <Nav to={`/projects/${projectId}/edit`} replace />;
+  const itemsQuery = useQuery({
+    queryKey: projectsQueryKey.items(projectId ?? ''),
+    queryFn: () => projectsApi.listItems(projectId!),
+    enabled: !!projectId,
+  });
+
+  if (!projectId) return <Nav to="/projects" replace />;
+  if (itemsQuery.isLoading) {
+    return <div className="p-8 text-sm text-muted-foreground">読み込み中…</div>;
+  }
+  const items = (itemsQuery.data ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
+  const first = items[0];
+  return (
+    <Nav
+      to={first ? `/projects/${projectId}/items/${first.id}` : `/projects/${projectId}/edit`}
+      replace
+    />
+  );
 }

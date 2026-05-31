@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateField } from '@/components/ui/date-field';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -113,10 +114,10 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="開始日" error={form.formState.errors.startDate?.message}>
-                <Input type="date" {...form.register('startDate')} />
+                <DateField {...form.register('startDate')} />
               </Field>
               <Field label="終了日" error={form.formState.errors.endDate?.message}>
-                <Input type="date" {...form.register('endDate')} />
+                <DateField {...form.register('endDate')} />
               </Field>
             </div>
             <div className="flex justify-end">

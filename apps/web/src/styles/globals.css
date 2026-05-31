@@ -24,7 +24,8 @@
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
   --border: rgba(0, 0, 0, 0.1);
-  --input: transparent;
+  /* 入力欄の枠線を明確にするため不可視(transparent)から濃いグレーへ */
+  --input: rgba(0, 0, 0, 0.45);
   --input-background: #f3f3f5;
   --ring: oklch(0.708 0 0);
   --radius: 0.625rem;

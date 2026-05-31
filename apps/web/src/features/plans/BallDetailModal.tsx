@@ -1,19 +1,19 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { CheckCircle2, Loader2, Pencil, Send, Trash2, Zap } from 'lucide-react';
+import { CheckCircle2, Loader2, Pencil, Send, Trash2, Undo2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,6 +67,18 @@ export function BallDetailModal({
   const tossMut = useTossPlan({ projectId, itemId, planId });
   const completeMut = useCompletePlan({ projectId, itemId, planId });
 
+  const undoMut = useMutation({
+    mutationFn: () => plansApi.undoToss(projectId, itemId, planId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.detail(projectId, itemId, planId) });
+      toast.success('差し戻しました');
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '差し戻しに失敗しました'),
+  });
+
   const deleteMut = useMutation({
     mutationFn: () => plansApi.remove(projectId, itemId, planId),
     onSuccess: () => {
@@ -81,14 +93,14 @@ export function BallDetailModal({
   });
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+    <Sheet open onOpenChange={(o) => !o && onClose()}>
+      <SheetContent>
         {detailQuery.isLoading && <DetailSkeleton />}
         {detailQuery.error && (
-          <DialogHeader>
-            <DialogTitle>取得に失敗しました</DialogTitle>
-            <DialogDescription>時間をおいて再度お試しください。</DialogDescription>
-          </DialogHeader>
+          <SheetHeader>
+            <SheetTitle>取得に失敗しました</SheetTitle>
+            <SheetDescription>時間をおいて再度お試しください。</SheetDescription>
+          </SheetHeader>
         )}
         {detailQuery.data &&
           (() => {
@@ -103,20 +115,20 @@ export function BallDetailModal({
 
             return (
               <>
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
+                <SheetHeader>
+                  <SheetTitle className="flex items-center gap-2">
                     <Badge variant="secondary" className={`${style.bg} ${style.text}`}>
                       {style.label}
                     </Badge>
                     {plan.title}
-                  </DialogTitle>
-                  <DialogDescription>
+                  </SheetTitle>
+                  <SheetDescription>
                     {format(new Date(plan.scheduledDate), 'yyyy/M/d')}
                     {plan.dueDate && ` 〜 期日 ${format(new Date(plan.dueDate), 'yyyy/M/d')}`}
-                  </DialogDescription>
-                </DialogHeader>
+                  </SheetDescription>
+                </SheetHeader>
 
-                <div className="space-y-3 text-sm">
+                <div className="flex-1 space-y-3 overflow-y-auto text-sm">
                   <BallHolderBanner plan={plan} />
 
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
@@ -147,7 +159,7 @@ export function BallDetailModal({
                   </Section>
                 </div>
 
-                <DialogFooter className="flex w-full justify-between gap-2 sm:justify-between">
+                <SheetFooter className="flex-row items-center justify-between">
                   <div className="flex gap-1">
                     {plan.status === 'active' && (
                       <Button
@@ -182,27 +194,38 @@ export function BallDetailModal({
                       </Button>
                     )}
                     {plan.ballState === 'tossed' && canAct && (
-                      <Button
-                        onClick={handleComplete}
-                        disabled={completeMut.isPending}
-                      >
-                        {completeMut.isPending ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="size-4" />
-                        )}
-                        完了する
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={() => undoMut.mutate()}
+                          disabled={undoMut.isPending}
+                        >
+                          {undoMut.isPending ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Undo2 className="size-4" />
+                          )}
+                          差し戻す
+                        </Button>
+                        <Button onClick={handleComplete} disabled={completeMut.isPending}>
+                          {completeMut.isPending ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="size-4" />
+                          )}
+                          完了する
+                        </Button>
+                      </>
                     )}
                     <Button variant="outline" onClick={onClose}>
                       閉じる
                     </Button>
                   </div>
-                </DialogFooter>
+                </SheetFooter>
               </>
             );
           })()}
-      </DialogContent>
+      </SheetContent>
 
       <AlertDialog open={deleting} onOpenChange={(o) => !o && setDeleting(false)}>
         <AlertDialogContent>
@@ -226,7 +249,7 @@ export function BallDetailModal({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Dialog>
+    </Sheet>
   );
 }
 

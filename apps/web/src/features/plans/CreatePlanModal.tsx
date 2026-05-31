@@ -8,14 +8,15 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
+import { DateField } from '@/components/ui/date-field';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -65,6 +66,7 @@ export function CreatePlanModal({
   plans,
   mode,
   defaultDate,
+  defaultDueDate,
   defaultFromMemberId,
   planId,
   onClose,
@@ -75,6 +77,7 @@ export function CreatePlanModal({
   plans: Plan[];
   mode: 'create' | 'edit';
   defaultDate?: string;
+  defaultDueDate?: string;
   defaultFromMemberId?: string;
   planId?: string;
   onClose: () => void;
@@ -88,7 +91,7 @@ export function CreatePlanModal({
       title: '',
       category: 'other',
       scheduledDate: defaultDate ?? new Date().toISOString().slice(0, 10),
-      dueDate: '',
+      dueDate: defaultDueDate ?? '',
       fromMemberId: defaultFromMemberId ?? '',
       toMemberId: '',
       successorPlanId: '',
@@ -163,18 +166,22 @@ export function CreatePlanModal({
   );
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{mode === 'edit' ? '予定を編集' : '予定を追加'}</DialogTitle>
-          <DialogDescription>
+    <Sheet open onOpenChange={(o) => !o && onClose()}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>{mode === 'edit' ? '予定を編集' : '予定を追加'}</SheetTitle>
+          <SheetDescription>
             {mode === 'edit'
-              ? '日付やメモなどの基本情報を変更します（TOSS 後は FROM/TO の変更不可）'
+              ? '日付やメモなどの基本情報を変更します（TOSS 後は FROM/TO の変更不可）。カレンダー上でカードをドラッグして期間を変更することもできます。'
               : 'カレンダー上に予定（ボール）を作成します'}
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
 
-        <form id="plan-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+        <form
+          id="plan-form"
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="flex-1 space-y-3 overflow-y-auto pr-1"
+        >
           <Field label="予定名" error={form.formState.errors.title?.message}>
             <Input {...form.register('title')} autoFocus placeholder="例: トップページ構成" />
           </Field>
@@ -213,10 +220,10 @@ export function CreatePlanModal({
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="開始日" error={form.formState.errors.scheduledDate?.message}>
-              <Input type="date" {...form.register('scheduledDate')} />
+              <DateField {...form.register('scheduledDate')} />
             </Field>
             <Field label="終了日 (任意)" error={form.formState.errors.dueDate?.message}>
-              <Input type="date" {...form.register('dueDate')} />
+              <DateField {...form.register('dueDate')} />
             </Field>
           </div>
 
@@ -241,7 +248,7 @@ export function CreatePlanModal({
           </Field>
         </form>
 
-        <DialogFooter>
+        <SheetFooter className="sm:flex-row sm:justify-end">
           <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
             キャンセル
           </Button>
@@ -249,9 +256,9 @@ export function CreatePlanModal({
             {submitting && <Loader2 className="size-4 animate-spin" />}
             {mode === 'edit' ? '保存' : '追加'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 

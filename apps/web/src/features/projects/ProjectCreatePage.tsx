@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateField } from '@/components/ui/date-field';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -132,10 +133,10 @@ export function ProjectCreatePage() {
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="開始日" error={form.formState.errors.startDate?.message}>
-              <Input type="date" {...form.register('startDate')} />
+              <DateField {...form.register('startDate')} />
             </Field>
             <Field label="終了日" error={form.formState.errors.endDate?.message}>
-              <Input type="date" {...form.register('endDate')} />
+              <DateField {...form.register('endDate')} />
             </Field>
           </div>
         </CardContent>

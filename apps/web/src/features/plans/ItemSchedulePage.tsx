@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { addDays, differenceInDays, format, isSameDay, isWeekend, parseISO } from 'date-fns';
 import { isHoliday } from '@holiday-jp/holiday_jp';
-import { ArrowLeft, CheckCircle2, Plus, ZoomIn, ZoomOut } from 'lucide-react';
+import { CheckCircle2, KanbanSquare, Plus, Settings, ZoomIn, ZoomOut } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -124,12 +124,17 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
   if (loading) return <PageSkeleton />;
   if (!project || !focusedItem || loadFailed) return <NotFound />;
 
-  const openCreateModal = (date: Date, targetItemId: string) => {
+  const openCreateModal = (date: Date, targetItemId: string, dueDate?: Date) => {
     setParams(
       (sp) => {
         sp.set('modal', 'create-plan');
         sp.set('date', format(date, 'yyyy-MM-dd'));
         sp.set('itemId', targetItemId);
+        if (dueDate && format(dueDate, 'yyyy-MM-dd') !== format(date, 'yyyy-MM-dd')) {
+          sp.set('due', format(dueDate, 'yyyy-MM-dd'));
+        } else {
+          sp.delete('due');
+        }
         sp.delete('planId');
         return sp;
       },
@@ -157,16 +162,16 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
   const confirmMove = (moveSubsequent: boolean) => {
     if (!pendingMove) return;
     const { plan, dayDelta } = pendingMove;
-    const { end } = planRange(plan);
     const patches: ReschedulePatch[] = [shiftPatch(plan, dayDelta)];
     if (moveSubsequent) {
-      const originalEndMs = parseISO(end).getTime();
-      for (const p of plansByItem.get(plan.itemId) ?? []) {
-        if (p.id === plan.id) continue;
-        if (p.status !== 'active') continue;
-        if (parseISO(planRange(p).start).getTime() >= originalEndMs) {
-          patches.push(shiftPatch(p, dayDelta));
-        }
+      // 「次の予定」(successorPlanId) のチェーンをたどって同日数ずらす
+      const byId = new Map(plans.map((p) => [p.id, p]));
+      const seen = new Set<string>([plan.id]);
+      let cur = plan.successorPlanId ? byId.get(plan.successorPlanId) : undefined;
+      while (cur && !seen.has(cur.id)) {
+        seen.add(cur.id);
+        if (cur.status === 'active') patches.push(shiftPatch(cur, dayDelta));
+        cur = cur.successorPlanId ? byId.get(cur.successorPlanId) : undefined;
       }
     }
     reschedule.mutate(patches);
@@ -205,6 +210,10 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
             <span>スケジュール</span>
           </div>
           <h1 className="text-lg font-semibold tracking-tight">{project.name}</h1>
+          <p className="text-xs text-muted-foreground">
+            期間: {format(parseISO(project.startDate), 'yyyy/M/d')} 〜{' '}
+            {format(parseISO(project.endDate), 'yyyy/M/d')}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={viewItemId} onValueChange={setViewItemId}>
@@ -221,9 +230,15 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
             </SelectContent>
           </Select>
           <Button variant="ghost" size="sm" asChild>
+            <Link to={`/projects/${projectId}/members`}>
+              <KanbanSquare className="size-4" />
+              メンバーかんばん
+            </Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild>
             <Link to={`/projects/${projectId}/edit`}>
-              <ArrowLeft className="size-4" />
-              プロジェクト設定
+              <Settings className="size-4" />
+              プロジェクト情報
             </Link>
           </Button>
           <Button size="sm" onClick={() => openCreateModal(new Date(), headerTargetItem)}>
@@ -295,7 +310,7 @@ function ScheduleBoard({
   items: ProjectItem[];
   plansByItem: Map<string, Plan[]>;
   rowHeight: number;
-  onOpenCreate: (date: Date, itemId: string) => void;
+  onOpenCreate: (date: Date, itemId: string, dueDate?: Date) => void;
   onOpenDetail: (planId: string) => void;
   onMove: (plan: Plan, dayDelta: number) => void;
   onResize: (plan: Plan, edge: 'top' | 'bottom', dayDelta: number) => void;
@@ -304,6 +319,30 @@ function ScheduleBoard({
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
+
+  // 空セルの縦ドラッグで期間付き新規作成
+  type CreateDrag = { itemId: string; startIdx: number; endIdx: number };
+  const [createDrag, setCreateDrag] = useState<CreateDrag | null>(null);
+  const createDragRef = useRef<CreateDrag | null>(null);
+  createDragRef.current = createDrag;
+
+  useEffect(() => {
+    if (!createDrag) return;
+    const onUp = () => {
+      const cd = createDragRef.current;
+      setCreateDrag(null);
+      if (!cd) return;
+      const s = Math.min(cd.startIdx, cd.endIdx);
+      const e = Math.max(cd.startIdx, cd.endIdx);
+      const startDate = days[s];
+      const endDate = days[e];
+      if (!startDate) return;
+      if (s === e) onOpenCreate(startDate, cd.itemId);
+      else onOpenCreate(startDate, cd.itemId, endDate);
+    };
+    window.addEventListener('pointerup', onUp);
+    return () => window.removeEventListener('pointerup', onUp);
+  }, [createDrag, days, onOpenCreate]);
 
   useEffect(() => {
     if (!drag) return;
@@ -366,7 +405,7 @@ function ScheduleBoard({
           className="sticky left-0 z-30 shrink-0 border-r border-border bg-background"
           style={{ width: DATE_AXIS_WIDTH }}
         >
-          <div className="sticky top-0 z-10 h-12 border-b border-border bg-background" />
+          <div className="sticky top-0 z-10 h-16 border-b border-border bg-background" />
           <div className="relative" style={{ height: totalHeight }}>
             {days.map((d, i) => {
               const t = dayTones[i]!;
@@ -408,35 +447,75 @@ function ScheduleBoard({
           const { laneOf, laneCount } = assignLanes(itemPlans);
           const colWidth = Math.max(MIN_COLUMN_WIDTH, laneCount * LANE_WIDTH);
           const color = itemColor(item.id);
+          // 代表ボール = 最新の active プラン。その現ホルダーを列上部に表示
+          const activePlans = itemPlans.filter((p) => p.status === 'active');
+          const repHolder = activePlans.length
+            ? activePlans[activePlans.length - 1]!.ballHolder
+            : null;
           return (
             <div
               key={item.id}
               className="shrink-0 border-r border-border"
               style={{ width: colWidth }}
             >
-              {/* 列ヘッダー (sticky top) */}
-              <div className="sticky top-0 z-20 flex h-12 items-center gap-2 border-b border-border bg-background px-3">
-                <span className={cn('size-2.5 shrink-0 rounded-full', color.dot)} />
-                <span className="truncate text-sm font-medium">{item.name}</span>
-                <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
-                  {itemPlans.length}件
-                </Badge>
+              {/* 列ヘッダー (sticky top): 制作物名 ＋ 現在のボール保持者 */}
+              <div className="sticky top-0 z-20 flex h-16 flex-col justify-center gap-0.5 border-b border-border bg-background px-3">
+                <div className="flex items-center gap-2">
+                  <span className={cn('size-2.5 shrink-0 rounded-full', color.dot)} />
+                  <span className="truncate text-sm font-medium">{item.name}</span>
+                  <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
+                    {itemPlans.length}件
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="shrink-0">ボール保持:</span>
+                  {repHolder ? (
+                    <span className="truncate font-medium text-foreground">
+                      {repHolder.organizationName
+                        ? `${repHolder.organizationName} ${repHolder.name}`
+                        : repHolder.name}
+                    </span>
+                  ) : (
+                    <span>—</span>
+                  )}
+                </div>
               </div>
 
               {/* 本体 */}
               <div className="relative" style={{ height: totalHeight }}>
-                {/* 日付セル (クリックで作成) */}
+                {/* 日付セル (クリックで単日作成 / 縦ドラッグで期間作成) */}
                 {days.map((d, i) => {
                   const t = dayTones[i]!;
+                  const inRange =
+                    createDrag !== null &&
+                    createDrag.itemId === item.id &&
+                    i >= Math.min(createDrag.startIdx, createDrag.endIdx) &&
+                    i <= Math.max(createDrag.startIdx, createDrag.endIdx);
                   return (
                     <button
                       key={i}
                       type="button"
-                      onClick={() => onOpenCreate(d, item.id)}
+                      onPointerDown={(e) => {
+                        if (e.button === 0) {
+                          setCreateDrag({ itemId: item.id, startIdx: i, endIdx: i });
+                        }
+                      }}
+                      onPointerEnter={() =>
+                        setCreateDrag((cd) =>
+                          cd && cd.itemId === item.id ? { ...cd, endIdx: i } : cd,
+                        )
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onOpenCreate(d, item.id);
+                        }
+                      }}
                       className={cn(
                         'absolute left-0 right-0 border-b border-border/70 transition-colors hover:bg-accent/30',
                         t.tone,
                         t.first && 'border-t-2 border-t-foreground/20',
+                        inRange && 'bg-primary/15',
                       )}
                       style={{ top: i * rowHeight, height: rowHeight }}
                       aria-label={`${format(d, 'M/d')} に予定を作成`}
@@ -521,15 +600,19 @@ function BallChip({
   const tier = ballTier(height);
   const style = CATEGORY_STYLE[plan.category];
   const completed = plan.status === 'completed';
+  const tossed = plan.ballState === 'tossed';
   const overdue = isOverdue(plan, today);
   const active = isActiveNow(plan, today);
   const editable = plan.status === 'active';
 
+  // TOSS 済みは「相手に渡し終えた＝自分の作業は完了」をグレーで表現
   const cardClass = completed
     ? 'border-slate-200 bg-slate-100/80 text-slate-500 opacity-60'
     : overdue
       ? 'border-red-400 bg-red-50 text-red-700'
-      : cn(style.bg, style.border, style.text);
+      : tossed
+        ? 'border-slate-300 bg-slate-100 text-slate-600'
+        : cn(style.bg, style.border, style.text);
 
   return (
     <div

@@ -33,10 +33,10 @@ export function DateChangeConfirmModal({
         </AlertDialogHeader>
         <div className="flex flex-col gap-2 pt-2">
           <Button onClick={() => onConfirm(true)}>
-            後続の予定も一緒にずらす
+            次の予定（後続チェーン）も一緒にずらす
           </Button>
           <p className="-mt-1 text-[11px] text-muted-foreground">
-            この予定の後に始まる同じ制作物の予定を、同じ日数分ずらします。
+            「次の予定」で連なる後続の予定を、同じ日数分ずらします。
           </p>
           <Button variant="outline" onClick={() => onConfirm(false)}>
             この予定のみ変更

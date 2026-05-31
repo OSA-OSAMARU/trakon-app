@@ -19,9 +19,17 @@ export type CompleteSignupInput = {
   password: string;
 };
 
+export type UpdateProfileInput = {
+  fullName?: string;
+  displayName?: string;
+  newPassword?: string;
+};
+
 export const authApi = {
   syncMe: () => apiRequest<SyncResponse>('/auth/me/sync', { method: 'POST' }),
   getMe: () => apiRequest<CurrentUser>('/auth/me'),
   completeSignup: (body: CompleteSignupInput) =>
     apiRequest<CurrentUser>('/auth/me/complete-signup', { method: 'POST', body }),
+  updateProfile: (body: UpdateProfileInput) =>
+    apiRequest<CurrentUser>('/auth/me', { method: 'PATCH', body }),
 };
