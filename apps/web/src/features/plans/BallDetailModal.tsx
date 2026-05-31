@@ -71,6 +71,7 @@ export function BallDetailModal({
     mutationFn: () => plansApi.remove(projectId, itemId, planId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
       toast.success('予定を削除しました');
       setDeleting(false);
       onClose();
@@ -119,6 +120,10 @@ export function BallDetailModal({
                   <BallHolderBanner plan={plan} />
 
                   <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                    <dt className="text-muted-foreground">開始日</dt>
+                    <dd>{format(new Date(plan.scheduledDate), 'yyyy/M/d')}</dd>
+                    <dt className="text-muted-foreground">終了日</dt>
+                    <dd>{plan.dueDate ? format(new Date(plan.dueDate), 'yyyy/M/d') : '—'}</dd>
                     <dt className="text-muted-foreground">FROM</dt>
                     <dd>
                       {plan.fromMember

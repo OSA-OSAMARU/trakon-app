@@ -116,7 +116,8 @@ export function MembersPage() {
           selectedItemId={selectedItemId}
           onChangeItem={(itemId) => {
             const sp = new URLSearchParams(params);
-            sp.set('itemId', itemId);
+            if (itemId === '__all__') sp.delete('itemId');
+            else sp.set('itemId', itemId);
             setParams(sp, { replace: true });
           }}
         />

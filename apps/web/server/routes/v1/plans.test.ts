@@ -29,4 +29,12 @@ describe('plans routes', () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it('requires authentication for GET project-wide plans', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/projects/abc/plans');
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('AUTH_MISSING');
+  });
 });

@@ -26,6 +26,8 @@ import {
   listItems,
   updateItem,
 } from '../../services/items.js';
+import { listProjectPlans } from '../../services/plans.js';
+import { listProjectPlansQuerySchema } from '../../schemas/projects.js';
 import { ApiException } from '../../lib/errors.js';
 import { membersRoute } from './members.js';
 import { plansRoute } from './plans.js';
@@ -127,6 +129,20 @@ export const projectsRoute = new Hono()
       return c.body(null, 204);
     },
   )
+
+  // --------------------- /projects/:projectId/plans (横断: 制作物列スケジュール用) ---------------------
+  .get('/:projectId/plans', requireProjectMember(), async (c) => {
+    const project = c.get('project');
+    const query = listProjectPlansQuerySchema.parse({
+      from: c.req.query('from'),
+      to: c.req.query('to'),
+    });
+    const { items, total } = await listProjectPlans({
+      projectId: project.projectId,
+      query,
+    });
+    return c.json({ data: items, meta: { total } });
+  })
 
   // ----------------------------- /projects/:projectId/members -----------------------------
   .route('/:projectId/members', membersRoute)

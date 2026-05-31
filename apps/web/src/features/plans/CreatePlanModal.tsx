@@ -125,6 +125,7 @@ export function CreatePlanModal({
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
       toast.success('予定を作成しました');
       onClose();
     },
@@ -145,6 +146,7 @@ export function CreatePlanModal({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
       toast.success('予定を更新しました');
       onClose();
     },
@@ -155,8 +157,9 @@ export function CreatePlanModal({
   const submitting = createMut.isPending || updateMut.isPending;
   const onSubmit = (v: FormValues) => (mode === 'edit' ? updateMut.mutate(v) : createMut.mutate(v));
 
+  // 後続候補は同じ制作物 (item) 内の active な予定のみ
   const successorCandidates = plans.filter(
-    (p) => p.id !== editingPlan?.id && p.status === 'active',
+    (p) => p.itemId === itemId && p.id !== editingPlan?.id && p.status === 'active',
   );
 
   return (
@@ -173,21 +176,16 @@ export function CreatePlanModal({
 
         <form id="plan-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
           <Field label="予定名" error={form.formState.errors.title?.message}>
-            <Input {...form.register('title')} autoFocus />
+            <Input {...form.register('title')} autoFocus placeholder="例: トップページ構成" />
           </Field>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="カテゴリ" error={form.formState.errors.category?.message}>
-              <SelectField
-                value={form.watch('category')}
-                onChange={(v) => form.setValue('category', v as PlanCategory)}
-                options={PLAN_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
-              />
-            </Field>
-            <Field label="開始日" error={form.formState.errors.scheduledDate?.message}>
-              <Input type="date" {...form.register('scheduledDate')} />
-            </Field>
-          </div>
+          <Field label="カテゴリ" error={form.formState.errors.category?.message}>
+            <SelectField
+              value={form.watch('category')}
+              onChange={(v) => form.setValue('category', v as PlanCategory)}
+              options={PLAN_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
+            />
+          </Field>
 
           <div className="grid grid-cols-2 gap-3">
             <Field
@@ -213,9 +211,14 @@ export function CreatePlanModal({
             </Field>
           </div>
 
-          <Field label="期日 (任意)" error={form.formState.errors.dueDate?.message}>
-            <Input type="date" {...form.register('dueDate')} />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="開始日" error={form.formState.errors.scheduledDate?.message}>
+              <Input type="date" {...form.register('scheduledDate')} />
+            </Field>
+            <Field label="終了日 (任意)" error={form.formState.errors.dueDate?.message}>
+              <Input type="date" {...form.register('dueDate')} />
+            </Field>
+          </div>
 
           <Field
             label="後続の予定 (任意)"

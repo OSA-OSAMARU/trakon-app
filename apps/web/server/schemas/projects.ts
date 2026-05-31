@@ -64,6 +64,13 @@ export const listProjectsQuerySchema = z.object({
 });
 export type ListProjectsQuery = z.infer<typeof listProjectsQuerySchema>;
 
+/** プロジェクト横断プラン取得 (制作物列スケジュール用) のクエリ。 */
+export const listProjectPlansQuerySchema = z.object({
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+});
+export type ListProjectPlansQuery = z.infer<typeof listProjectPlansQuerySchema>;
+
 export const createItemBodySchema = z.object({
   name: z.string().trim().min(1).max(255),
   sortOrder: z.number().int().min(0).max(10_000).optional(),

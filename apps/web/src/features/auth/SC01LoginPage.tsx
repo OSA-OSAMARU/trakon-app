@@ -87,10 +87,17 @@ type LoginInput = z.infer<typeof loginSchema>;
 function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, string>) => void }) {
   const navigate = useNavigate();
   const [serverError, setServerError] = useState<string | null>(null);
+  const [remember, setRemember] = useState(true);
   const form = useForm<LoginInput>({ resolver: zodResolver(loginSchema) });
 
   const onSubmit = async (values: LoginInput) => {
     setServerError(null);
+    // ログイン状態の保存希望を記録 (Supabase は既定で localStorage 永続)
+    try {
+      localStorage.setItem('trakon.rememberMe', remember ? '1' : '0');
+    } catch {
+      /* localStorage 不可環境は無視 */
+    }
     const { error } = await supabase.auth.signInWithPassword(values);
     if (error) {
       setServerError(GENERIC_AUTH_ERROR);
@@ -118,6 +125,15 @@ function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, strin
               {...form.register('password')}
             />
           </Field>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            ログイン状態を保存する
+          </label>
           {serverError && <p className="text-sm text-destructive">{serverError}</p>}
           <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
@@ -202,7 +218,18 @@ function SignupForm({
         <div className="mt-6">
           <OAuthButtons />
         </div>
-        <div className="mt-6 text-center text-sm">
+        <p className="mt-5 text-center text-[11px] leading-relaxed text-muted-foreground">
+          続けることで、
+          <a href="#" className="underline underline-offset-2">
+            利用規約
+          </a>
+          {' '}および{' '}
+          <a href="#" className="underline underline-offset-2">
+            プライバシーポリシー
+          </a>
+          に同意したものとみなされます。
+        </p>
+        <div className="mt-4 text-center text-sm">
           <button
             type="button"
             className="text-foreground underline-offset-4 hover:underline"
@@ -386,6 +413,7 @@ function CreateAccountForm() {
               autoComplete="new-password"
               {...form.register('password')}
             />
+            <PasswordStrength value={form.watch('password') ?? ''} />
           </Field>
           <Field
             id="passwordConfirm"
@@ -497,6 +525,41 @@ function Field({
       {children}
       {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// パスワード強度インジケータ (プロトタイプ準拠)
+// -----------------------------------------------------------------------------
+function PasswordStrength({ value }: { value: string }) {
+  if (!value) return null;
+  let score = 0;
+  if (value.length >= 8) score++;
+  if (/[A-Za-z]/.test(value)) score++;
+  if (/\d/.test(value)) score++;
+  if (/[^\w\s]/.test(value)) score++;
+
+  const meta =
+    score <= 1
+      ? { label: '弱い', color: 'bg-red-500' }
+      : score === 2
+        ? { label: '普通', color: 'bg-amber-500' }
+        : score === 3
+          ? { label: 'やや強い', color: 'bg-lime-500' }
+          : { label: '強い', color: 'bg-emerald-500' };
+
+  return (
+    <div className="mt-1.5 space-y-1" aria-live="polite">
+      <div className="flex gap-1">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className={`h-1 flex-1 rounded-full ${i < score ? meta.color : 'bg-muted'}`}
+          />
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground">強度：{meta.label}</p>
     </div>
   );
 }
