@@ -40,8 +40,11 @@ cp .env.example apps/web/.env.local
 ### 4. マイグレーション適用
 
 ```bash
-pnpm db:migrate                # prisma migrate dev
+pnpm db:deploy                 # 既存マイグレーションをローカル DB へ非対話で適用
 ```
+
+> 環境変数は `apps/web/.env.local` から `dotenv-cli` 経由で自動注入される（`db:*` / `dev:server` スクリプトに配線済み）。
+> 新規マイグレーションを作成する開発時のみ `pnpm db:migrate`（`prisma migrate dev`）を使う。
 
 ### 5. 開発サーバ起動
 

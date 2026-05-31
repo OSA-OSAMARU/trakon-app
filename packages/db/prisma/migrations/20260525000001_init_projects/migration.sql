@@ -114,8 +114,10 @@ CREATE INDEX "idx_pi_project_sort" ON "project_items"("project_id", "sort_order"
 CREATE UNIQUE INDEX "uq_inv_token_hash" ON "invitations"("token_hash");
 CREATE INDEX "idx_inv_project_id" ON "invitations"("project_id");
 -- 有効な招待のみを高速検索するための部分インデックス (設計書 §2.4.8)
+-- 注: expires_at > now() は now() が非 IMMUTABLE のため部分インデックス述語に置けない
+--     (有効期限の判定はクエリ側で行う)。
 CREATE INDEX "idx_inv_email_active" ON "invitations"("email")
-  WHERE "accepted_at" IS NULL AND "revoked_at" IS NULL AND "expires_at" > now();
+  WHERE "accepted_at" IS NULL AND "revoked_at" IS NULL;
 
 -- -----------------------------------------------------------------------------
 -- Foreign keys
