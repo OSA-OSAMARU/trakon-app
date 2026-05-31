@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DateField } from '@/components/ui/date-field';
+import { PageContainer } from '@/components/layout/PageContainer';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -91,17 +93,17 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
   const project = projectQuery.data!;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-8 py-10">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
-          <p className="text-sm text-muted-foreground">プロジェクト設定</p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="size-4" />
-          一覧に戻る
-        </Button>
-      </header>
+    <PageContainer width="md">
+      <PageHeader
+        title={project.name}
+        description="プロジェクト設定"
+        actions={
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ArrowLeft className="size-4" />
+            一覧に戻る
+          </Button>
+        }
+      />
 
       <form onSubmit={form.handleSubmit((v) => updateMut.mutate(v))}>
         <Card>
@@ -165,7 +167,7 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
           </Button>
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }
 

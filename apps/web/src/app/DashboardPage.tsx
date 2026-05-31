@@ -8,6 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/components/ui/utils';
+import { PageContainer } from '@/components/layout/PageContainer';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { CATEGORY_STYLE } from '@/features/plans/categoryColor';
 import {
   dashboardApi,
@@ -27,15 +29,15 @@ export function DashboardPage() {
   });
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-8 py-10">
-      <header>
-        <h1 className="text-xl font-semibold tracking-tight">ダッシュボード</h1>
-        <p className="text-sm text-muted-foreground">
-          {data
+    <PageContainer width="lg">
+      <PageHeader
+        title="ダッシュボード"
+        description={
+          data
             ? `${format(parseISO(data.today), 'yyyy年 M月d日 (E)', { locale: ja })} 時点で進行中のボール`
-            : '今日のボールを集計中…'}
-        </p>
-      </header>
+            : '今日のボールを集計中…'
+        }
+      />
 
       {isLoading && <Loading />}
       {error && (
@@ -86,7 +88,7 @@ export function DashboardPage() {
           )}
         </>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

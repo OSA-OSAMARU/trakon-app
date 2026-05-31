@@ -20,6 +20,7 @@ import { projectsApi, projectsQueryKey, type ProjectItem } from '@/features/proj
 import { membersApi, membersQueryKey } from '@/features/projects/membersApi';
 import { plansApi, plansQueryKey, type Plan } from './api';
 import { CATEGORY_STYLE } from './categoryColor';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { PlanModalsHost } from './PlanModalsHost';
 import { DateChangeConfirmModal } from './DateChangeConfirmModal';
 import { useReschedulePlan, type ReschedulePatch } from './usePlanReschedule';
@@ -200,53 +201,56 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-8 py-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <PageHeader
+        fullWidth
+        breadcrumb={
+          <>
             <Link to={`/projects/${projectId}/edit`} className="hover:text-foreground">
               {project.name}
             </Link>
             <span>/</span>
             <span>スケジュール</span>
-          </div>
-          <h1 className="text-lg font-semibold tracking-tight">{project.name}</h1>
-          <p className="text-xs text-muted-foreground">
-            期間: {format(parseISO(project.startDate), 'yyyy/M/d')} 〜{' '}
-            {format(parseISO(project.endDate), 'yyyy/M/d')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={viewItemId} onValueChange={setViewItemId}>
-            <SelectTrigger className="h-9 w-44 text-xs">
-              <SelectValue placeholder="制作物" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">すべての制作物</SelectItem>
-              {items.map((i) => (
-                <SelectItem key={i.id} value={i.id}>
-                  {i.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to={`/projects/${projectId}/members`}>
-              <KanbanSquare className="size-4" />
-              メンバーかんばん
-            </Link>
-          </Button>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to={`/projects/${projectId}/edit`}>
-              <Settings className="size-4" />
-              プロジェクト情報
-            </Link>
-          </Button>
-          <Button size="sm" onClick={() => openCreateModal(new Date(), headerTargetItem)}>
-            <Plus className="size-4" />
-            予定を追加
-          </Button>
-        </div>
-      </header>
+          </>
+        }
+        title={project.name}
+        description={`期間: ${format(parseISO(project.startDate), 'yyyy/M/d')} 〜 ${format(
+          parseISO(project.endDate),
+          'yyyy/M/d',
+        )}`}
+        actions={
+          <>
+            <Select value={viewItemId} onValueChange={setViewItemId}>
+              <SelectTrigger className="h-9 w-44 text-xs">
+                <SelectValue placeholder="制作物" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべての制作物</SelectItem>
+                {items.map((i) => (
+                  <SelectItem key={i.id} value={i.id}>
+                    {i.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="sm" asChild>
+              <Link to={`/projects/${projectId}/members`}>
+                <KanbanSquare className="size-4" />
+                メンバーかんばん
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" asChild>
+              <Link to={`/projects/${projectId}/edit`}>
+                <Settings className="size-4" />
+                プロジェクト情報
+              </Link>
+            </Button>
+            <Button size="sm" onClick={() => openCreateModal(new Date(), headerTargetItem)}>
+              <Plus className="size-4" />
+              予定を追加
+            </Button>
+          </>
+        }
+      />
 
       {members.length === 0 ? (
         <EmptyHint projectId={projectId} />

@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageContainer } from '@/components/layout/PageContainer';
+import { PageHeader } from '@/components/layout/PageHeader';
 import { projectsApi, projectsQueryKey } from './api';
 
 const dateFmt = new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' });
@@ -17,19 +19,19 @@ export function ProjectListPage() {
   });
 
   return (
-    <div className="mx-auto max-w-5xl px-8 py-10">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">プロジェクト</h1>
-          <p className="text-sm text-muted-foreground">参加中のプロジェクト一覧</p>
-        </div>
-        <Button asChild>
-          <Link to="/projects/new">
-            <Plus className="size-4" />
-            新規作成
-          </Link>
-        </Button>
-      </header>
+    <PageContainer width="lg">
+      <PageHeader
+        title="プロジェクト"
+        description="参加中のプロジェクト一覧"
+        actions={
+          <Button asChild>
+            <Link to="/projects/new">
+              <Plus className="size-4" />
+              新規作成
+            </Link>
+          </Button>
+        }
+      />
 
       {isLoading && <ListSkeleton />}
 
@@ -94,7 +96,7 @@ export function ProjectListPage() {
           ))}
         </ul>
       )}
-    </div>
+    </PageContainer>
   );
 }
 
