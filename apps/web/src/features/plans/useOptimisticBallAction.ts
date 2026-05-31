@@ -81,6 +81,7 @@ export function useTossPlan(input: { projectId: string; itemId: string; planId: 
     onSettled: () => {
       qc.invalidateQueries({ queryKey: listKey });
       qc.invalidateQueries({ queryKey: detailKey });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(input.projectId) });
     },
   });
 }
@@ -120,6 +121,7 @@ export function useCompletePlan(input: { projectId: string; itemId: string; plan
     onSettled: () => {
       qc.invalidateQueries({ queryKey: listKey });
       qc.invalidateQueries({ queryKey: detailKey });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(input.projectId) });
     },
   });
 }

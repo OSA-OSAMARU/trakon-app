@@ -182,6 +182,33 @@ export async function listPlans(input: {
   return { items: rows.map((r) => toPlanDTO(r, [])), total };
 }
 
+/**
+ * プロジェクト配下の全制作物 (item) を横断してプランを取得する。
+ * 制作物列スケジュール (SC-06, プロトタイプ準拠) で、全制作物を 1 つの縦型カレンダーに
+ * 並べるために使用する。`from`/`to` は scheduledDate のレンジで絞り込む。
+ */
+export async function listProjectPlans(input: {
+  projectId: string;
+  query: { from?: string; to?: string };
+}): Promise<{ items: PlanDTO[]; total: number }> {
+  const where: Prisma.PlanWhereInput = {
+    deletedAt: null,
+    item: { projectId: input.projectId, deletedAt: null },
+    ...((input.query.from || input.query.to) && {
+      scheduledDate: {
+        ...(input.query.from && { gte: new Date(`${input.query.from}T00:00:00Z`) }),
+        ...(input.query.to && { lte: new Date(`${input.query.to}T00:00:00Z`) }),
+      },
+    }),
+  };
+  const rows = await prisma.plan.findMany({
+    where,
+    orderBy: [{ scheduledDate: 'asc' }, { createdAt: 'asc' }],
+    include: PLAN_INCLUDE,
+  });
+  return { items: rows.map((r) => toPlanDTO(r, [])), total: rows.length };
+}
+
 export async function getPlan(input: { itemId: string; planId: string }): Promise<PlanWithEventsDTO> {
   const row = await prisma.plan.findFirst({
     where: { id: input.planId, itemId: input.itemId, deletedAt: null },

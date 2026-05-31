@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   DndContext,
   PointerSensor,
@@ -30,12 +31,16 @@ import { projectsApi, projectsQueryKey } from '@/features/projects/api';
 import type { ProjectMember } from '@/features/projects/membersApi';
 import { plansApi, plansQueryKey, type Plan } from './api';
 import { CATEGORY_STYLE } from './categoryColor';
+import { PlanModalsHost } from './PlanModalsHost';
+
+const ALL = '__all__';
 
 /**
- * SC-17 メンバーかんばん
- *  - 上部の制作物セレクタで対象 item を選び、その plans をメンバー別にかんばん表示
- *  - メンバー列間で DnD すると、ドロップ先メンバーへ TOSS (toMemberId 指定)
- *  - 完了は各カードの「完了する」ボタンで (DnD ではない、シンプル化)
+ * SC-17 メンバーかんばん (プロトタイプ MemberKanbanPage 準拠)
+ *  - 制作チーム / クライアント のスイムレーンに分割
+ *  - 制作物セレクタ (すべて / 個別) で対象を絞り込み (既定: すべて)
+ *  - メンバー列間で DnD すると、ドロップ先メンバーへ TOSS
+ *  - カードクリックでボール詳細モーダル / 各カードに「完了する」
  */
 export function MemberKanbanTab({
   projectId,
@@ -53,12 +58,7 @@ export function MemberKanbanTab({
     queryFn: () => projectsApi.listItems(projectId),
   });
 
-  // 制作物未指定なら最初の制作物を自動選択
-  useEffect(() => {
-    if (!selectedItemId && itemsQuery.data && itemsQuery.data.length > 0) {
-      onChangeItem(itemsQuery.data[0]!.id);
-    }
-  }, [selectedItemId, itemsQuery.data, onChangeItem]);
+  const itemFilter = selectedItemId ?? ALL;
 
   return (
     <Card>
@@ -67,14 +67,12 @@ export function MemberKanbanTab({
           <CardTitle className="text-base">メンバーかんばん</CardTitle>
           {itemsQuery.data && itemsQuery.data.length > 0 && (
             <div className="w-64">
-              <Select
-                value={selectedItemId ?? itemsQuery.data[0]?.id ?? ''}
-                onValueChange={onChangeItem}
-              >
+              <Select value={itemFilter} onValueChange={onChangeItem}>
                 <SelectTrigger>
                   <SelectValue placeholder="制作物を選択" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={ALL}>すべての制作物</SelectItem>
                   {itemsQuery.data.map((it) => (
                     <SelectItem key={it.id} value={it.id}>
                       {it.name}
@@ -87,15 +85,14 @@ export function MemberKanbanTab({
         </div>
       </CardHeader>
       <CardContent>
-        {itemsQuery.isLoading || !selectedItemId ? (
-          <Skeleton className="h-64 w-full rounded-md" />
-        ) : (
-          <KanbanBoard
-            projectId={projectId}
-            itemId={selectedItemId}
-            members={members}
-          />
-        )}
+        <KanbanBoard
+          projectId={projectId}
+          itemFilter={itemFilter === ALL ? null : itemFilter}
+          members={members}
+          itemNameById={
+            new Map((itemsQuery.data ?? []).map((it) => [it.id, it.name]))
+          }
+        />
       </CardContent>
     </Card>
   );
@@ -104,51 +101,50 @@ export function MemberKanbanTab({
 // -----------------------------------------------------------------------------
 function KanbanBoard({
   projectId,
-  itemId,
+  itemFilter,
   members,
+  itemNameById,
 }: {
   projectId: string;
-  itemId: string;
+  itemFilter: string | null;
   members: ProjectMember[];
+  itemNameById: Map<string, string>;
 }) {
   const qc = useQueryClient();
+  const [, setParams] = useSearchParams();
+  const listKey = plansQueryKey.projectList(projectId);
+
   const plansQuery = useQuery({
-    queryKey: plansQueryKey.list(projectId, itemId),
-    queryFn: () => plansApi.list(projectId, itemId),
+    queryKey: listKey,
+    queryFn: () => plansApi.listByProject(projectId),
   });
 
+  const invalidateAll = (itemId: string) => {
+    qc.invalidateQueries({ queryKey: listKey });
+    qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+  };
+
   const tossMut = useMutation({
-    mutationFn: ({ planId, toMemberId }: { planId: string; toMemberId: string }) =>
-      plansApi.toss(projectId, itemId, planId, { toMemberId }),
-    onMutate: async ({ planId, toMemberId }) => {
-      await qc.cancelQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
-      const prev = qc.getQueryData<Plan[]>(plansQueryKey.list(projectId, itemId));
+    mutationFn: ({ plan, toMemberId }: { plan: Plan; toMemberId: string }) =>
+      plansApi.toss(projectId, plan.itemId, plan.id, { toMemberId }),
+    onMutate: async ({ plan, toMemberId }) => {
+      await qc.cancelQueries({ queryKey: listKey });
+      const prev = qc.getQueryData<Plan[]>(listKey);
       if (prev) {
         const toMember = members.find((m) => m.id === toMemberId);
+        const ref = toMember
+          ? {
+              id: toMember.id,
+              name: toMember.name,
+              organizationName: toMember.organizationName,
+              memberType: toMember.memberType,
+            }
+          : null;
         qc.setQueryData<Plan[]>(
-          plansQueryKey.list(projectId, itemId),
+          listKey,
           prev.map((p) =>
-            p.id === planId
-              ? {
-                  ...p,
-                  toMember: toMember
-                    ? {
-                        id: toMember.id,
-                        name: toMember.name,
-                        organizationName: toMember.organizationName,
-                        memberType: toMember.memberType,
-                      }
-                    : p.toMember,
-                  ballHolder: toMember
-                    ? {
-                        id: toMember.id,
-                        name: toMember.name,
-                        organizationName: toMember.organizationName,
-                        memberType: toMember.memberType,
-                      }
-                    : p.ballHolder,
-                  ballState: 'tossed',
-                }
+            p.id === plan.id && ref
+              ? { ...p, toMember: ref, ballHolder: ref, ballState: 'tossed' }
               : p,
           ),
         );
@@ -156,21 +152,17 @@ function KanbanBoard({
       return { prev };
     },
     onError: (err, _vars, ctx) => {
-      if (ctx?.prev) {
-        qc.setQueryData(plansQueryKey.list(projectId, itemId), ctx.prev);
-      }
+      if (ctx?.prev) qc.setQueryData(listKey, ctx.prev);
       toast.error(err instanceof ApiClientError ? err.message : 'TOSS に失敗しました');
     },
     onSuccess: () => toast.success('TOSS しました'),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
-    },
+    onSettled: (_d, _e, vars) => invalidateAll(vars.plan.itemId),
   });
 
   const completeMut = useMutation({
-    mutationFn: (planId: string) => plansApi.complete(projectId, itemId, planId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+    mutationFn: (plan: Plan) => plansApi.complete(projectId, plan.itemId, plan.id),
+    onSuccess: (_d, plan) => {
+      invalidateAll(plan.itemId);
       toast.success('完了しました');
     },
     onError: (e) =>
@@ -181,46 +173,84 @@ function KanbanBoard({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
+  const plans = useMemo(() => {
+    const all = plansQuery.data ?? [];
+    return itemFilter ? all.filter((p) => p.itemId === itemFilter) : all;
+  }, [plansQuery.data, itemFilter]);
+
+  const plansByHolder = useMemo(() => {
+    const map = new Map<string, Plan[]>();
+    for (const p of plans) {
+      if (p.status !== 'active' || !p.ballHolder) continue;
+      const arr = map.get(p.ballHolder.id) ?? [];
+      arr.push(p);
+      map.set(p.ballHolder.id, arr);
+    }
+    return map;
+  }, [plans]);
+
+  const production = members.filter((m) => m.memberType === 'production');
+  const clients = members.filter((m) => m.memberType === 'client');
+
   const onDragEnd = (e: DragEndEvent) => {
     const planId = String(e.active.id);
     const overMemberId = e.over?.id ? String(e.over.id) : null;
     if (!overMemberId) return;
-    const plan = plansQuery.data?.find((p) => p.id === planId);
+    const plan = plans.find((p) => p.id === planId);
     if (!plan) return;
-    if (plan.ballHolder?.id === overMemberId) return; // 自列に戻すだけは無視
-    tossMut.mutate({ planId, toMemberId: overMemberId });
+    if (plan.ballHolder?.id === overMemberId) return; // 同じ列なら無視
+    tossMut.mutate({ plan, toMemberId: overMemberId });
   };
+
+  const openDetail = (planId: string) =>
+    setParams(
+      (sp) => {
+        sp.set('modal', 'ball-detail');
+        sp.set('planId', planId);
+        return sp;
+      },
+      { replace: true },
+    );
 
   if (plansQuery.isLoading) return <Skeleton className="h-64 w-full rounded-md" />;
   if (plansQuery.error)
-    return (
-      <p className="text-sm text-destructive">予定の取得に失敗しました</p>
-    );
+    return <p className="text-sm text-destructive">予定の取得に失敗しました</p>;
 
-  const plans = plansQuery.data ?? [];
-  // active な予定のみ表示。完了済みは隠す（完了済みは SC-06 やダッシュボードで参照）
-  const plansByHolder = new Map<string, Plan[]>();
-  for (const p of plans) {
-    if (p.status !== 'active' || !p.ballHolder) continue;
-    const arr = plansByHolder.get(p.ballHolder.id) ?? [];
-    arr.push(p);
-    plansByHolder.set(p.ballHolder.id, arr);
-  }
+  const renderLane = (title: string, laneMembers: ProjectMember[]) => {
+    if (laneMembers.length === 0) return null;
+    return (
+      <div className="space-y-2">
+        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {laneMembers.map((m) => (
+            <MemberColumn
+              key={m.id}
+              member={m}
+              plans={plansByHolder.get(m.id) ?? []}
+              tossing={tossMut.isPending}
+              completing={completeMut.isPending}
+              itemNameById={itemNameById}
+              onComplete={(plan) => completeMut.mutate(plan)}
+              onOpenDetail={openDetail}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {members.map((m) => (
-          <MemberColumn
-            key={m.id}
-            member={m}
-            plans={plansByHolder.get(m.id) ?? []}
-            tossing={tossMut.isPending}
-            completing={completeMut.isPending}
-            onComplete={(planId) => completeMut.mutate(planId)}
-          />
-        ))}
+      <div className="space-y-5">
+        {renderLane('制作チーム', production)}
+        {renderLane('クライアント', clients)}
       </div>
+      <PlanModalsHost
+        projectId={projectId}
+        members={members}
+        plans={plansQuery.data ?? []}
+        fallbackItemId={itemFilter ?? (plansQuery.data?.[0]?.itemId ?? '')}
+      />
     </DndContext>
   );
 }
@@ -231,13 +261,17 @@ function MemberColumn({
   plans,
   tossing,
   completing,
+  itemNameById,
   onComplete,
+  onOpenDetail,
 }: {
   member: ProjectMember;
   plans: Plan[];
   tossing: boolean;
   completing: boolean;
-  onComplete: (planId: string) => void;
+  itemNameById: Map<string, string>;
+  onComplete: (plan: Plan) => void;
+  onOpenDetail: (planId: string) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: member.id });
   return (
@@ -251,9 +285,7 @@ function MemberColumn({
     >
       <div className="mb-2 sticky top-0 z-10 rounded-md bg-card px-2 py-1.5">
         <p className="text-sm font-medium leading-tight">{member.name}</p>
-        <p className="text-[10px] text-muted-foreground">
-          {member.organizationName || '—'}
-        </p>
+        <p className="text-[10px] text-muted-foreground">{member.organizationName || '—'}</p>
         <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
           <Badge variant="secondary" className="px-1 py-0 text-[10px]">
             担当 {plans.length} 件
@@ -263,7 +295,7 @@ function MemberColumn({
       <div className="flex flex-col gap-2">
         {plans.length === 0 ? (
           <div className="rounded-md border border-dashed border-border bg-background p-3 text-center text-[11px] text-muted-foreground">
-            ボールはありません
+            担当中の予定はありません
           </div>
         ) : (
           plans.map((p) => (
@@ -271,7 +303,9 @@ function MemberColumn({
               key={p.id}
               plan={p}
               completing={completing}
+              itemName={itemNameById.get(p.itemId)}
               onComplete={onComplete}
+              onOpenDetail={onOpenDetail}
             />
           ))
         )}
@@ -283,11 +317,15 @@ function MemberColumn({
 function DraggablePlanCard({
   plan,
   completing,
+  itemName,
   onComplete,
+  onOpenDetail,
 }: {
   plan: Plan;
   completing: boolean;
-  onComplete: (planId: string) => void;
+  itemName?: string;
+  onComplete: (plan: Plan) => void;
+  onOpenDetail: (planId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: plan.id,
@@ -296,16 +334,22 @@ function DraggablePlanCard({
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
   const cat = CATEGORY_STYLE[plan.category];
+  const overdue =
+    plan.ballState === 'ready' &&
+    !!plan.dueDate &&
+    new Date(plan.dueDate) < new Date(new Date().toDateString());
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
         'rounded-md border bg-card shadow-sm',
-        cat.border,
+        overdue ? 'border-red-400' : cat.border,
         isDragging && 'opacity-60',
       )}
     >
+      {/* ドラッグハンドル (ヘッダー) */}
       <div
         className={cn(
           'flex items-center gap-1 rounded-t-md px-2 py-1 text-[10px]',
@@ -316,6 +360,7 @@ function DraggablePlanCard({
         {...attributes}
         role="button"
         tabIndex={0}
+        aria-label="ドラッグして TOSS"
       >
         <GripVertical className="size-3 opacity-60" />
         <span>{cat.label}</span>
@@ -323,28 +368,41 @@ function DraggablePlanCard({
           {plan.ballState === 'tossed' ? 'TOSS済' : '準備中'}
         </Badge>
       </div>
-      <div className="px-2 py-1.5 text-xs">
-        <p className="line-clamp-2 font-medium">{plan.title}</p>
+      {/* 本体 (クリックで詳細) */}
+      <button
+        type="button"
+        onClick={() => onOpenDetail(plan.id)}
+        className="block w-full px-2 py-1.5 text-left text-xs hover:bg-accent/30"
+      >
+        <p className={cn('line-clamp-2 font-medium', overdue && 'text-red-700')}>
+          {plan.title}
+        </p>
+        {itemName && (
+          <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{itemName}</p>
+        )}
         <p className="mt-0.5 text-[10px] text-muted-foreground">
           {format(new Date(plan.scheduledDate), 'M/d')}
           {plan.dueDate ? ` 〜 期日 ${format(new Date(plan.dueDate), 'M/d')}` : ''}
         </p>
-        <div className="mt-1.5 flex justify-end">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 text-[11px]"
-            onClick={() => onComplete(plan.id)}
-            disabled={completing}
-          >
-            {completing ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <CheckCircle2 className="size-3" />
-            )}
-            完了する
-          </Button>
-        </div>
+        {plan.toMember && (
+          <p className="mt-0.5 text-[10px] text-muted-foreground">Next: {plan.toMember.name}</p>
+        )}
+      </button>
+      <div className="flex justify-end px-2 pb-1.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 gap-1 text-[11px]"
+          onClick={() => onComplete(plan)}
+          disabled={completing}
+        >
+          {completing ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <CheckCircle2 className="size-3" />
+          )}
+          完了する
+        </Button>
       </div>
     </div>
   );

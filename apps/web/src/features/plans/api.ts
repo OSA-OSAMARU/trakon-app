@@ -103,6 +103,14 @@ export const plansApi = {
     const q = sp.toString() ? `?${sp.toString()}` : '';
     return apiRequest<Plan[]>(`${basePath(projectId, itemId)}${q}`);
   },
+  /** プロジェクト配下の全制作物を横断したプラン取得 (制作物列スケジュール用)。 */
+  listByProject: (projectId: string, query?: { from?: string; to?: string }) => {
+    const sp = new URLSearchParams();
+    if (query?.from) sp.set('from', query.from);
+    if (query?.to) sp.set('to', query.to);
+    const q = sp.toString() ? `?${sp.toString()}` : '';
+    return apiRequest<Plan[]>(`/projects/${projectId}/plans${q}`);
+  },
   get: (projectId: string, itemId: string, planId: string) =>
     apiRequest<PlanDetail>(`${basePath(projectId, itemId)}/${planId}`),
   create: (projectId: string, itemId: string, body: CreatePlanInput) =>
@@ -138,4 +146,5 @@ export const plansQueryKey = {
     ['projects', projectId, 'items', itemId, 'plans'] as const,
   detail: (projectId: string, itemId: string, planId: string) =>
     ['projects', projectId, 'items', itemId, 'plans', planId] as const,
+  projectList: (projectId: string) => ['projects', projectId, 'plans'] as const,
 };
