@@ -1,6 +1,3 @@
-// .env / .env.local を process.env に反映してから app を読み込む (副作用 import)
-import './load-env.js';
-
 import { serve } from '@hono/node-server';
 import { app } from './app.js';
 
