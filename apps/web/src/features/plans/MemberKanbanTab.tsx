@@ -1,17 +1,8 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import {
-  DndContext,
-  PointerSensor,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { CheckCircle2, GripVertical, Loader2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Loader2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -36,11 +27,12 @@ import { PlanModalsHost } from './PlanModalsHost';
 const ALL = '__all__';
 
 /**
- * SC-17 メンバーかんばん (プロトタイプ MemberKanbanPage 準拠)
+ * SC-17 担当者ボード (旧 メンバーかんばん)
  *  - 制作チーム / クライアント のスイムレーンに分割
  *  - 制作物セレクタ (すべて / 個別) で対象を絞り込み (既定: すべて)
- *  - メンバー列間で DnD すると、ドロップ先メンバーへ TOSS
- *  - カードクリックでボール詳細モーダル / 各カードに「完了する」
+ *  - ボール保持者ごとに担当中の予定を一覧表示
+ *  - TOSS は「次の担当者へ」明示ボタンでワンクリック (予め決まった toMember へ前進)
+ *  - 誤操作の救済として tossed カードに「差し戻す」(undoToss) を用意
  */
 export function MemberKanbanTab({
   projectId,
@@ -64,9 +56,14 @@ export function MemberKanbanTab({
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-base">メンバーかんばん</CardTitle>
+          <div>
+            <CardTitle className="text-base">担当者ボード</CardTitle>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              ボール保持者ごとに担当中の予定を表示。トスは次の担当者へのボタンで行います。
+            </p>
+          </div>
           {itemsQuery.data && itemsQuery.data.length > 0 && (
-            <div className="w-64">
+            <div className="w-64 shrink-0">
               <Select value={itemFilter} onValueChange={onChangeItem}>
                 <SelectTrigger>
                   <SelectValue placeholder="制作物を選択" />
@@ -85,7 +82,7 @@ export function MemberKanbanTab({
         </div>
       </CardHeader>
       <CardContent>
-        <KanbanBoard
+        <MemberBoard
           projectId={projectId}
           itemFilter={itemFilter === ALL ? null : itemFilter}
           members={members}
@@ -99,7 +96,7 @@ export function MemberKanbanTab({
 }
 
 // -----------------------------------------------------------------------------
-function KanbanBoard({
+function MemberBoard({
   projectId,
   itemFilter,
   members,
@@ -124,27 +121,18 @@ function KanbanBoard({
     qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
   };
 
+  /** plan.toMember を新ホルダーとして楽観更新 (toMember 既定先へ前進)。 */
   const tossMut = useMutation({
-    mutationFn: ({ plan, toMemberId }: { plan: Plan; toMemberId: string }) =>
-      plansApi.toss(projectId, plan.itemId, plan.id, { toMemberId }),
-    onMutate: async ({ plan, toMemberId }) => {
+    mutationFn: (plan: Plan) => plansApi.toss(projectId, plan.itemId, plan.id),
+    onMutate: async (plan) => {
       await qc.cancelQueries({ queryKey: listKey });
       const prev = qc.getQueryData<Plan[]>(listKey);
       if (prev) {
-        const toMember = members.find((m) => m.id === toMemberId);
-        const ref = toMember
-          ? {
-              id: toMember.id,
-              name: toMember.name,
-              organizationName: toMember.organizationName,
-              memberType: toMember.memberType,
-            }
-          : null;
         qc.setQueryData<Plan[]>(
           listKey,
           prev.map((p) =>
-            p.id === plan.id && ref
-              ? { ...p, toMember: ref, ballHolder: ref, ballState: 'tossed' }
+            p.id === plan.id
+              ? { ...p, ballHolder: p.toMember, ballState: 'tossed' }
               : p,
           ),
         );
@@ -156,7 +144,33 @@ function KanbanBoard({
       toast.error(err instanceof ApiClientError ? err.message : 'TOSS に失敗しました');
     },
     onSuccess: () => toast.success('TOSS しました'),
-    onSettled: (_d, _e, vars) => invalidateAll(vars.plan.itemId),
+    onSettled: (_d, _e, plan) => invalidateAll(plan.itemId),
+  });
+
+  /** tossed の差し戻し: fromMember を再びホルダーに戻す楽観更新。 */
+  const undoMut = useMutation({
+    mutationFn: (plan: Plan) => plansApi.undoToss(projectId, plan.itemId, plan.id),
+    onMutate: async (plan) => {
+      await qc.cancelQueries({ queryKey: listKey });
+      const prev = qc.getQueryData<Plan[]>(listKey);
+      if (prev) {
+        qc.setQueryData<Plan[]>(
+          listKey,
+          prev.map((p) =>
+            p.id === plan.id
+              ? { ...p, ballHolder: p.fromMember, ballState: 'ready' }
+              : p,
+          ),
+        );
+      }
+      return { prev };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(listKey, ctx.prev);
+      toast.error(err instanceof ApiClientError ? err.message : '差し戻しに失敗しました');
+    },
+    onSuccess: () => toast.success('差し戻しました'),
+    onSettled: (_d, _e, plan) => invalidateAll(plan.itemId),
   });
 
   const completeMut = useMutation({
@@ -168,10 +182,6 @@ function KanbanBoard({
     onError: (e) =>
       toast.error(e instanceof ApiClientError ? e.message : '完了に失敗しました'),
   });
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
 
   const plans = useMemo(() => {
     const all = plansQuery.data ?? [];
@@ -191,16 +201,6 @@ function KanbanBoard({
 
   const production = members.filter((m) => m.memberType === 'production');
   const clients = members.filter((m) => m.memberType === 'client');
-
-  const onDragEnd = (e: DragEndEvent) => {
-    const planId = String(e.active.id);
-    const overMemberId = e.over?.id ? String(e.over.id) : null;
-    if (!overMemberId) return;
-    const plan = plans.find((p) => p.id === planId);
-    if (!plan) return;
-    if (plan.ballHolder?.id === overMemberId) return; // 同じ列なら無視
-    tossMut.mutate({ plan, toMemberId: overMemberId });
-  };
 
   const openDetail = (planId: string) =>
     setParams(
@@ -228,8 +228,11 @@ function KanbanBoard({
               member={m}
               plans={plansByHolder.get(m.id) ?? []}
               tossing={tossMut.isPending}
+              undoing={undoMut.isPending}
               completing={completeMut.isPending}
               itemNameById={itemNameById}
+              onToss={(plan) => tossMut.mutate(plan)}
+              onUndo={(plan) => undoMut.mutate(plan)}
               onComplete={(plan) => completeMut.mutate(plan)}
               onOpenDetail={openDetail}
             />
@@ -240,7 +243,7 @@ function KanbanBoard({
   };
 
   return (
-    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+    <>
       <div className="space-y-5">
         {renderLane('制作チーム', production)}
         {renderLane('クライアント', clients)}
@@ -251,7 +254,7 @@ function KanbanBoard({
         plans={plansQuery.data ?? []}
         fallbackItemId={itemFilter ?? (plansQuery.data?.[0]?.itemId ?? '')}
       />
-    </DndContext>
+    </>
   );
 }
 
@@ -260,29 +263,27 @@ function MemberColumn({
   member,
   plans,
   tossing,
+  undoing,
   completing,
   itemNameById,
+  onToss,
+  onUndo,
   onComplete,
   onOpenDetail,
 }: {
   member: ProjectMember;
   plans: Plan[];
   tossing: boolean;
+  undoing: boolean;
   completing: boolean;
   itemNameById: Map<string, string>;
+  onToss: (plan: Plan) => void;
+  onUndo: (plan: Plan) => void;
   onComplete: (plan: Plan) => void;
   onOpenDetail: (planId: string) => void;
 }) {
-  const { isOver, setNodeRef } = useDroppable({ id: member.id });
   return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        'flex min-w-[260px] max-w-[280px] flex-col rounded-md border border-border bg-muted/30 p-2 transition-colors',
-        isOver && 'border-primary/60 bg-primary/5',
-        tossing && 'opacity-95',
-      )}
-    >
+    <div className="flex min-w-[260px] max-w-[280px] flex-col rounded-md border border-border bg-muted/30 p-2">
       <div className="mb-2 sticky top-0 z-10 rounded-md bg-card px-2 py-1.5">
         <p className="text-sm font-medium leading-tight">{member.name}</p>
         <p className="text-[10px] text-muted-foreground">{member.organizationName || '—'}</p>
@@ -299,11 +300,15 @@ function MemberColumn({
           </div>
         ) : (
           plans.map((p) => (
-            <DraggablePlanCard
+            <PlanCard
               key={p.id}
               plan={p}
+              tossing={tossing}
+              undoing={undoing}
               completing={completing}
               itemName={itemNameById.get(p.itemId)}
+              onToss={onToss}
+              onUndo={onUndo}
               onComplete={onComplete}
               onOpenDetail={onOpenDetail}
             />
@@ -314,58 +319,52 @@ function MemberColumn({
   );
 }
 
-function DraggablePlanCard({
+function PlanCard({
   plan,
+  tossing,
+  undoing,
   completing,
   itemName,
+  onToss,
+  onUndo,
   onComplete,
   onOpenDetail,
 }: {
   plan: Plan;
+  tossing: boolean;
+  undoing: boolean;
   completing: boolean;
   itemName?: string;
+  onToss: (plan: Plan) => void;
+  onUndo: (plan: Plan) => void;
   onComplete: (plan: Plan) => void;
   onOpenDetail: (planId: string) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: plan.id,
-  });
-  const style = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
-    : undefined;
   const cat = CATEGORY_STYLE[plan.category];
   const tossed = plan.ballState === 'tossed';
+  const ready = plan.ballState === 'ready';
   const overdue =
-    plan.ballState === 'ready' &&
+    ready &&
     !!plan.dueDate &&
     new Date(plan.dueDate) < new Date(new Date().toDateString());
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
       className={cn(
         'rounded-md border bg-card shadow-sm',
         overdue ? 'border-red-400' : tossed ? 'border-slate-300' : cat.border,
-        isDragging && 'opacity-60',
       )}
     >
-      {/* ドラッグハンドル (ヘッダー) */}
+      {/* カテゴリ + 状態 */}
       <div
         className={cn(
           'flex items-center gap-1 rounded-t-md px-2 py-1 text-[10px]',
           tossed ? 'bg-slate-100 text-slate-600' : cn(cat.bg, cat.text),
         )}
-        {...listeners}
-        {...attributes}
-        role="button"
-        tabIndex={0}
-        aria-label="ドラッグして TOSS"
       >
-        <GripVertical className="size-3 opacity-60" />
         <span>{cat.label}</span>
         <Badge variant="secondary" className="ml-auto px-1 py-0 text-[10px]">
-          {plan.ballState === 'tossed' ? 'TOSS済' : '準備中'}
+          {tossed ? 'TOSS済' : '準備中'}
         </Badge>
       </div>
       {/* 本体 (クリックで詳細) */}
@@ -384,11 +383,48 @@ function DraggablePlanCard({
           {format(new Date(plan.scheduledDate), 'M/d')}
           {plan.dueDate ? ` 〜 期日 ${format(new Date(plan.dueDate), 'M/d')}` : ''}
         </p>
-        {plan.toMember && (
-          <p className="mt-0.5 text-[10px] text-muted-foreground">Next: {plan.toMember.name}</p>
+        {/* FROM → TO の流れ */}
+        {(plan.fromMember || plan.toMember) && (
+          <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="truncate">{plan.fromMember?.name ?? '—'}</span>
+            <ArrowRight className="size-2.5 shrink-0 opacity-60" />
+            <span className="truncate">{plan.toMember?.name ?? '—'}</span>
+          </p>
         )}
       </button>
-      <div className="flex justify-end px-2 pb-1.5">
+      {/* アクション (状態で出し分け) */}
+      <div className="flex flex-wrap items-center justify-end gap-1 px-2 pb-1.5">
+        {ready && plan.toMember && (
+          <Button
+            size="sm"
+            className="h-7 gap-1 text-[11px]"
+            onClick={() => onToss(plan)}
+            disabled={tossing}
+          >
+            {tossing ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <ArrowRight className="size-3" />
+            )}
+            {plan.toMember.name}へトス
+          </Button>
+        )}
+        {tossed && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1 text-[11px]"
+            onClick={() => onUndo(plan)}
+            disabled={undoing}
+          >
+            {undoing ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <Undo2 className="size-3" />
+            )}
+            差し戻す
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"
