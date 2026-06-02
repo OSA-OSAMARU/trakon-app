@@ -74,8 +74,9 @@ export function MembersPage() {
   if (!projectId) return <NotFound projectId={undefined} />;
 
   return (
-    <PageContainer width="xl">
+    <>
       <PageHeader
+        width="xl"
         title="参加者・かんばん"
         description="プロジェクトのメンバーとボールを管理します"
         actions={
@@ -87,7 +88,7 @@ export function MembersPage() {
           </Button>
         }
       />
-
+      <PageContainer width="xl">
       <Tabs
         value={tab}
         onValueChange={(v) => {
@@ -124,7 +125,8 @@ export function MembersPage() {
       ) : (
         <ManageTab projectId={projectId} />
       )}
-    </PageContainer>
+      </PageContainer>
+    </>
   );
 }
 

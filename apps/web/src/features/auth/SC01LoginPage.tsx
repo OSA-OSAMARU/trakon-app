@@ -64,7 +64,7 @@ export function SC01LoginPage() {
   return (
     <div className="flex min-h-screen items-start justify-center bg-background px-4 pt-24">
       <div className="w-full max-w-sm">
-        <h1 className="mb-8 text-center text-2xl font-semibold tracking-tight">TRAKON</h1>
+        <h1 className="mb-8 text-center text-3xl font-extrabold tracking-[0.2em]">TRAKON</h1>
         {screen === 'login' && <LoginForm goTo={goTo} />}
         {screen === 'signup' && <SignupForm goTo={goTo} />}
         {screen === 'email-sent' && <EmailSent email={params.get('email') ?? ''} goTo={goTo} />}

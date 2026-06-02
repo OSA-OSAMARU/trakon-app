@@ -202,7 +202,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        fullWidth
+        width="full"
         breadcrumb={
           <>
             <Link to={`/projects/${projectId}/edit`} className="hover:text-foreground">

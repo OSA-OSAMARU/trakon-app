@@ -112,11 +112,9 @@ export function ProjectCreatePage() {
   };
 
   return (
-    <form
-      onSubmit={form.handleSubmit(onSubmit)}
-      className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8"
-    >
+    <>
       <PageHeader
+        width="md"
         title="プロジェクトを新規作成"
         description="基本情報・制作物・参加者をまとめて入力します"
         actions={
@@ -126,8 +124,11 @@ export function ProjectCreatePage() {
           </Button>
         }
       />
-
-      <Card>
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8"
+      >
+        <Card>
         <CardHeader>
           <CardTitle className="text-base">基本情報</CardTitle>
         </CardHeader>
@@ -286,7 +287,8 @@ export function ProjectCreatePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </form>
+      </form>
+    </>
   );
 }
 

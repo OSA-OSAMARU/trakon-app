@@ -81,8 +81,9 @@ function Inner({ projectId }: { projectId: string }) {
   });
 
   return (
-    <PageContainer width="lg">
+    <>
       <PageHeader
+        width="lg"
         title="共有リンク"
         description="クライアントなど非会員に閲覧・操作用 URL を発行します"
         actions={
@@ -94,7 +95,7 @@ function Inner({ projectId }: { projectId: string }) {
           </Button>
         }
       />
-
+      <PageContainer width="lg">
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -196,7 +197,8 @@ function Inner({ projectId }: { projectId: string }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </PageContainer>
+      </PageContainer>
+    </>
   );
 }
 

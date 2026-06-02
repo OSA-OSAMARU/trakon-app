@@ -29,8 +29,9 @@ export function DashboardPage() {
   });
 
   return (
-    <PageContainer width="lg">
+    <>
       <PageHeader
+        width="lg"
         title="ダッシュボード"
         description={
           data
@@ -38,8 +39,8 @@ export function DashboardPage() {
             : '今日のボールを集計中…'
         }
       />
-
-      {isLoading && <Loading />}
+      <PageContainer width="lg">
+        {isLoading && <Loading />}
       {error && (
         <Card>
           <CardContent className="py-6 text-sm text-destructive">
@@ -88,7 +89,8 @@ export function DashboardPage() {
           )}
         </>
       )}
-    </PageContainer>
+      </PageContainer>
+    </>
   );
 }
 
@@ -101,36 +103,31 @@ function SummaryCards({
   overdueCount: number;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <Card>
-        <CardContent className="flex items-center gap-3 py-4">
-          <ListChecks className="size-5 text-primary" />
+        <CardContent className="flex items-center gap-4 py-5">
+          <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ListChecks className="size-5" />
+          </span>
           <div>
-            <p className="text-xs text-muted-foreground">今日のタスク</p>
-            <p className="text-2xl font-semibold">{todayCount}</p>
+            <p className="text-sm text-muted-foreground">今日のタスク</p>
+            <p className="text-2xl font-bold">{todayCount}</p>
           </div>
         </CardContent>
       </Card>
-      <Card
-        className={cn(
-          overdueCount > 0 ? 'border-rose-300 bg-rose-50' : '',
-        )}
-      >
-        <CardContent className="flex items-center gap-3 py-4">
-          <AlertTriangle
+      <Card className={cn(overdueCount > 0 ? 'border-rose-300 bg-rose-50' : '')}>
+        <CardContent className="flex items-center gap-4 py-5">
+          <span
             className={cn(
-              'size-5',
-              overdueCount > 0 ? 'text-rose-500' : 'text-muted-foreground',
+              'flex size-10 items-center justify-center rounded-lg',
+              overdueCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-muted text-muted-foreground',
             )}
-          />
+          >
+            <AlertTriangle className="size-5" />
+          </span>
           <div>
-            <p className="text-xs text-muted-foreground">期限超過</p>
-            <p
-              className={cn(
-                'text-2xl font-semibold',
-                overdueCount > 0 && 'text-rose-700',
-              )}
-            >
+            <p className="text-sm text-muted-foreground">期限超過</p>
+            <p className={cn('text-2xl font-bold', overdueCount > 0 && 'text-rose-700')}>
               {overdueCount}
             </p>
           </div>
