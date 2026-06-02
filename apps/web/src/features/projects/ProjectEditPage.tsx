@@ -93,8 +93,9 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
   const project = projectQuery.data!;
 
   return (
-    <PageContainer width="md">
+    <>
       <PageHeader
+        width="md"
         title={project.name}
         description="プロジェクト設定"
         actions={
@@ -104,7 +105,7 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
           </Button>
         }
       />
-
+      <PageContainer width="md">
       <form onSubmit={form.handleSubmit((v) => updateMut.mutate(v))}>
         <Card>
           <CardHeader>
@@ -167,7 +168,8 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
           </Button>
         </CardContent>
       </Card>
-    </PageContainer>
+      </PageContainer>
+    </>
   );
 }
 

@@ -51,11 +51,11 @@ export function SidebarLayout() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border">
+    <div className="flex h-screen overflow-hidden bg-content text-foreground">
+      <aside className="flex h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
         <Link
           to="/dashboard"
-          className="shrink-0 px-5 py-5 text-xl font-bold tracking-tight"
+          className="shrink-0 px-6 py-5 text-2xl font-extrabold tracking-[0.2em]"
         >
           TRAKON
         </Link>
@@ -87,8 +87,8 @@ export function SidebarLayout() {
                   cn(
                     'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
                     isActive
-                      ? 'bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                      ? 'bg-primary/10 font-medium text-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                   )
                 }
               >
@@ -133,7 +133,7 @@ export function SidebarLayout() {
         </div>
       </aside>
 
-      <main className="h-full flex-1 overflow-auto">
+      <main className="h-full flex-1 overflow-auto bg-content">
         <Outlet />
       </main>
 
@@ -167,8 +167,8 @@ function SideLink({
         cn(
           'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
           isActive
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+            ? 'bg-primary/10 font-medium text-primary'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground',
         )
       }
     >

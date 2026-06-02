@@ -19,8 +19,9 @@ export function ProjectListPage() {
   });
 
   return (
-    <PageContainer width="lg">
+    <>
       <PageHeader
+        width="lg"
         title="プロジェクト"
         description="参加中のプロジェクト一覧"
         actions={
@@ -32,8 +33,8 @@ export function ProjectListPage() {
           </Button>
         }
       />
-
-      {isLoading && <ListSkeleton />}
+      <PageContainer width="lg">
+        {isLoading && <ListSkeleton />}
 
       {error && (
         <Card>
@@ -96,7 +97,8 @@ export function ProjectListPage() {
           ))}
         </ul>
       )}
-    </PageContainer>
+      </PageContainer>
+    </>
   );
 }
 
