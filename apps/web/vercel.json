@@ -6,14 +6,14 @@
   "outputDirectory": "dist",
   "regions": ["hnd1"],
   "functions": {
-    "api/[[...slug]].ts": {
+    "api/index.ts": {
       "runtime": "@vercel/node@3.2.24",
       "maxDuration": 30
     }
   },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
