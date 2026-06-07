@@ -1,0 +1,4 @@
+# esbuild が生成するサーバーバンドル (scripts/build-server.mjs)。
+# 型宣言 index.d.ts はコミットし、生成物の .js / .map のみ ignore する。
+/server-bundle/*.js
+/server-bundle/*.js.map
