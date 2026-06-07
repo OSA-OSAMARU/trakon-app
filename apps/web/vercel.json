@@ -7,7 +7,6 @@
   "regions": ["hnd1"],
   "functions": {
     "api/[[...slug]].ts": {
-      "runtime": "@vercel/node@3.2.24",
       "maxDuration": 30
     }
   },
