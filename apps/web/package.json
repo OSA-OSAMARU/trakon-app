@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "concurrently -n web,api -c blue,magenta \"pnpm dev:web\" \"pnpm dev:server\"",
     "dev:web": "vite",
@@ -57,7 +60,6 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.13.0",
     "@typescript-eslint/parser": "^8.13.0",
-    "@vercel/node": "^3.2.24",
     "@vitejs/plugin-react": "^4.3.3",
     "concurrently": "^9.0.1",
     "eslint": "^8.57.1",
