@@ -3,18 +3,30 @@
 //
 // 実体は scripts/build-server.mjs が esbuild で生成する単一バンドル
 // (../server-bundle/index.js) で、@trakon/db / @trakon/shared をインライン化済み。
-// ここから re-export することで:
-//   * Vercel の `functions` パターン (api/index.ts) がソース上で必ずマッチする
-//     (生成物 .js をパターンにすると、ビルド前検証で「見つからない」エラーになる)
-//   * @vercel/node はこの薄いエントリ + バンドル本体 (.js) のみを対象にするため、
-//     本番 Node が生 .ts (@trakon/*) を読む問題が起きない。
+// その default は Hono の Web ハンドラ (handle(app) = (req: Request) => Response)。
 //
-// バンドルの型は server-bundle/index.d.ts (コミット済み) で与える。実体の .js は
-// buildCommand (vite build && node scripts/build-server.mjs) で生成される。
+// ここで「名前付き HTTP メソッド export」(GET/POST/...) として公開することで、Vercel の
+// Node ランタイムが **Web ハンドラ**として実行する。リクエスト body は Vercel が Web Request に
+// 正しく載せるため、@hono/node-server の Node ストリーム読み取りで body 付き POST が滞留する
+// 問題を回避できる。型は server-bundle/index.d.ts で与え、実体 .js は buildCommand で生成。
 // -----------------------------------------------------------------------------
-export { default } from '../server-bundle/index.js';
+import handler from '../server-bundle/index.js';
 
 export const config = {
   runtime: 'nodejs',
   regions: ['hnd1'],
 };
+
+// 関数到達/メソッドを確定するための最小ログ (障害切り分け用)。
+const wrap = (req: Request): Response | Promise<Response> => {
+  console.log(`[fn] ${req.method} ${new URL(req.url).pathname}`);
+  return handler(req);
+};
+
+export const GET = wrap;
+export const POST = wrap;
+export const PUT = wrap;
+export const PATCH = wrap;
+export const DELETE = wrap;
+export const OPTIONS = wrap;
+export const HEAD = wrap;
