@@ -143,15 +143,23 @@ export async function completeSignup(input: {
   displayName: string;
   password: string;
 }): Promise<CurrentUserDTO> {
+  // 各ステップの所要時間を計測し、どこで滞留するかを Vercel ログから特定できるようにする。
+  const t0 = Date.now();
+  const step = (name: string) => console.log(`[completeSignup] ${name} +${Date.now() - t0}ms`);
+
+  step('findUnique:start');
   const existing = await prisma.user.findUnique({ where: { authUserId: input.authUserId } });
+  step('findUnique:done');
   if (existing) {
     throw new ApiException('ALREADY_COMPLETED', 409, 'Signup is already completed.');
   }
 
   // 同一メール別プロバイダ衝突 (FR-AUTH-12)
+  step('findFirst:start');
   const emailOwner = await prisma.user.findFirst({
     where: { email: input.email, deletedAt: null },
   });
+  step('findFirst:done');
   if (emailOwner) {
     throw new ApiException(
       'SAME_EMAIL_DIFFERENT_PROVIDER',
@@ -162,34 +170,42 @@ export async function completeSignup(input: {
   }
 
   const supabase = getSupabaseAdmin();
+  step('supabase.updateUserById:start');
   const { error: updateError } = await supabase.auth.admin.updateUserById(input.authUserId, {
     password: input.password,
   });
+  step('supabase.updateUserById:done');
   if (updateError) {
     throw new ApiException('SUPABASE_UPDATE_FAILED', 500, updateError.message);
   }
 
-  const user = await prisma.$transaction(async (tx) => {
-    const created = await tx.user.create({
-      data: {
-        authUserId: input.authUserId,
-        email: input.email,
-        fullName: input.fullName,
-        displayName: input.displayName,
-        primaryAuthMethod: 'password',
-      },
-    });
-    await tx.auditLog.create({
-      data: {
-        actorUserId: created.id,
-        action: 'complete_signup',
-        resourceType: 'user',
-        resourceId: created.id,
-        result: 'success',
-      },
-    });
-    return created;
-  });
+  step('transaction:start');
+  const user = await prisma.$transaction(
+    async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          authUserId: input.authUserId,
+          email: input.email,
+          fullName: input.fullName,
+          displayName: input.displayName,
+          primaryAuthMethod: 'password',
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: created.id,
+          action: 'complete_signup',
+          resourceType: 'user',
+          resourceId: created.id,
+          result: 'success',
+        },
+      });
+      return created;
+    },
+    // 30 秒の無音ハングではなく明示的に早期失敗させる (接続待ち/長期化の検知)
+    { maxWait: 5000, timeout: 15000 },
+  );
+  step('transaction:done');
 
   return toDTO(user);
 }
