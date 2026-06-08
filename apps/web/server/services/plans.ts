@@ -311,17 +311,22 @@ export async function createPlan(input: {
 export async function updatePlan(input: {
   itemId: string;
   planId: string;
+  projectId: string;
   body: UpdatePlanBody;
 }): Promise<PlanDTO> {
   const existing = await prisma.plan.findFirst({
     where: { id: input.planId, itemId: input.itemId, deletedAt: null },
+    include: {
+      ballEvents: { orderBy: { occurredAt: 'desc' }, select: { eventType: true } },
+    },
   });
   if (!existing) throw new ApiException('NOT_FOUND', 404, 'Plan not found.');
   if (existing.status !== 'active') {
     throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not editable.');
   }
 
-  const data: Prisma.PlanUpdateInput = {};
+  // PlanUncheckedUpdateInput を使うことでスカラ FK (fromMemberId 等) を直接指定できる。
+  const data: Prisma.PlanUncheckedUpdateInput = {};
   if (input.body.title !== undefined) data.title = input.body.title;
   if (input.body.category !== undefined) data.category = input.body.category;
   if (input.body.scheduledDate !== undefined)
@@ -329,6 +334,56 @@ export async function updatePlan(input: {
   if (input.body.dueDate !== undefined)
     data.dueDate = input.body.dueDate ? new Date(`${input.body.dueDate}T00:00:00Z`) : null;
   if (input.body.memo !== undefined) data.memo = input.body.memo;
+
+  // FROM/TO は TOSS 前 (ball が動いていない) の予定でのみ変更可。
+  // ball state 判定は ballActions.currentBallState と同じセマンティクス:
+  // 最新イベントが無い or toss_undone なら ready。
+  if (input.body.fromMemberId !== undefined || input.body.toMemberId !== undefined) {
+    const latest = existing.ballEvents[0];
+    const isReady = !latest || latest.eventType === 'toss_undone';
+    if (!isReady) {
+      throw new ApiException(
+        'FROM_TO_LOCKED',
+        422,
+        'FROM/TO cannot be changed after the ball has been tossed.',
+      );
+    }
+    const nextFrom = input.body.fromMemberId ?? existing.fromMemberId;
+    const nextTo = input.body.toMemberId ?? existing.toMemberId;
+    if (nextFrom === nextTo) {
+      throw new ApiException(
+        'INVALID_MEMBER',
+        422,
+        'fromMemberId and toMemberId must differ.',
+      );
+    }
+    const changedMemberIds: string[] = [];
+    if (input.body.fromMemberId !== undefined) changedMemberIds.push(input.body.fromMemberId);
+    if (input.body.toMemberId !== undefined) changedMemberIds.push(input.body.toMemberId);
+    await assertMembersBelongToProject({
+      projectId: input.projectId,
+      memberIds: changedMemberIds,
+    });
+    if (input.body.fromMemberId !== undefined) data.fromMemberId = input.body.fromMemberId;
+    if (input.body.toMemberId !== undefined) data.toMemberId = input.body.toMemberId;
+  }
+
+  // 後続の予定 (setPlanSuccessor と同じ検証ロジック)。
+  if (input.body.successorPlanId !== undefined) {
+    if (input.body.successorPlanId === null) {
+      data.successorPlanId = null;
+    } else {
+      if (input.body.successorPlanId === input.planId) {
+        throw new ApiException('SELF_SUCCESSOR', 422, 'A plan cannot be its own successor.');
+      }
+      await assertSuccessorAvailable({
+        successorPlanId: input.body.successorPlanId,
+        itemId: input.itemId,
+        excludePlanId: input.planId,
+      });
+      data.successorPlanId = input.body.successorPlanId;
+    }
+  }
 
   const row = await prisma.plan.update({
     where: { id: input.planId },

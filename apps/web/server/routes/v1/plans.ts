@@ -74,10 +74,11 @@ export const plansRoute = new Hono()
 
   .patch('/:planId', async (c) => {
     const itemId = c.get('itemId');
+    const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
     const body = updatePlanBodySchema.parse(await c.req.json());
-    const plan = await updatePlan({ itemId, planId, body });
+    const plan = await updatePlan({ itemId, planId, projectId: project.projectId, body });
     return c.json({ data: plan });
   })
 

@@ -50,12 +50,40 @@ describe('createPlanBodySchema', () => {
 });
 
 describe('updatePlanBodySchema', () => {
+  const fromId = '11111111-1111-1111-1111-111111111111';
+  const toId = '22222222-2222-2222-2222-222222222222';
+
   it('accepts an empty body', () => {
     expect(updatePlanBodySchema.safeParse({}).success).toBe(true);
   });
 
   it('accepts memo = null (clears memo)', () => {
     expect(updatePlanBodySchema.safeParse({ memo: null }).success).toBe(true);
+  });
+
+  it('accepts fromMemberId / toMemberId update', () => {
+    expect(
+      updatePlanBodySchema.safeParse({ fromMemberId: fromId, toMemberId: toId }).success,
+    ).toBe(true);
+  });
+
+  it('rejects identical from / to when both provided', () => {
+    expect(
+      updatePlanBodySchema.safeParse({ fromMemberId: fromId, toMemberId: fromId }).success,
+    ).toBe(false);
+  });
+
+  it('accepts updating only one of from / to', () => {
+    expect(updatePlanBodySchema.safeParse({ toMemberId: toId }).success).toBe(true);
+  });
+
+  it('accepts successorPlanId set and null (clear)', () => {
+    expect(updatePlanBodySchema.safeParse({ successorPlanId: fromId }).success).toBe(true);
+    expect(updatePlanBodySchema.safeParse({ successorPlanId: null }).success).toBe(true);
+  });
+
+  it('rejects malformed successorPlanId', () => {
+    expect(updatePlanBodySchema.safeParse({ successorPlanId: 'not-a-uuid' }).success).toBe(false);
   });
 });
 
