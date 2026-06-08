@@ -17,11 +17,22 @@ if (typeof globalThis.WebSocket === 'undefined') {
 
 let cached: SupabaseClient | undefined;
 
+// Supabase admin 呼び出しがネットワーク要因で無限ハングするのを防ぐため、fetch に
+// タイムアウト (AbortController) を被せる。サーバーレスの 30s 上限手前で明示的に失敗させる。
+const FETCH_TIMEOUT_MS = 10_000;
+function fetchWithTimeout(...args: Parameters<typeof fetch>): Promise<Response> {
+  const [input, init] = args;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 export function getSupabaseAdmin(): SupabaseClient {
   if (cached) return cached;
   const env = getServerEnv();
   cached = createClient(env.SUPABASE_URL, env.SUPABASE_SECRET_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: fetchWithTimeout },
   });
   return cached;
 }
