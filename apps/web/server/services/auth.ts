@@ -304,15 +304,25 @@ export async function recordLogin(input: {
   ip?: string;
   userAgent?: string;
 }): Promise<void> {
-  await prisma.auditLog.create({
-    data: {
-      actorUserId: input.userId,
-      action: 'login',
-      resourceType: 'user',
-      resourceId: input.userId,
-      result: 'success',
-      ip: input.ip ?? null,
-      userAgent: input.userAgent ?? null,
-    },
-  });
+  // ログイン監査は best-effort。書き込みが失敗/遅延しても認証フロー (login / complete-signup) の
+  // レスポンスを止めない (id はクライアント採番 = uuid(7) なので DB 関数依存の滞留も避けられる)。
+  try {
+    await withTimeout(
+      prisma.auditLog.create({
+        data: {
+          actorUserId: input.userId,
+          action: 'login',
+          resourceType: 'user',
+          resourceId: input.userId,
+          result: 'success',
+          ip: input.ip ?? null,
+          userAgent: input.userAgent ?? null,
+        },
+      }),
+      STEP_TIMEOUT_MS,
+      'recordLogin',
+    );
+  } catch (err) {
+    console.error('[recordLogin] failed (non-fatal):', err);
+  }
 }
