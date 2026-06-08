@@ -86,6 +86,32 @@ export function useTossPlan(input: { projectId: string; itemId: string; planId: 
   });
 }
 
+/**
+ * 後続予定 (successorPlanId) の紐づけ / 解除。
+ * - スケジュールのドラッグ紐づけ・モーダルの解除で共用するため projectId のみ固定し、
+ *   itemId / planId / successorPlanId は mutate 引数で受ける。
+ * - 楽観更新はせず onSuccess で再フェッチ (BE 真値で正当化)。
+ */
+export function useSetSuccessor(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    Plan,
+    ApiClientError,
+    { itemId: string; planId: string; successorPlanId: string | null }
+  >({
+    mutationFn: ({ itemId, planId, successorPlanId }) =>
+      plansApi.setSuccessor(projectId, itemId, planId, successorPlanId),
+    onSuccess: (_plan, { itemId, planId, successorPlanId }) => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.detail(projectId, itemId, planId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
+      toast.success(successorPlanId ? '後続を紐づけました' : '後続の紐づけを解除しました');
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiClientError ? err.message : '後続の更新に失敗しました'),
+  });
+}
+
 export function useCompletePlan(input: { projectId: string; itemId: string; planId: string }) {
   const qc = useQueryClient();
   const listKey = plansQueryKey.list(input.projectId, input.itemId);

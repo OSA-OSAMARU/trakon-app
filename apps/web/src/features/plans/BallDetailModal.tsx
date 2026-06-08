@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { CheckCircle2, Loader2, Pencil, Send, Trash2, Undo2, Zap } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Link2Off, Loader2, Pencil, Send, Trash2, Undo2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -28,9 +28,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ApiClientError } from '@/lib/api';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import type { ProjectMember } from '@/features/projects/membersApi';
-import { plansApi, plansQueryKey, type BallEvent } from './api';
+import { plansApi, plansQueryKey, type BallEvent, type Plan } from './api';
 import { CATEGORY_STYLE } from './categoryColor';
-import { useCompletePlan, useTossPlan } from './useOptimisticBallAction';
+import { useCompletePlan, useSetSuccessor, useTossPlan } from './useOptimisticBallAction';
 
 /**
  * SC-08 ボール詳細・TOSS/完了モーダル
@@ -42,6 +42,7 @@ export function BallDetailModal({
   itemId,
   planId,
   members,
+  plans,
   onClose,
   onEdit,
 }: {
@@ -49,6 +50,7 @@ export function BallDetailModal({
   itemId: string;
   planId: string;
   members: ProjectMember[];
+  plans: Plan[];
   onClose: () => void;
   onEdit: () => void;
 }) {
@@ -66,6 +68,7 @@ export function BallDetailModal({
 
   const tossMut = useTossPlan({ projectId, itemId, planId });
   const completeMut = useCompletePlan({ projectId, itemId, planId });
+  const successorMut = useSetSuccessor(projectId);
 
   const undoMut = useMutation({
     mutationFn: () => plansApi.undoToss(projectId, itemId, planId),
@@ -109,9 +112,15 @@ export function BallDetailModal({
               !!plan.ballHolder && !!myMember && plan.ballHolder.id === myMember.id;
             const canAct = plan.status === 'active' && (isBallHolder /* director は BE 側で許可 */);
             const style = CATEGORY_STYLE[plan.category];
+            const successor = plan.successorPlanId
+              ? (plans.find((p) => p.id === plan.successorPlanId) ?? null)
+              : null;
+            const hasSuccessor = plan.successorPlanId !== null;
 
             const handleToss = () => tossMut.mutate(undefined);
             const handleComplete = () => completeMut.mutate();
+            const handleUnlink = () =>
+              successorMut.mutate({ itemId, planId, successorPlanId: null });
 
             return (
               <>
@@ -152,6 +161,32 @@ export function BallDetailModal({
                   {plan.memo && (
                     <div className="rounded-md border border-border bg-muted/40 p-3 text-xs whitespace-pre-wrap">
                       {plan.memo}
+                    </div>
+                  )}
+                  {hasSuccessor && (
+                    <div className="flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 p-2 text-xs text-sky-800">
+                      <ArrowRight className="size-4 shrink-0" />
+                      <span className="shrink-0 text-sky-600">次のタスク</span>
+                      <span className="truncate font-medium">
+                        {successor ? successor.title : '（別の制作物 / 取得中）'}
+                      </span>
+                      {plan.status === 'active' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="ml-auto size-7 shrink-0 text-sky-700 hover:text-sky-900"
+                          onClick={handleUnlink}
+                          disabled={successorMut.isPending}
+                          aria-label="後続の紐づけを解除"
+                          title="後続の紐づけを解除"
+                        >
+                          {successorMut.isPending ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Link2Off className="size-4" />
+                          )}
+                        </Button>
+                      )}
                     </div>
                   )}
                   <Section title="履歴">
@@ -210,10 +245,12 @@ export function BallDetailModal({
                         <Button onClick={handleComplete} disabled={completeMut.isPending}>
                           {completeMut.isPending ? (
                             <Loader2 className="size-4 animate-spin" />
+                          ) : hasSuccessor ? (
+                            <Send className="size-4" />
                           ) : (
                             <CheckCircle2 className="size-4" />
                           )}
-                          完了する
+                          {hasSuccessor ? '次のタスクへトス' : '完了する'}
                         </Button>
                       </>
                     )}
