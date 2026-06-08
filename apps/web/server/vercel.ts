@@ -1,14 +1,9 @@
-// Vercel の Node ランタイム用アダプタ。hono/vercel (Edge 用, fetch 形式) ではなく
-// @hono/node-server/vercel (Node の (req,res) 形式 = getRequestListener) を使う。
-// 前者は Node の IncomingMessage を app.fetch に渡すため URL が壊れて 404 になり、
-// 返り値 Response も Node ランタイムに無視されてレスポンス未送出 → 30s で 504 になる。
-import { handle } from '@hono/node-server/vercel';
+// Web 標準 (Request) => Response 形式のハンドラ。Vercel では api/index.ts 側で
+// 「名前付き HTTP メソッド export」として公開し、Vercel ネイティブの Web ハンドラとして動かす。
+// これにより body 付き POST のリクエストボディは Vercel 側が正しく Web Request に載せる
+// (@hono/node-server の Node ストリーム読み取りを介さないため、body 付き POST の滞留を回避)。
+import { handle } from 'hono/vercel';
 
 import { app } from './app.js';
-
-export const config = {
-  runtime: 'nodejs',
-  regions: ['hnd1'],
-};
 
 export default handle(app);
