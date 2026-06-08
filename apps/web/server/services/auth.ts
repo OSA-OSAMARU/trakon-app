@@ -1,7 +1,30 @@
 import { prisma } from '@trakon/db';
+import { uuidv7 } from 'uuidv7';
 
 import { ApiException } from '../lib/errors.js';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
+
+/**
+ * 個々の await をハードタイムアウトで包む。サーバーレスの 30 秒無音ハングを根絶し、
+ * どのステップで詰まったかをレスポンス body から即特定できるようにする
+ * (実体の処理はキャンセルされないが制御を即返す)。
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new ApiException('STEP_TIMEOUT', 504, `Operation timed out at: ${label}`)),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+const STEP_TIMEOUT_MS = 10_000;
 
 export type CurrentUserDTO = {
   id: string;
@@ -148,7 +171,11 @@ export async function completeSignup(input: {
   const step = (name: string) => console.log(`[completeSignup] ${name} +${Date.now() - t0}ms`);
 
   step('findUnique:start');
-  const existing = await prisma.user.findUnique({ where: { authUserId: input.authUserId } });
+  const existing = await withTimeout(
+    prisma.user.findUnique({ where: { authUserId: input.authUserId } }),
+    STEP_TIMEOUT_MS,
+    'findUnique',
+  );
   step('findUnique:done');
   if (existing) {
     throw new ApiException('ALREADY_COMPLETED', 409, 'Signup is already completed.');
@@ -156,9 +183,11 @@ export async function completeSignup(input: {
 
   // 同一メール別プロバイダ衝突 (FR-AUTH-12)
   step('findFirst:start');
-  const emailOwner = await prisma.user.findFirst({
-    where: { email: input.email, deletedAt: null },
-  });
+  const emailOwner = await withTimeout(
+    prisma.user.findFirst({ where: { email: input.email, deletedAt: null } }),
+    STEP_TIMEOUT_MS,
+    'findFirst',
+  );
   step('findFirst:done');
   if (emailOwner) {
     throw new ApiException(
@@ -171,39 +200,44 @@ export async function completeSignup(input: {
 
   const supabase = getSupabaseAdmin();
   step('supabase.updateUserById:start');
-  const { error: updateError } = await supabase.auth.admin.updateUserById(input.authUserId, {
-    password: input.password,
-  });
+  const { error: updateError } = await withTimeout(
+    supabase.auth.admin.updateUserById(input.authUserId, { password: input.password }),
+    STEP_TIMEOUT_MS,
+    'supabase.updateUserById',
+  );
   step('supabase.updateUserById:done');
   if (updateError) {
     throw new ApiException('SUPABASE_UPDATE_FAILED', 500, updateError.message);
   }
 
+  // 対話的トランザクションは Supabase の Transaction モードプーラで接続を保持し続けて滞留しやすい。
+  // id をアプリ側で採番し、依存のないバッチ (配列) トランザクションで 1 往復に収める。
   step('transaction:start');
-  const user = await prisma.$transaction(
-    async (tx) => {
-      const created = await tx.user.create({
+  const userId = uuidv7();
+  const [user] = await withTimeout(
+    prisma.$transaction([
+      prisma.user.create({
         data: {
+          id: userId,
           authUserId: input.authUserId,
           email: input.email,
           fullName: input.fullName,
           displayName: input.displayName,
           primaryAuthMethod: 'password',
         },
-      });
-      await tx.auditLog.create({
+      }),
+      prisma.auditLog.create({
         data: {
-          actorUserId: created.id,
+          actorUserId: userId,
           action: 'complete_signup',
           resourceType: 'user',
-          resourceId: created.id,
+          resourceId: userId,
           result: 'success',
         },
-      });
-      return created;
-    },
-    // 30 秒の無音ハングではなく明示的に早期失敗させる (接続待ち/長期化の検知)
-    { maxWait: 5000, timeout: 15000 },
+      }),
+    ]),
+    STEP_TIMEOUT_MS,
+    'transaction',
   );
   step('transaction:done');
 
