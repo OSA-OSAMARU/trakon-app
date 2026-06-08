@@ -24,6 +24,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PlanModalsHost } from './PlanModalsHost';
 import { DateChangeConfirmModal } from './DateChangeConfirmModal';
 import { useReschedulePlan, type ReschedulePatch } from './usePlanReschedule';
+import { useSetSuccessor } from './useOptimisticBallAction';
 import {
   assignLanes,
   ballTier,
@@ -81,6 +82,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
   });
 
   const reschedule = useReschedulePlan(projectId);
+  const setSuccessor = useSetSuccessor(projectId);
   const [pendingMove, setPendingMove] = useState<{ plan: Plan; dayDelta: number } | null>(null);
 
   const project = projectQuery.data;
@@ -179,6 +181,14 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
     setPendingMove(null);
   };
 
+  const commitLink = (source: Plan, target: Plan) => {
+    setSuccessor.mutate({
+      itemId: source.itemId,
+      planId: source.id,
+      successorPlanId: target.id,
+    });
+  };
+
   const commitResize = (plan: Plan, edge: 'top' | 'bottom', dayDelta: number) => {
     if (dayDelta === 0) return;
     const { start, end } = planRange(plan);
@@ -268,6 +278,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
           onOpenDetail={openDetailModal}
           onMove={commitMove}
           onResize={commitResize}
+          onLink={commitLink}
         />
       )}
 
@@ -300,6 +311,35 @@ type DragState = {
   moved: boolean;
 };
 
+// 後続紐づけドラッグ (カード下部コネクタ → 別カード)。座標はビューポート基準 (client)。
+type LinkDrag = {
+  source: Plan;
+  start: { x: number; y: number };
+  pointer: { x: number; y: number };
+  targetId: string | null;
+};
+
+/**
+ * source の後続として target を設定できるか (BE assertSuccessorAvailable のミラー)。
+ * 同一制作物・自己参照禁止・active・他から後続参照されていない・直接循環なし。
+ */
+function isValidLinkTarget(source: Plan, target: Plan, itemPlans: Plan[]): boolean {
+  if (target.id === source.id) return false;
+  if (target.itemId !== source.itemId) return false;
+  if (target.status !== 'active') return false;
+  if (itemPlans.some((p) => p.id !== source.id && p.successorPlanId === target.id)) return false;
+  // target のチェーンが source へ戻る場合は循環になるので不可
+  const byId = new Map(itemPlans.map((p) => [p.id, p]));
+  const seen = new Set<string>();
+  let cur: Plan | undefined = target;
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    if (cur.id === source.id) return false;
+    cur = cur.successorPlanId ? byId.get(cur.successorPlanId) : undefined;
+  }
+  return true;
+}
+
 function ScheduleBoard({
   days,
   items,
@@ -309,6 +349,7 @@ function ScheduleBoard({
   onOpenDetail,
   onMove,
   onResize,
+  onLink,
 }: {
   days: Date[];
   items: ProjectItem[];
@@ -318,11 +359,61 @@ function ScheduleBoard({
   onOpenDetail: (planId: string) => void;
   onMove: (plan: Plan, dayDelta: number) => void;
   onResize: (plan: Plan, edge: 'top' | 'bottom', dayDelta: number) => void;
+  onLink: (source: Plan, target: Plan) => void;
 }) {
   const today = new Date();
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
+
+  // 後続紐づけドラッグ
+  const [linkDrag, setLinkDrag] = useState<LinkDrag | null>(null);
+  const linkRef = useRef<LinkDrag | null>(null);
+  linkRef.current = linkDrag;
+
+  const startLink = (e: React.PointerEvent, plan: Plan) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setLinkDrag({
+      source: plan,
+      start: { x: e.clientX, y: e.clientY },
+      pointer: { x: e.clientX, y: e.clientY },
+      targetId: null,
+    });
+  };
+
+  useEffect(() => {
+    if (!linkDrag) return;
+    const onMovePointer = (e: PointerEvent) => {
+      const ld = linkRef.current;
+      if (!ld) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const chip = el?.closest('[data-plan-id]') as HTMLElement | null;
+      const overId = chip?.getAttribute('data-plan-id') ?? null;
+      const itemPlans = plansByItem.get(ld.source.itemId) ?? [];
+      let targetId: string | null = null;
+      if (overId && overId !== ld.source.id) {
+        const target = itemPlans.find((p) => p.id === overId);
+        if (target && isValidLinkTarget(ld.source, target, itemPlans)) targetId = overId;
+      }
+      setLinkDrag({ ...ld, pointer: { x: e.clientX, y: e.clientY }, targetId });
+    };
+    const onUpPointer = () => {
+      const ld = linkRef.current;
+      setLinkDrag(null);
+      if (ld && ld.targetId) {
+        const itemPlans = plansByItem.get(ld.source.itemId) ?? [];
+        const target = itemPlans.find((p) => p.id === ld.targetId);
+        if (target) onLink(ld.source, target);
+      }
+    };
+    window.addEventListener('pointermove', onMovePointer);
+    window.addEventListener('pointerup', onUpPointer);
+    return () => {
+      window.removeEventListener('pointermove', onMovePointer);
+      window.removeEventListener('pointerup', onUpPointer);
+    };
+  }, [linkDrag, plansByItem, onLink]);
 
   // 空セルの縦ドラッグで期間付き新規作成
   type CreateDrag = { itemId: string; startIdx: number; endIdx: number };
@@ -402,6 +493,7 @@ function ScheduleBoard({
   );
 
   return (
+    <>
     <div className="flex-1 overflow-auto">
       <div className="flex w-max select-none">
         {/* 日付軸 (sticky left) */}
@@ -527,6 +619,16 @@ function ScheduleBoard({
                   );
                 })}
 
+                {/* 後続リンク (同一列内) を線で可視化 */}
+                <LinkLayer
+                  plans={itemPlans}
+                  laneOf={laneOf}
+                  days={days}
+                  rowHeight={rowHeight}
+                  width={colWidth}
+                  height={totalHeight}
+                />
+
                 {/* ボール */}
                 {itemPlans.map((plan) => (
                   <BallChip
@@ -537,7 +639,9 @@ function ScheduleBoard({
                     lane={laneOf.get(plan.id) ?? 0}
                     today={today}
                     drag={drag?.plan.id === plan.id ? drag : null}
+                    linkTarget={linkDrag?.targetId === plan.id}
                     onActivate={() => onOpenDetail(plan.id)}
+                    onPointerDownConnector={(e) => startLink(e, plan)}
                     onPointerDownBall={(e, mode) => {
                       e.stopPropagation();
                       if (plan.status !== 'active' && mode !== 'move') return;
@@ -557,6 +661,94 @@ function ScheduleBoard({
         })}
       </div>
     </div>
+
+      {/* 紐づけドラッグのプレビュー線 (ビューポート基準) */}
+      {linkDrag && (
+        <svg className="pointer-events-none fixed inset-0 z-50 h-full w-full">
+          <line
+            x1={linkDrag.start.x}
+            y1={linkDrag.start.y}
+            x2={linkDrag.pointer.x}
+            y2={linkDrag.pointer.y}
+            strokeWidth={2}
+            strokeDasharray="4 3"
+            className={linkDrag.targetId ? 'stroke-primary' : 'stroke-muted-foreground'}
+          />
+        </svg>
+      )}
+    </>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// 後続リンク描画 (列内 SVG オーバーレイ)
+// -----------------------------------------------------------------------------
+
+function chipCenters(plan: Plan, days: Date[], rowHeight: number, laneOf: Map<string, number>) {
+  const { start, end } = planRange(plan);
+  const startIdx = dayIndex(days, start);
+  const endIdx = dayIndex(days, end);
+  const top = startIdx * rowHeight + 1;
+  const height = (endIdx - startIdx + 1) * rowHeight - 3;
+  const lane = laneOf.get(plan.id) ?? 0;
+  const cx = lane * LANE_WIDTH + 6 + (LANE_WIDTH - 12) / 2;
+  return { cx, top, bottom: top + height };
+}
+
+function LinkLayer({
+  plans,
+  laneOf,
+  days,
+  rowHeight,
+  width,
+  height,
+}: {
+  plans: Plan[];
+  laneOf: Map<string, number>;
+  days: Date[];
+  rowHeight: number;
+  width: number;
+  height: number;
+}) {
+  const byId = new Map(plans.map((p) => [p.id, p]));
+  const links: { x1: number; y1: number; x2: number; y2: number }[] = [];
+  for (const p of plans) {
+    if (!p.successorPlanId) continue;
+    const succ = byId.get(p.successorPlanId);
+    if (!succ) continue; // 別制作物 or 未ロード
+    const a = chipCenters(p, days, rowHeight, laneOf);
+    const b = chipCenters(succ, days, rowHeight, laneOf);
+    links.push({ x1: a.cx, y1: a.bottom, x2: b.cx, y2: b.top });
+  }
+  if (links.length === 0) return null;
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 z-0"
+      width={width}
+      height={height}
+      style={{ overflow: 'visible' }}
+      aria-hidden
+    >
+      <defs>
+        <marker id="succ-arrow" markerWidth="6" markerHeight="6" refX="4.5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" className="fill-sky-400" />
+        </marker>
+      </defs>
+      {links.map((l, i) => {
+        const midY = (l.y1 + l.y2) / 2;
+        const d = `M ${l.x1} ${l.y1} C ${l.x1} ${midY}, ${l.x2} ${midY}, ${l.x2} ${l.y2}`;
+        return (
+          <path
+            key={i}
+            d={d}
+            strokeWidth={1.5}
+            strokeDasharray="3 3"
+            markerEnd="url(#succ-arrow)"
+            className="fill-none stroke-sky-400"
+          />
+        );
+      })}
+    </svg>
   );
 }
 
@@ -571,8 +763,10 @@ function BallChip({
   lane,
   today,
   drag,
+  linkTarget,
   onActivate,
   onPointerDownBall,
+  onPointerDownConnector,
 }: {
   plan: Plan;
   days: Date[];
@@ -580,8 +774,10 @@ function BallChip({
   lane: number;
   today: Date;
   drag: DragState | null;
+  linkTarget: boolean;
   onActivate: () => void;
   onPointerDownBall: (e: React.PointerEvent, mode: DragState['mode']) => void;
+  onPointerDownConnector: (e: React.PointerEvent) => void;
 }) {
   const { start, end } = planRange(plan);
   let startIdx = dayIndex(days, start);
@@ -628,11 +824,13 @@ function BallChip({
           onActivate(); // キーボードでは詳細を開く (移動はマウスのみ)
         }
       }}
+      data-plan-id={plan.id}
       onPointerDown={(e) => onPointerDownBall(e, 'move')}
       className={cn(
-        'absolute overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm',
+        'group absolute overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm',
         cardClass,
         active && !completed && 'ring-2 ring-primary/40',
+        linkTarget && 'ring-2 ring-primary ring-offset-1',
         drag?.mode === 'move' && 'opacity-70',
         editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
       )}
@@ -690,6 +888,16 @@ function BallChip({
         <div
           onPointerDown={(e) => onPointerDownBall(e, 'resize-bottom')}
           className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize"
+          aria-hidden
+        />
+      )}
+
+      {/* 後続紐づけコネクタ (下端中央): ドラッグして別カードに重ねると後続に設定 */}
+      {editable && tier !== 'mini' && (
+        <div
+          onPointerDown={onPointerDownConnector}
+          className="absolute bottom-0 left-1/2 z-10 size-3 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background bg-sky-500 opacity-0 shadow transition-opacity group-hover:opacity-100"
+          title="ドラッグして後続タスクに紐づけ"
           aria-hidden
         />
       )}

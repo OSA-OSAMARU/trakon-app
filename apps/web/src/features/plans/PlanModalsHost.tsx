@@ -67,6 +67,7 @@ export function PlanModalsHost({
         itemId={planItemId ?? fallbackItemId}
         planId={planId}
         members={members}
+        plans={plans}
         onClose={closeModal}
         onEdit={() => {
           setParams(
