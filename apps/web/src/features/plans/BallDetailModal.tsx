@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ApiClientError } from '@/lib/api';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import type { ProjectMember } from '@/features/projects/membersApi';
+import { projectsApi, projectsQueryKey } from '@/features/projects/api';
 import { plansApi, plansQueryKey, type BallEvent, type Plan } from './api';
 import { CATEGORY_STYLE } from './categoryColor';
 import { useCompletePlan, useSetSuccessor, useTossPlan } from './useOptimisticBallAction';
@@ -65,6 +66,14 @@ export function BallDetailModal({
     queryKey: plansQueryKey.detail(projectId, itemId, planId),
     queryFn: () => plansApi.get(projectId, itemId, planId),
   });
+
+  // ディレクター (プロジェクト作成者) は保持者でなくてもトス/完了できる。
+  // スケジュール側では同じ query key で既に取得済みのためキャッシュヒットになる。
+  const projectQuery = useQuery({
+    queryKey: projectsQueryKey.detail(projectId),
+    queryFn: () => projectsApi.get(projectId),
+  });
+  const isDirector = projectQuery.data?.role === 'director';
 
   const tossMut = useTossPlan({ projectId, itemId, planId });
   const completeMut = useCompletePlan({ projectId, itemId, planId });
@@ -110,7 +119,7 @@ export function BallDetailModal({
             const { plan, events } = detailQuery.data;
             const isBallHolder =
               !!plan.ballHolder && !!myMember && plan.ballHolder.id === myMember.id;
-            const canAct = plan.status === 'active' && (isBallHolder /* director は BE 側で許可 */);
+            const canAct = plan.status === 'active' && (isBallHolder || isDirector);
             const style = CATEGORY_STYLE[plan.category];
             const successor = plan.successorPlanId
               ? (plans.find((p) => p.id === plan.successorPlanId) ?? null)
