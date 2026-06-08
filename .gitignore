@@ -45,3 +45,4 @@ packages/db/prisma/migrations/.tmp/
 
 # Test
 coverage/
+.vercel
