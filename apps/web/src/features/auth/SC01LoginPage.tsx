@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { supabase } from '@/lib/supabase';
 import { ApiClientError } from '@/lib/api';
 import { useAuthSession } from './useAuthSession';
-import { authApi } from './api';
+import { authApi, type SyncResponse } from './api';
 import { OAuthButtons } from './OAuthButtons';
 
 // =============================================================================
@@ -351,15 +351,20 @@ function CreateAccountForm() {
   const onSubmit = async (values: CreateAccountInput) => {
     setServerError(null);
     try {
-      await authApi.completeSignup({
+      const user = await authApi.completeSignup({
         fullName: values.fullName,
         displayName: values.displayName,
         password: values.password,
       });
-      // キャッシュの sync 結果（requiresProfileCompletion: true）を無効化する。
-      // これをしないと RequireAuth が古いキャッシュを見て
-      // /login?screen=create-account に戻してしまう。
-      await queryClient.invalidateQueries({ queryKey: ['auth', 'sync'] });
+      // 完了結果で sync キャッシュを「プロフィール完了済み」に確定上書きする。
+      // invalidateQueries は create-account 上で非アクティブな sync クエリを再取得せず
+      // (stale マークのみ)、遷移先の RequireAuth が古い requiresProfileCompletion: true を
+      // 読んで create-account に差し戻してしまうため、setQueryData で確定値を書き込む。
+      // キーは useCurrentUser と同一: ['auth', 'sync', session.user.id]
+      queryClient.setQueryData<SyncResponse>(['auth', 'sync', session.user.id], {
+        user,
+        requiresProfileCompletion: false,
+      });
       navigate('/dashboard', { replace: true });
     } catch (err) {
       if (err instanceof ApiClientError && err.code === 'SAME_EMAIL_DIFFERENT_PROVIDER') {
