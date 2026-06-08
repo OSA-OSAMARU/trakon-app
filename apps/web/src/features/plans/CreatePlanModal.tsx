@@ -144,7 +144,12 @@ export function CreatePlanModal({
         category: v.category,
         scheduledDate: v.scheduledDate,
         dueDate: v.dueDate || null,
+        successorPlanId: v.successorPlanId || null,
         memo: v.memo ?? null,
+        // FROM/TO は TOSS 前のみ送信 (ロック中はサーバ側でも拒否される)
+        ...(fromToEditable
+          ? { fromMemberId: v.fromMemberId, toMemberId: v.toMemberId }
+          : {}),
       });
     },
     onSuccess: () => {
@@ -165,6 +170,9 @@ export function CreatePlanModal({
     (p) => p.itemId === itemId && p.id !== editingPlan?.id && p.status === 'active',
   );
 
+  // FROM/TO は新規作成時、または TOSS 前 (ボール未移動) の予定編集時のみ変更可。
+  const fromToEditable = mode === 'create' || editingPlan?.ballState === 'ready';
+
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()}>
       <SheetContent>
@@ -172,7 +180,7 @@ export function CreatePlanModal({
           <SheetTitle>{mode === 'edit' ? '予定を編集' : '予定を追加'}</SheetTitle>
           <SheetDescription>
             {mode === 'edit'
-              ? '日付やメモなどの基本情報を変更します（TOSS 後は FROM/TO の変更不可）。カレンダー上でカードをドラッグして期間を変更することもできます。'
+              ? 'FROM/TO・後続の予定を含む基本情報を変更します（FROM/TO は TOSS 前のみ変更可）。カレンダー上でカードをドラッグして期間を変更することもできます。'
               : 'カレンダー上に予定（ボール）を作成します'}
           </SheetDescription>
         </SheetHeader>
@@ -202,7 +210,7 @@ export function CreatePlanModal({
               <SelectField
                 value={form.watch('fromMemberId') || undefined}
                 onChange={(v) => form.setValue('fromMemberId', v)}
-                disabled={mode === 'edit'}
+                disabled={!fromToEditable}
                 options={members.map((m) => ({ value: m.id, label: `${m.name} (${m.organizationName || '—'})` }))}
                 placeholder="選択"
               />
@@ -211,12 +219,17 @@ export function CreatePlanModal({
               <SelectField
                 value={form.watch('toMemberId') || undefined}
                 onChange={(v) => form.setValue('toMemberId', v)}
-                disabled={mode === 'edit'}
+                disabled={!fromToEditable}
                 options={members.map((m) => ({ value: m.id, label: `${m.name} (${m.organizationName || '—'})` }))}
                 placeholder="選択"
               />
             </Field>
           </div>
+          {mode === 'edit' && !fromToEditable && (
+            <p className="text-[11px] text-muted-foreground">
+              TOSS 後のため FROM/TO は変更できません。
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="開始日" error={form.formState.errors.scheduledDate?.message}>
@@ -234,7 +247,6 @@ export function CreatePlanModal({
             <SelectField
               value={form.watch('successorPlanId') || undefined}
               onChange={(v) => form.setValue('successorPlanId', v === '__none__' ? '' : v)}
-              disabled={mode === 'edit'}
               options={[
                 { value: '__none__', label: '紐付けない' },
                 ...successorCandidates.map((p) => ({ value: p.id, label: p.title })),

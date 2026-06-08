@@ -44,6 +44,9 @@ export const updatePlanBodySchema = z
     category: planCategorySchema.optional(),
     scheduledDate: isoDate.optional(),
     dueDate: isoDate.nullable().optional(),
+    fromMemberId: uuid.optional(),
+    toMemberId: uuid.optional(),
+    successorPlanId: uuid.nullable().optional(),
     memo: z.string().max(2000).nullable().optional(),
   })
   .refine(
@@ -52,6 +55,13 @@ export const updatePlanBodySchema = z
       return true;
     },
     { path: ['dueDate'], message: 'dueDate must be on or after scheduledDate.' },
+  )
+  .refine(
+    (v) => {
+      if (v.fromMemberId && v.toMemberId) return v.fromMemberId !== v.toMemberId;
+      return true;
+    },
+    { path: ['toMemberId'], message: 'fromMemberId and toMemberId must differ.' },
   );
 export type UpdatePlanBody = z.infer<typeof updatePlanBodySchema>;
 
