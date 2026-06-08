@@ -28,7 +28,7 @@ datasource db {
 // 設計書 §2.4.1
 // -----------------------------------------------------------------------------
 model User {
-  id                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id                String    @id @default(uuid(7)) @db.Uuid
   authUserId        String    @unique(map: "uq_users_auth_user_id") @map("auth_user_id") @db.Uuid
   email             String    @unique(map: "uq_users_email")
   fullName          String    @map("full_name")
@@ -54,7 +54,7 @@ model User {
 // 設計書 §2.4.2
 // -----------------------------------------------------------------------------
 model Project {
-  id             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id             String    @id @default(uuid(7)) @db.Uuid
   organizationId String?   @map("organization_id") @db.Uuid
   name           String
   startDate      DateTime  @map("start_date") @db.Date
@@ -84,7 +84,7 @@ model Project {
 // 設計書 §2.4.3
 // -----------------------------------------------------------------------------
 model ProjectMember {
-  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id               String    @id @default(uuid(7)) @db.Uuid
   projectId        String    @map("project_id") @db.Uuid
   /// 招待受諾前は NULL
   userId           String?   @map("user_id") @db.Uuid
@@ -120,7 +120,7 @@ model ProjectMember {
 // 設計書 §2.4.4
 // -----------------------------------------------------------------------------
 model ProjectItem {
-  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id        String    @id @default(uuid(7)) @db.Uuid
   projectId String    @map("project_id") @db.Uuid
   name      String
   /// Phase 1+ (page|document|banner|other)
@@ -144,7 +144,7 @@ model ProjectItem {
 // 設計書 §2.4.5
 // -----------------------------------------------------------------------------
 model Plan {
-  id              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id              String    @id @default(uuid(7)) @db.Uuid
   itemId          String    @map("item_id") @db.Uuid
   /// 'toss' (Phase 0 / CHECK 制約)
   planType        String    @default("toss") @map("plan_type")
@@ -185,7 +185,7 @@ model Plan {
 // 設計書 §2.4.6
 // -----------------------------------------------------------------------------
 model BallEvent {
-  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id            String   @id @default(uuid(7)) @db.Uuid
   planId        String   @map("plan_id") @db.Uuid
   /// 'tossed' | 'completed' | 'toss_undone' (CHECK 制約)
   eventType     String   @map("event_type")
@@ -212,7 +212,7 @@ model BallEvent {
 // 設計書 §2.4.8
 // -----------------------------------------------------------------------------
 model Invitation {
-  id              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id              String    @id @default(uuid(7)) @db.Uuid
   projectId       String    @map("project_id") @db.Uuid
   invitedMemberId String    @map("invited_member_id") @db.Uuid
   email           String
@@ -236,7 +236,7 @@ model Invitation {
 // 設計書 §2.4.X
 // -----------------------------------------------------------------------------
 model OAuthIdentity {
-  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id             String   @id @default(uuid(7)) @db.Uuid
   userId         String   @map("user_id") @db.Uuid
   /// 'google' | 'microsoft' (CHECK 制約)
   provider       String
@@ -258,7 +258,7 @@ model OAuthIdentity {
 // 設計書 §2.4.7
 // -----------------------------------------------------------------------------
 model AuditLog {
-  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id           String   @id @default(uuid(7)) @db.Uuid
   occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz
   actorUserId  String?  @map("actor_user_id") @db.Uuid
   /// share_links FK は Sub-Phase 0.5 で実装 (share_links テーブル追加時)
@@ -287,7 +287,7 @@ model AuditLog {
 // 設計書 §2.4.9
 // -----------------------------------------------------------------------------
 model ShareLink {
-  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id               String    @id @default(uuid(7)) @db.Uuid
   projectId        String    @map("project_id") @db.Uuid
   /// 'project' | 'item' | 'plan' (CHECK 制約)
   scopeType        String    @map("scope_type")
