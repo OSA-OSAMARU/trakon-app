@@ -1,0 +1,57 @@
+name: 相談 / 判断待ち
+description: 仕様、文言、設計方針など、判断が必要なもの
+title: "相談 / 判断待ち："
+labels: ["question", "needs decision"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: 相談したいこと
+      description: 何について判断したいですか？
+      placeholder: 例：「戻し」を状態として持つべきか、新規予定として扱うべきか相談したい。
+    validations:
+      required: true
+
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: なぜこの相談が必要になりましたか？
+      placeholder: 例：状態を増やすと設計が重くなるが、実務上は戻しの表現が必要になるため。
+    validations:
+      required: true
+
+  - type: textarea
+    id: points
+    attributes:
+      label: 判断したい論点
+      description: 何を決めれば前に進みますか？
+      placeholder: |
+        例：
+        ・画面上の文言として「戻し」を使うか
+        ・内部状態として持つか
+        ・新規予定として扱うか
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: 現時点の案
+      description: A案 / B案 / C案のように書くと判断しやすいです。
+      placeholder: |
+        A案：状態として持つ
+        B案：新規予定として扱う
+        C案：文言だけ戻しにする
+
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: 自分の意見 / おすすめ
+      description: 起票者としてはどれが良いと思いますか？理由も書いてください。
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 補足
+      description: 参考URL、関連Issue、メモなどがあれば記載してください。
