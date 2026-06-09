@@ -10,7 +10,7 @@ body:
       description: 何を追加・変更したいかを1〜3行で書いてください。
       placeholder: 例：プロジェクト一覧で、アーカイブ済みプロジェクトを非表示にしたい。
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: background
@@ -19,7 +19,7 @@ body:
       description: なぜこの対応が必要だと思ったかを書いてください。
       placeholder: 例：完了済み案件が増えると、進行中案件を探しづらくなるため。
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: expected
@@ -31,7 +31,7 @@ body:
         ・通常の一覧には進行中プロジェクトだけ表示される
         ・アーカイブ済みは別画面またはフィルターで確認できる
     validations:
-      required: true
+      required: false
 
   - type: dropdown
     id: target
@@ -48,7 +48,7 @@ body:
         - HP
         - その他
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: notes
