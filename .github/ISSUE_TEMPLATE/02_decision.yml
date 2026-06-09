@@ -10,7 +10,7 @@ body:
       description: 何について判断したいですか？
       placeholder: 例：「戻し」を状態として持つべきか、新規予定として扱うべきか相談したい。
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: background
@@ -19,7 +19,7 @@ body:
       description: なぜこの相談が必要になりましたか？
       placeholder: 例：状態を増やすと設計が重くなるが、実務上は戻しの表現が必要になるため。
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: points
@@ -32,7 +32,7 @@ body:
         ・内部状態として持つか
         ・新規予定として扱うか
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: options
