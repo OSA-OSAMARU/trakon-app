@@ -38,25 +38,15 @@ body:
     attributes:
       label: 対象
       options:
+        - 会員登録
         - ダッシュボード
         - プロジェクトTOP
         - 縦型デイライン
         - ボール詳細
         - プロジェクト作成 / 編集
         - 用語 / 文言
+        - HP
         - その他
-    validations:
-      required: true
-
-  - type: dropdown
-    id: priority
-    attributes:
-      label: 優先度
-      options:
-        - P0
-        - P1
-        - P2
-        - P3
     validations:
       required: true
 
