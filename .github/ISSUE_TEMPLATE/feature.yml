@@ -1,0 +1,67 @@
+name: 機能追加 / 改善
+description: 新機能、UI改善、仕様改善など
+title: "機能追加 / 改善："
+labels: ["feature"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 何を追加・変更したいかを1〜3行で書いてください。
+      placeholder: 例：プロジェクト一覧で、アーカイブ済みプロジェクトを非表示にしたい。
+    validations:
+      required: true
+
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景 / なぜ必要か
+      description: なぜこの対応が必要だと思ったかを書いてください。
+      placeholder: 例：完了済み案件が増えると、進行中案件を探しづらくなるため。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する状態
+      description: 完了したとき、どうなっていればよいですか？
+      placeholder: |
+        例：
+        ・通常の一覧には進行中プロジェクトだけ表示される
+        ・アーカイブ済みは別画面またはフィルターで確認できる
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target
+    attributes:
+      label: 対象
+      options:
+        - ダッシュボード
+        - プロジェクトTOP
+        - 縦型デイライン
+        - ボール詳細
+        - プロジェクト作成 / 編集
+        - 用語 / 文言
+        - その他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 優先度
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 補足
+      description: 参考URL、スクリーンショット、関連Issueなどがあれば記載してください。
