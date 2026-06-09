@@ -10,7 +10,7 @@ body:
       description: 何が起きていますか？
       placeholder: 例：ボールを削除したあと、Ball Holderの表示が更新されない。
     validations:
-      required: true
+      required: false
 
   - type: dropdown
     id: target
@@ -25,7 +25,7 @@ body:
         - ログイン / 認証
         - その他
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: steps
@@ -37,7 +37,7 @@ body:
         2. 最新のボールを削除する
         3. Ball Holder表示を見る
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: expected
@@ -45,7 +45,7 @@ body:
       label: 期待する動き
       placeholder: 例：削除後、最新の有効ボールをもとにBall Holderが再計算される。
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: actual
@@ -53,7 +53,7 @@ body:
       label: 実際の動き
       placeholder: 例：削除前のBall Holderが表示されたままになる。
     validations:
-      required: true
+      required: false
 
   - type: dropdown
     id: impact
@@ -66,7 +66,7 @@ body:
         - 操作不能になる
         - 不明
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: notes
