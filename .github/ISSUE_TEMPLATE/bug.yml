@@ -1,0 +1,75 @@
+name: 不具合
+description: 表示崩れ、動作不良、データ不整合など
+title: "不具合："
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 不具合の内容
+      description: 何が起きていますか？
+      placeholder: 例：ボールを削除したあと、Ball Holderの表示が更新されない。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target
+    attributes:
+      label: 発生した画面 / 機能
+      options:
+        - ダッシュボード
+        - プロジェクトTOP
+        - 縦型デイライン
+        - ボール詳細
+        - プロジェクト作成 / 編集
+        - ログイン / 認証
+        - その他
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: できるだけ短く書いてください。
+      placeholder: |
+        1. プロジェクト詳細を開く
+        2. 最新のボールを削除する
+        3. Ball Holder表示を見る
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動き
+      placeholder: 例：削除後、最新の有効ボールをもとにBall Holderが再計算される。
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動き
+      placeholder: 例：削除前のBall Holderが表示されたままになる。
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: 影響範囲
+      options:
+        - 表示だけの問題
+        - 進行判断に影響する
+        - データ不整合が起きる
+        - 操作不能になる
+        - 不明
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 補足
+      description: スクリーンショット、動画、ログ、環境などがあれば記載してください。
