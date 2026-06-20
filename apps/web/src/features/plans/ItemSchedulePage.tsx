@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, differenceInDays, format, isSameDay, isWeekend, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { isHoliday } from '@holiday-jp/holiday_jp';
-import { CheckCircle2, KanbanSquare, Plus, Settings, ZoomIn, ZoomOut } from 'lucide-react';
+import { CheckCircle2, Copy, KanbanSquare, Loader2, Plus, Settings, ZoomIn, ZoomOut } from 'lucide-react';
+import { toast } from 'sonner';
 
+import { ApiClientError } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -83,9 +85,43 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
     queryFn: () => plansApi.listByProject(projectId),
   });
 
+  const qc = useQueryClient();
   const reschedule = useReschedulePlan(projectId);
   const setSuccessor = useSetSuccessor(projectId);
   const [pendingMove, setPendingMove] = useState<{ plan: Plan; dayDelta: number } | null>(null);
+
+  // 予定の複製 (#51)
+  const copyMut = useMutation({
+    mutationFn: (plan: Plan) => plansApi.copy(projectId, plan.itemId, plan.id),
+    onSuccess: (_data, plan) => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, plan.itemId) });
+      toast.success('複製しました');
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '複製に失敗しました'),
+  });
+
+  // 別制作物へドラッグ&ドロップで移動 (#52)。日付は drop した行に追従し、
+  // successor 紐付けは BE 側で自動解除される。
+  const moveItemMut = useMutation({
+    mutationFn: ({ plan, targetItemId, dayDelta }: { plan: Plan; targetItemId: string; dayDelta: number }) => {
+      const { start, end } = planRange(plan);
+      return plansApi.update(projectId, plan.itemId, plan.id, {
+        itemId: targetItemId,
+        scheduledDate: shiftIso(start, dayDelta),
+        dueDate: plan.dueDate ? shiftIso(end, dayDelta) : null,
+      });
+    },
+    onSuccess: (_data, { plan, targetItemId }) => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, plan.itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, targetItemId) });
+      toast.success('別の制作物へ移動しました');
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '移動に失敗しました'),
+  });
 
   const project = projectQuery.data;
   const items = useMemo(
@@ -162,6 +198,11 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
   const commitMove = (plan: Plan, dayDelta: number) => {
     if (dayDelta === 0) return;
     setPendingMove({ plan, dayDelta });
+  };
+
+  const commitMoveToItem = (plan: Plan, targetItemId: string, dayDelta: number) => {
+    if (targetItemId === plan.itemId) return;
+    moveItemMut.mutate({ plan, targetItemId, dayDelta });
   };
 
   const confirmMove = (moveSubsequent: boolean) => {
@@ -279,8 +320,11 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
           onOpenCreate={openCreateModal}
           onOpenDetail={openDetailModal}
           onMove={commitMove}
+          onMoveToItem={commitMoveToItem}
           onResize={commitResize}
           onLink={commitLink}
+          onCopy={(plan) => copyMut.mutate(plan)}
+          copyingPlanId={copyMut.isPending ? copyMut.variables?.id ?? null : null}
         />
       )}
 
@@ -296,7 +340,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
         />
       )}
 
-      <PlanModalsHost projectId={projectId} members={members} plans={plans} fallbackItemId={itemId} />
+      <PlanModalsHost projectId={projectId} members={members} plans={plans} items={items} fallbackItemId={itemId} />
     </div>
   );
 }
@@ -311,6 +355,8 @@ type DragState = {
   startClientY: number;
   dayDelta: number;
   moved: boolean;
+  // move 中にポインタが乗っている制作物列。別制作物なら drop で移動 (#52)。
+  targetItemId: string | null;
 };
 
 // 後続紐づけドラッグ (カード下部コネクタ → 別カード)。座標はビューポート基準 (client)。
@@ -386,8 +432,11 @@ function ScheduleBoard({
   onOpenCreate,
   onOpenDetail,
   onMove,
+  onMoveToItem,
   onResize,
   onLink,
+  onCopy,
+  copyingPlanId,
 }: {
   days: Date[];
   items: ProjectItem[];
@@ -396,8 +445,11 @@ function ScheduleBoard({
   onOpenCreate: (date: Date, itemId: string, dueDate?: Date) => void;
   onOpenDetail: (planId: string) => void;
   onMove: (plan: Plan, dayDelta: number) => void;
+  onMoveToItem: (plan: Plan, targetItemId: string, dayDelta: number) => void;
   onResize: (plan: Plan, edge: 'top' | 'bottom', dayDelta: number) => void;
   onLink: (source: Plan, target: Plan) => void;
+  onCopy: (plan: Plan) => void;
+  copyingPlanId: string | null;
 }) {
   const today = new Date();
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -492,8 +544,15 @@ function ScheduleBoard({
       const deltaPx = e.clientY - d.startClientY;
       const dayDelta = Math.round(deltaPx / rowHeight);
       const moved = Math.abs(deltaPx) > 4;
-      if (dayDelta !== d.dayDelta || moved !== d.moved) {
-        setDrag({ ...d, dayDelta, moved });
+      // move 中はポインタ下の制作物列を判定し、別制作物なら移動ターゲットにする (#52)
+      let targetItemId = d.targetItemId;
+      if (d.mode === 'move') {
+        const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+        const col = el?.closest('[data-item-id]') as HTMLElement | null;
+        targetItemId = col?.getAttribute('data-item-id') ?? null;
+      }
+      if (dayDelta !== d.dayDelta || moved !== d.moved || targetItemId !== d.targetItemId) {
+        setDrag({ ...d, dayDelta, moved, targetItemId });
       }
     };
     const onPointerUp = () => {
@@ -502,6 +561,8 @@ function ScheduleBoard({
       if (!d) return;
       if (d.mode === 'move') {
         if (!d.moved) onOpenDetail(d.plan.id);
+        else if (d.targetItemId && d.targetItemId !== d.plan.itemId)
+          onMoveToItem(d.plan, d.targetItemId, d.dayDelta);
         else onMove(d.plan, d.dayDelta);
       } else {
         onResize(d.plan, d.mode === 'resize-top' ? 'top' : 'bottom', d.dayDelta);
@@ -513,7 +574,7 @@ function ScheduleBoard({
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
     };
-  }, [drag, rowHeight, onMove, onResize, onOpenDetail]);
+  }, [drag, rowHeight, onMove, onMoveToItem, onResize, onOpenDetail]);
 
   const totalHeight = days.length * rowHeight;
   // 横方向も rowHeight に連動させ、拡大バーで縦横を同倍率ズームする (#71)
@@ -637,7 +698,18 @@ function ScheduleBoard({
               </div>
 
               {/* 本体 */}
-              <div className="relative" style={{ height: totalHeight }}>
+              <div
+                data-item-id={item.id}
+                className={cn(
+                  'relative',
+                  // 別制作物からの D&D 移動ターゲットをハイライト (#52)
+                  drag?.mode === 'move' &&
+                    drag.targetItemId === item.id &&
+                    drag.plan.itemId !== item.id &&
+                    'bg-primary/10 ring-2 ring-inset ring-primary',
+                )}
+                style={{ height: totalHeight }}
+              >
                 {/* 日付セル (クリックで単日作成 / 縦ドラッグで期間作成) */}
                 {days.map((d, i) => {
                   const t = dayTones[i]!;
@@ -693,7 +765,9 @@ function ScheduleBoard({
                     hasSuccessor={plan.successorPlanId !== null}
                     hasPredecessor={predecessorTargetIds.has(plan.id)}
                     inChain={chain?.chainIds.has(plan.id) ?? false}
+                    copying={copyingPlanId === plan.id}
                     onActivate={() => onOpenDetail(plan.id)}
+                    onCopy={() => onCopy(plan)}
                     onHoverChange={setHoveredPlanId}
                     onPointerDownConnector={(e) => startLink(e, plan)}
                     onPointerDownBall={(e, mode) => {
@@ -705,6 +779,7 @@ function ScheduleBoard({
                         startClientY: e.clientY,
                         dayDelta: 0,
                         moved: false,
+                        targetItemId: plan.itemId,
                       });
                     }}
                   />
@@ -867,7 +942,9 @@ function BallChip({
   hasSuccessor,
   hasPredecessor,
   inChain,
+  copying,
   onActivate,
+  onCopy,
   onHoverChange,
   onPointerDownBall,
   onPointerDownConnector,
@@ -883,7 +960,9 @@ function BallChip({
   hasSuccessor: boolean;
   hasPredecessor: boolean;
   inChain: boolean;
+  copying: boolean;
   onActivate: () => void;
+  onCopy: () => void;
   onHoverChange: (planId: string | null) => void;
   onPointerDownBall: (e: React.PointerEvent, mode: DragState['mode']) => void;
   onPointerDownConnector: (e: React.PointerEvent) => void;
@@ -967,6 +1046,22 @@ function BallChip({
           aria-hidden
         />
       )}
+
+      {/* 複製ボタン (ホバー表示 #51)。カード右上に重ねる。 */}
+      <button
+        type="button"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onCopy();
+        }}
+        disabled={copying}
+        className="absolute right-0.5 top-0.5 z-10 rounded bg-background/80 p-0.5 text-foreground/70 opacity-0 shadow-sm transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+        aria-label="複製"
+        title="複製"
+      >
+        {copying ? <Loader2 className="size-3 animate-spin" /> : <Copy className="size-3" />}
+      </button>
 
       {/* 先行コネクトの受け口 (上端中央): 先行予定がある場合に常時表示する線の終点アンカー */}
       {hasPredecessor && (

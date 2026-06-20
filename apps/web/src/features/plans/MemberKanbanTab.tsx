@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/components/ui/utils';
 import { ApiClientError } from '@/lib/api';
-import { projectsApi, projectsQueryKey } from '@/features/projects/api';
+import { projectsApi, projectsQueryKey, type ProjectItem } from '@/features/projects/api';
 import type { ProjectMember } from '@/features/projects/membersApi';
 import { plansApi, plansQueryKey, type Plan } from './api';
 import { CATEGORY_STYLE } from './categoryColor';
@@ -93,6 +93,7 @@ export function MemberKanbanTab({
           projectId={projectId}
           itemFilter={itemFilter === ALL ? null : itemFilter}
           members={members}
+          items={itemsQuery.data ?? []}
           itemNameById={
             new Map((itemsQuery.data ?? []).map((it) => [it.id, it.name]))
           }
@@ -107,11 +108,13 @@ function MemberBoard({
   projectId,
   itemFilter,
   members,
+  items,
   itemNameById,
 }: {
   projectId: string;
   itemFilter: string | null;
   members: ProjectMember[];
+  items: ProjectItem[];
   itemNameById: Map<string, string>;
 }) {
   const qc = useQueryClient();
@@ -282,6 +285,7 @@ function MemberBoard({
         projectId={projectId}
         members={members}
         plans={plansQuery.data ?? []}
+        items={items}
         fallbackItemId={itemFilter ?? (plansQuery.data?.[0]?.itemId ?? '')}
       />
     </>

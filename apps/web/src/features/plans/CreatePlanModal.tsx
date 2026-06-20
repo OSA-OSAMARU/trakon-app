@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/select';
 import { ApiClientError } from '@/lib/api';
 import type { ProjectMember } from '@/features/projects/membersApi';
+import type { ProjectItem } from '@/features/projects/api';
 import {
   PLAN_CATEGORIES,
   plansApi,
@@ -47,6 +48,8 @@ const schema = z
     // 実施者/確認者は任意。後から設定できる (#55)
     fromMemberId: z.union([z.string().uuid(), z.literal('')]).optional(),
     toMemberId: z.union([z.string().uuid(), z.literal('')]).optional(),
+    // 別制作物への移動 (#52)。編集時のみ変更可。
+    itemId: z.string().uuid().optional(),
     successorPlanId: z.string().optional(),
     memo: z.string().max(2000).optional(),
   })
@@ -65,6 +68,7 @@ export function CreatePlanModal({
   itemId,
   members,
   plans,
+  items,
   mode,
   defaultDate,
   defaultDueDate,
@@ -76,6 +80,7 @@ export function CreatePlanModal({
   itemId: string;
   members: ProjectMember[];
   plans: Plan[];
+  items: ProjectItem[];
   mode: 'create' | 'edit';
   defaultDate?: string;
   defaultDueDate?: string;
@@ -95,6 +100,7 @@ export function CreatePlanModal({
       dueDate: defaultDueDate ?? '',
       fromMemberId: defaultFromMemberId ?? '',
       toMemberId: '',
+      itemId,
       successorPlanId: '',
       memo: '',
     },
@@ -109,6 +115,7 @@ export function CreatePlanModal({
         dueDate: editingPlan.dueDate ?? '',
         fromMemberId: editingPlan.fromMember?.id ?? '',
         toMemberId: editingPlan.toMember?.id ?? '',
+        itemId: editingPlan.itemId,
         successorPlanId: editingPlan.successorPlanId ?? '',
         memo: editingPlan.memo ?? '',
       });
@@ -140,23 +147,31 @@ export function CreatePlanModal({
   const updateMut = useMutation({
     mutationFn: (v: FormValues) => {
       if (!editingPlan) throw new Error('No plan to update');
-      return plansApi.update(projectId, itemId, editingPlan.id, {
+      // 別制作物へ移動する場合は successor 指定を送らない (BE 側で自動解除される #52)
+      const moving = !!v.itemId && v.itemId !== editingPlan.itemId;
+      return plansApi.update(projectId, editingPlan.itemId, editingPlan.id, {
         title: v.title,
         category: v.category,
         scheduledDate: v.scheduledDate,
         dueDate: v.dueDate || null,
-        successorPlanId: v.successorPlanId || null,
         memo: v.memo ?? null,
+        ...(moving ? { itemId: v.itemId } : { successorPlanId: v.successorPlanId || null }),
         // FROM/TO は TOSS 前のみ送信 (ロック中はサーバ側でも拒否される)
         ...(fromToEditable
           ? { fromMemberId: v.fromMemberId || undefined, toMemberId: v.toMemberId || undefined }
           : {}),
       });
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+    onSuccess: (_data, v) => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, editingPlan!.itemId) });
+      // 移動先の item 一覧も無効化 (#52)
+      if (v.itemId && v.itemId !== editingPlan!.itemId) {
+        qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, v.itemId) });
+      }
       qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
-      toast.success('予定を更新しました');
+      toast.success(
+        v.itemId && v.itemId !== editingPlan!.itemId ? '別の制作物へ移動しました' : '予定を更新しました',
+      );
       onClose();
     },
     onError: (e) =>
@@ -166,9 +181,12 @@ export function CreatePlanModal({
   const submitting = createMut.isPending || updateMut.isPending;
   const onSubmit = (v: FormValues) => (mode === 'edit' ? updateMut.mutate(v) : createMut.mutate(v));
 
+  // 移動先 (#52) を含めた現在の対象 item。後続候補もこの item に追従する。
+  const selectedItemId = form.watch('itemId') || itemId;
+
   // 後続候補は同じ制作物 (item) 内の active な予定のみ
   const successorCandidates = plans.filter(
-    (p) => p.itemId === itemId && p.id !== editingPlan?.id && p.status === 'active',
+    (p) => p.itemId === selectedItemId && p.id !== editingPlan?.id && p.status === 'active',
   );
 
   // FROM/TO は新規作成時、または TOSS 前 (ボール未移動) の予定編集時のみ変更可。
@@ -202,6 +220,28 @@ export function CreatePlanModal({
               options={PLAN_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
             />
           </Field>
+
+          {/* 制作物の付け替え (#52)。別制作物へ移すと後続の予定は自動解除される。 */}
+          {mode === 'edit' && items.length > 1 && (
+            <Field
+              label="制作物"
+              hint={
+                selectedItemId !== editingPlan?.itemId
+                  ? '別の制作物へ移動します。後続の予定の紐付けは自動的に解除されます。'
+                  : undefined
+              }
+            >
+              <SelectField
+                value={selectedItemId}
+                onChange={(v) => {
+                  form.setValue('itemId', v);
+                  // 移動先が変わると後続候補が変わるため紐付けをリセット
+                  if (v !== editingPlan?.itemId) form.setValue('successorPlanId', '');
+                }}
+                options={items.map((i) => ({ value: i.id, label: i.name }))}
+              />
+            </Field>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field
@@ -248,6 +288,7 @@ export function CreatePlanModal({
             <SelectField
               value={form.watch('successorPlanId') || undefined}
               onChange={(v) => form.setValue('successorPlanId', v === '__none__' ? '' : v)}
+              disabled={selectedItemId !== (editingPlan?.itemId ?? itemId)}
               options={[
                 { value: '__none__', label: '紐付けない' },
                 ...successorCandidates.map((p) => ({ value: p.id, label: p.title })),
@@ -262,9 +303,6 @@ export function CreatePlanModal({
         </form>
 
         <SheetFooter className="sm:flex-row sm:justify-end">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
-            キャンセル
-          </Button>
           <Button form="plan-form" type="submit" disabled={submitting}>
             {submitting && <Loader2 className="size-4 animate-spin" />}
             {mode === 'edit' ? '保存' : '追加'}

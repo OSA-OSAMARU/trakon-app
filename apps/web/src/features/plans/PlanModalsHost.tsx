@@ -1,6 +1,7 @@
 import { useSearchParams } from 'react-router-dom';
 
 import type { ProjectMember } from '@/features/projects/membersApi';
+import type { ProjectItem } from '@/features/projects/api';
 import { CreatePlanModal } from './CreatePlanModal';
 import { BallDetailModal } from './BallDetailModal';
 import type { Plan } from './api';
@@ -16,11 +17,13 @@ export function PlanModalsHost({
   projectId,
   members,
   plans,
+  items,
   fallbackItemId,
 }: {
   projectId: string;
   members: ProjectMember[];
   plans: Plan[];
+  items: ProjectItem[];
   fallbackItemId: string;
 }) {
   const [params, setParams] = useSearchParams();
@@ -50,6 +53,7 @@ export function PlanModalsHost({
         itemId={itemId}
         members={members}
         plans={plans}
+        items={items}
         mode={modal === 'edit-plan' ? 'edit' : 'create'}
         defaultDate={params.get('date') ?? undefined}
         defaultDueDate={params.get('due') ?? undefined}
@@ -73,6 +77,16 @@ export function PlanModalsHost({
           setParams(
             (sp) => {
               sp.set('modal', 'edit-plan');
+              return sp;
+            },
+            { replace: true },
+          );
+        }}
+        onCopied={(newPlanId) => {
+          setParams(
+            (sp) => {
+              sp.set('modal', 'ball-detail');
+              sp.set('planId', newPlanId);
               return sp;
             },
             { replace: true },

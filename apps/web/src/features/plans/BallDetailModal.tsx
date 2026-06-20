@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { ArrowRight, CheckCircle2, Link2Off, Loader2, Pencil, Send, Trash2, Undo2, Zap } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Copy, Link2Off, Loader2, Pencil, Send, Trash2, Undo2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -46,6 +46,7 @@ export function BallDetailModal({
   plans,
   onClose,
   onEdit,
+  onCopied,
 }: {
   projectId: string;
   itemId: string;
@@ -54,6 +55,7 @@ export function BallDetailModal({
   plans: Plan[];
   onClose: () => void;
   onEdit: () => void;
+  onCopied: (newPlanId: string) => void;
 }) {
   const qc = useQueryClient();
   const [deleting, setDeleting] = useState(false);
@@ -89,6 +91,19 @@ export function BallDetailModal({
     },
     onError: (e) =>
       toast.error(e instanceof ApiClientError ? e.message : '差し戻しに失敗しました'),
+  });
+
+  const copyMut = useMutation({
+    mutationFn: () => plansApi.copy(projectId, itemId, planId),
+    onSuccess: (newPlan) => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
+      toast.success('複製しました');
+      // 複製直後にそのまま編集・移動できるよう、新しい予定の詳細へ切り替える。
+      onCopied(newPlan.id);
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '複製に失敗しました'),
   });
 
   const deleteMut = useMutation({
@@ -215,6 +230,20 @@ export function BallDetailModal({
                         <Pencil className="size-4" />
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => copyMut.mutate()}
+                      disabled={copyMut.isPending}
+                      aria-label="複製"
+                      title="複製"
+                    >
+                      {copyMut.isPending ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Copy className="size-4" />
+                      )}
+                    </Button>
                     {plan.status === 'active' && events.length === 0 && (
                       <Button
                         variant="ghost"
@@ -270,9 +299,6 @@ export function BallDetailModal({
                         {hasSuccessor ? '次のタスクへトス' : '完了'}
                       </Button>
                     )}
-                    <Button variant="outline" onClick={onClose}>
-                      閉じる
-                    </Button>
                   </div>
                 </SheetFooter>
               </>
