@@ -20,6 +20,15 @@ describe('createPlanBodySchema', () => {
     expect(createPlanBodySchema.safeParse(base).success).toBe(true);
   });
 
+  it('accepts a body with only title + category + scheduledDate (no from/to)', () => {
+    const r = createPlanBodySchema.safeParse({
+      title: 'ワイヤー作成',
+      category: 'design',
+      scheduledDate: '2026-06-01',
+    });
+    expect(r.success).toBe(true);
+  });
+
   it('rejects identical from / to', () => {
     const r = createPlanBodySchema.safeParse({
       ...base,
