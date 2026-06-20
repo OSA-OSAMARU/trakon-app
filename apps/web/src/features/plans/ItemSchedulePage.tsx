@@ -32,13 +32,13 @@ import {
   isActiveNow,
   isOverdue,
   itemColor,
-  LANE_WIDTH,
-  MIN_COLUMN_WIDTH,
   planRange,
   ROW_HEIGHT_DEFAULT,
   ROW_HEIGHT_MAX,
   ROW_HEIGHT_MIN,
   ROW_HEIGHT_STEP,
+  scaledLaneWidth,
+  scaledMinColumnWidth,
 } from './scheduleLayout';
 
 const DATE_AXIS_WIDTH = 76;
@@ -471,6 +471,9 @@ function ScheduleBoard({
   }, [drag, rowHeight, onMove, onResize, onOpenDetail]);
 
   const totalHeight = days.length * rowHeight;
+  // 横方向も rowHeight に連動させ、拡大バーで縦横を同倍率ズームする (#71)
+  const laneWidth = scaledLaneWidth(rowHeight);
+  const minColumnWidth = scaledMinColumnWidth(rowHeight);
 
   const dayTones = useMemo(
     () =>
@@ -541,7 +544,7 @@ function ScheduleBoard({
             .slice()
             .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate));
           const { laneOf, laneCount } = assignLanes(itemPlans);
-          const colWidth = Math.max(MIN_COLUMN_WIDTH, laneCount * LANE_WIDTH);
+          const colWidth = Math.max(minColumnWidth, laneCount * laneWidth);
           const color = itemColor(item.id);
           // 代表ボール = 最新の active プラン。その現ホルダーを列上部に表示
           const activePlans = itemPlans.filter((p) => p.status === 'active');
@@ -625,6 +628,7 @@ function ScheduleBoard({
                   laneOf={laneOf}
                   days={days}
                   rowHeight={rowHeight}
+                  laneWidth={laneWidth}
                   width={colWidth}
                   height={totalHeight}
                 />
@@ -636,6 +640,7 @@ function ScheduleBoard({
                     plan={plan}
                     days={days}
                     rowHeight={rowHeight}
+                    laneWidth={laneWidth}
                     lane={laneOf.get(plan.id) ?? 0}
                     today={today}
                     drag={drag?.plan.id === plan.id ? drag : null}
@@ -684,14 +689,20 @@ function ScheduleBoard({
 // 後続リンク描画 (列内 SVG オーバーレイ)
 // -----------------------------------------------------------------------------
 
-function chipCenters(plan: Plan, days: Date[], rowHeight: number, laneOf: Map<string, number>) {
+function chipCenters(
+  plan: Plan,
+  days: Date[],
+  rowHeight: number,
+  laneWidth: number,
+  laneOf: Map<string, number>,
+) {
   const { start, end } = planRange(plan);
   const startIdx = dayIndex(days, start);
   const endIdx = dayIndex(days, end);
   const top = startIdx * rowHeight + 1;
   const height = (endIdx - startIdx + 1) * rowHeight - 3;
   const lane = laneOf.get(plan.id) ?? 0;
-  const cx = lane * LANE_WIDTH + 6 + (LANE_WIDTH - 12) / 2;
+  const cx = lane * laneWidth + 6 + (laneWidth - 12) / 2;
   return { cx, top, bottom: top + height };
 }
 
@@ -700,6 +711,7 @@ function LinkLayer({
   laneOf,
   days,
   rowHeight,
+  laneWidth,
   width,
   height,
 }: {
@@ -707,6 +719,7 @@ function LinkLayer({
   laneOf: Map<string, number>;
   days: Date[];
   rowHeight: number;
+  laneWidth: number;
   width: number;
   height: number;
 }) {
@@ -716,8 +729,8 @@ function LinkLayer({
     if (!p.successorPlanId) continue;
     const succ = byId.get(p.successorPlanId);
     if (!succ) continue; // 別制作物 or 未ロード
-    const a = chipCenters(p, days, rowHeight, laneOf);
-    const b = chipCenters(succ, days, rowHeight, laneOf);
+    const a = chipCenters(p, days, rowHeight, laneWidth, laneOf);
+    const b = chipCenters(succ, days, rowHeight, laneWidth, laneOf);
     links.push({ x1: a.cx, y1: a.bottom, x2: b.cx, y2: b.top });
   }
   if (links.length === 0) return null;
@@ -760,6 +773,7 @@ function BallChip({
   plan,
   days,
   rowHeight,
+  laneWidth,
   lane,
   today,
   drag,
@@ -771,6 +785,7 @@ function BallChip({
   plan: Plan;
   days: Date[];
   rowHeight: number;
+  laneWidth: number;
   lane: number;
   today: Date;
   drag: DragState | null;
@@ -837,8 +852,8 @@ function BallChip({
       style={{
         top,
         height,
-        left: lane * LANE_WIDTH + 6,
-        width: LANE_WIDTH - 12,
+        left: lane * laneWidth + 6,
+        width: laneWidth - 12,
       }}
     >
       {/* リサイズハンドル (上) */}
