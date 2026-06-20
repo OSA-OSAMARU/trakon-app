@@ -246,7 +246,6 @@ export async function undoTossPlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
 }): Promise<{ plan: PlanDTO }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -258,15 +257,8 @@ export async function undoTossPlan(input: {
       throw new ApiException('NOT_TOSSED', 409, 'Ball is not in a tossed state.');
     }
 
-    // 認可: 現在の Ball Holder (= toMember, 差し戻す本人) または ディレクター
-    const holder = ballHolderMemberId(plan);
-    if (!input.isDirector && holder !== input.currentMemberId) {
-      throw new ApiException(
-        'FORBIDDEN',
-        403,
-        'Only the current ball holder or director can undo a toss.',
-      );
-    }
+    // 誤TOSSの救済として、プロジェクトメンバーなら誰でも差し戻し可能 (#50)。
+    // ボール保持者/ディレクター縛りは廃止 (ルートの requireProjectMember で担保)。
 
     // append-only のため、行削除ではなく toss_undone を追記して ready に戻す
     await tx.ballEvent.create({

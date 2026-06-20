@@ -128,7 +128,6 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
     });
     return c.json({ data: result });
   })
