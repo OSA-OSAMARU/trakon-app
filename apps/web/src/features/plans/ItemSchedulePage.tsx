@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { addDays, differenceInDays, format, isSameDay, isWeekend, parseISO } from 'date-fns';
+import { ja } from 'date-fns/locale';
 import { isHoliday } from '@holiday-jp/holiday_jp';
 import { CheckCircle2, KanbanSquare, Plus, Settings, ZoomIn, ZoomOut } from 'lucide-react';
 
@@ -529,7 +530,7 @@ function ScheduleBoard({
                         t.holiday && 'text-rose-500',
                       )}
                     >
-                      {format(d, 'EEEEE')}
+                      {format(d, 'EEEEE', { locale: ja })}
                     </span>
                   )}
                 </div>
