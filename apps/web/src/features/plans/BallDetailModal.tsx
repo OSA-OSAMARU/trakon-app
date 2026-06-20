@@ -154,13 +154,13 @@ export function BallDetailModal({
                     <dd>{format(new Date(plan.scheduledDate), 'yyyy/M/d')}</dd>
                     <dt className="text-muted-foreground">終了日</dt>
                     <dd>{plan.dueDate ? format(new Date(plan.dueDate), 'yyyy/M/d') : '—'}</dd>
-                    <dt className="text-muted-foreground">FROM</dt>
+                    <dt className="text-muted-foreground">実施者(FROM)</dt>
                     <dd>
                       {plan.fromMember
                         ? `${plan.fromMember.name} (${plan.fromMember.organizationName || '—'})`
                         : '—'}
                     </dd>
-                    <dt className="text-muted-foreground">TO</dt>
+                    <dt className="text-muted-foreground">確認者(TO)</dt>
                     <dd>
                       {plan.toMember
                         ? `${plan.toMember.name} (${plan.toMember.organizationName || '—'})`

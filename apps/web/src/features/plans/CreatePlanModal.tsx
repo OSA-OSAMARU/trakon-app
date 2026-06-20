@@ -44,14 +44,14 @@ const schema = z
     category: z.enum(PLAN_CATEGORIES.map((c) => c.value) as [PlanCategory, ...PlanCategory[]]),
     scheduledDate: isoDate,
     dueDate: z.union([isoDate, z.literal('')]).optional(),
-    fromMemberId: z.string().uuid('FROM を選択してください'),
-    toMemberId: z.string().uuid('TO を選択してください'),
+    fromMemberId: z.string().uuid('実施者(FROM) を選択してください'),
+    toMemberId: z.string().uuid('確認者(TO) を選択してください'),
     successorPlanId: z.string().optional(),
     memo: z.string().max(2000).optional(),
   })
   .refine((v) => v.fromMemberId !== v.toMemberId, {
     path: ['toMemberId'],
-    message: 'FROM と TO は異なるメンバーを選んでください',
+    message: '実施者(FROM)と確認者(TO)は異なるメンバーを選んでください',
   })
   .refine((v) => !v.dueDate || v.dueDate >= v.scheduledDate, {
     path: ['dueDate'],
@@ -204,7 +204,7 @@ export function CreatePlanModal({
 
           <div className="grid grid-cols-2 gap-3">
             <Field
-              label="FROM (現在のホルダー)"
+              label="実施者(FROM)"
               error={form.formState.errors.fromMemberId?.message}
             >
               <SelectField
@@ -215,7 +215,7 @@ export function CreatePlanModal({
                 placeholder="選択"
               />
             </Field>
-            <Field label="TO (次の担当)" error={form.formState.errors.toMemberId?.message}>
+            <Field label="確認者(TO)" error={form.formState.errors.toMemberId?.message}>
               <SelectField
                 value={form.watch('toMemberId') || undefined}
                 onChange={(v) => form.setValue('toMemberId', v)}
@@ -227,7 +227,7 @@ export function CreatePlanModal({
           </div>
           {mode === 'edit' && !fromToEditable && (
             <p className="text-[11px] text-muted-foreground">
-              TOSS 後のため FROM/TO は変更できません。
+              TOSS 後のため 実施者(FROM)/確認者(TO) は変更できません。
             </p>
           )}
 

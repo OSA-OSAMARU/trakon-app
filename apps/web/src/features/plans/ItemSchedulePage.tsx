@@ -884,11 +884,11 @@ function BallChip({
       {tier === 'normal' && (
         <div className="mt-1 border-t border-current/10 pt-1 text-[10px] leading-tight">
           <div className="flex items-center gap-1">
-            <span className="opacity-60">FROM</span>
+            <span className="opacity-60">実施者</span>
             <span className="line-clamp-1 font-medium">{plan.fromMember?.name ?? '—'}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="opacity-60">TO</span>
+            <span className="opacity-60">確認者</span>
             <span className="line-clamp-1 font-medium">{plan.toMember?.name ?? '—'}</span>
             {plan.ballHolder && (
               <Badge variant="secondary" className="ml-auto px-1 py-0 text-[9px]">
