@@ -7,12 +7,30 @@ import type { Plan } from './api';
  * 描画ロジックをまとめた純粋関数群。
  */
 
-export const LANE_WIDTH = 240; // 1 レーン (サブ列) の幅 px
-export const MIN_COLUMN_WIDTH = 280; // 制作物列の最小幅 px
+export const LANE_WIDTH = 240; // 1 レーン (サブ列) の幅 px (scale=1 時の基準)
+export const MIN_COLUMN_WIDTH = 280; // 制作物列の最小幅 px (scale=1 時の基準)
 export const ROW_HEIGHT_MIN = 20;
 export const ROW_HEIGHT_MAX = 80;
 export const ROW_HEIGHT_DEFAULT = 40;
 export const ROW_HEIGHT_STEP = 5;
+
+/**
+ * 縦方向のズーム量 (rowHeight) から横方向の倍率を導出する。
+ * 拡大バー1本で縦横を連動させるための共通係数 (既定40で1.0 / 20で0.5 / 80で2.0)。
+ */
+export function zoomScale(rowHeight: number): number {
+  return rowHeight / ROW_HEIGHT_DEFAULT;
+}
+
+/** rowHeight に連動したレーン幅 px。 */
+export function scaledLaneWidth(rowHeight: number): number {
+  return Math.round(LANE_WIDTH * zoomScale(rowHeight));
+}
+
+/** rowHeight に連動した制作物列の最小幅 px。 */
+export function scaledMinColumnWidth(rowHeight: number): number {
+  return Math.round(MIN_COLUMN_WIDTH * zoomScale(rowHeight));
+}
 
 /** プラン期間の開始/終了日 (dueDate 未設定なら scheduledDate と同日)。 */
 export function planRange(plan: Plan): { start: string; end: string } {
