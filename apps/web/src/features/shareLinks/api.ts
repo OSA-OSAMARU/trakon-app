@@ -10,7 +10,8 @@ export type ShareLink = {
   scopeTargetId: string | null;
   issuedByMemberId: string;
   issuedAt: string;
-  expiresAt: string;
+  /** null = 無期限 */
+  expiresAt: string | null;
   revokedAt: string | null;
   lastAccessedAt: string | null;
   status: 'active' | 'revoked' | 'expired';
@@ -25,7 +26,8 @@ export type CreateShareLinkResult = {
 export type CreateShareLinkInput = {
   scopeType: ShareScope;
   scopeTargetId?: string;
-  expiresInHours?: number;
+  /** null = 無期限 */
+  expiresInHours?: number | null;
 };
 
 export type ShareView = {
@@ -33,7 +35,8 @@ export type ShareView = {
     id: string;
     scopeType: ShareScope;
     scopeTargetId: string | null;
-    expiresAt: string;
+    /** null = 無期限 */
+    expiresAt: string | null;
   };
   project: { id: string; name: string };
   items: Array<{ id: string; name: string }>;

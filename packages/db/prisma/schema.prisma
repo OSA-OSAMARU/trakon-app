@@ -297,7 +297,8 @@ model ShareLink {
   tokenHash        String    @unique(map: "uq_sl_token_hash") @map("token_hash")
   issuedByMemberId String    @map("issued_by_member_id") @db.Uuid
   issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz
-  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
+  /// NULL = 無期限 (有効期限なし)
+  expiresAt        DateTime? @map("expires_at") @db.Timestamptz
   revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
   lastAccessedAt   DateTime? @map("last_accessed_at") @db.Timestamptz
 

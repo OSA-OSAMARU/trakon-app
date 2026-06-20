@@ -10,7 +10,8 @@ export type ShareViewDTO = {
     id: string;
     scopeType: 'project' | 'item' | 'plan';
     scopeTargetId: string | null;
-    expiresAt: string;
+    /** null = 無期限 */
+    expiresAt: string | null;
   };
   project: { id: string; name: string };
   items: Array<{ id: string; name: string }>;
@@ -93,7 +94,7 @@ export async function viewShare(input: {
       id: share.id,
       scopeType: share.scopeType as 'project' | 'item' | 'plan',
       scopeTargetId: share.scopeTargetId,
-      expiresAt: share.expiresAt.toISOString(),
+      expiresAt: share.expiresAt?.toISOString() ?? null,
     },
     project: { id: project.id, name: project.name },
     items: items.map((it) => ({ id: it.id, name: it.name })),
