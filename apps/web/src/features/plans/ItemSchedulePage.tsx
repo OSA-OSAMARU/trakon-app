@@ -61,9 +61,9 @@ export function ItemSchedulePage() {
 function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
   const [, setParams] = useSearchParams();
   const [rowHeight, setRowHeight] = useState(ROW_HEIGHT_DEFAULT);
-  // 表示する制作物: 'all' か特定 itemId。初期は URL の itemId にフォーカス。
-  const [viewItemId, setViewItemId] = useState<string>(itemId);
-  useEffect(() => setViewItemId(itemId), [itemId]);
+  // 表示する制作物: 'all' か特定 itemId。初期は全制作物 (#49)。
+  // 単一に絞る場合は画面内セレクタで選択する。
+  const [viewItemId, setViewItemId] = useState<string>('all');
 
   const projectQuery = useQuery({
     queryKey: projectsQueryKey.detail(projectId),
@@ -235,7 +235,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
                 <SelectValue placeholder="制作物" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">すべての制作物</SelectItem>
+                <SelectItem value="all">全て</SelectItem>
                 {items.map((i) => (
                   <SelectItem key={i.id} value={i.id}>
                     {i.name}
