@@ -93,6 +93,19 @@ export function BallDetailModal({
       toast.error(e instanceof ApiClientError ? e.message : '差し戻しに失敗しました'),
   });
 
+  // 完了の差し戻し (#89)。後続が完了済みの場合は BE が 409 を返す。
+  const undoCompleteMut = useMutation({
+    mutationFn: () => plansApi.undoComplete(projectId, itemId, planId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.detail(projectId, itemId, planId) });
+      toast.success('完了を取り消しました');
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '完了の取り消しに失敗しました'),
+  });
+
   const copyMut = useMutation({
     mutationFn: () => plansApi.copy(projectId, itemId, planId),
     onSuccess: (newPlan) => {
@@ -135,6 +148,8 @@ export function BallDetailModal({
             const isBallHolder =
               !!plan.ballHolder && !!myMember && plan.ballHolder.id === myMember.id;
             const canAct = plan.status === 'active' && (isBallHolder || isDirector);
+            // 完了の差し戻し: 完了者 (= 完了済みプランのホルダー=確認者) かディレクター (#89)
+            const canUndoComplete = plan.status === 'completed' && (isBallHolder || isDirector);
             const style = CATEGORY_STYLE[plan.category];
             const successor = plan.successorPlanId
               ? (plans.find((p) => p.id === plan.successorPlanId) ?? null)
@@ -299,6 +314,21 @@ export function BallDetailModal({
                         {hasSuccessor ? '次のタスクへトス' : '完了'}
                       </Button>
                     )}
+                    {/* 完了の差し戻し (#89): 完了済みプランを完了直前 (TOSS済み) に戻す */}
+                    {canUndoComplete && (
+                      <Button
+                        variant="outline"
+                        onClick={() => undoCompleteMut.mutate()}
+                        disabled={undoCompleteMut.isPending}
+                      >
+                        {undoCompleteMut.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Undo2 className="size-4" />
+                        )}
+                        完了を取り消す
+                      </Button>
+                    )}
                   </div>
                 </SheetFooter>
               </>
@@ -364,6 +394,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+const EVENT_LABEL: Record<BallEvent['eventType'], string> = {
+  tossed: 'TOSS',
+  completed: '完了',
+  toss_undone: '差し戻し',
+  completion_undone: '完了の取り消し',
+};
+
+function EventIcon({ type }: { type: BallEvent['eventType'] }) {
+  if (type === 'tossed') return <Send className="size-3.5 text-sky-600" />;
+  if (type === 'completed') return <CheckCircle2 className="size-3.5 text-emerald-600" />;
+  // toss_undone / completion_undone は差し戻し系
+  return <Undo2 className="size-3.5 text-amber-600" />;
+}
+
 function EventTimeline({ events }: { events: BallEvent[] }) {
   if (events.length === 0) {
     return <p className="text-xs text-muted-foreground">まだイベントはありません。</p>;
@@ -375,14 +419,8 @@ function EventTimeline({ events }: { events: BallEvent[] }) {
           key={e.id}
           className="flex items-center gap-2 rounded-md border border-border px-2 py-1 text-xs"
         >
-          {e.eventType === 'tossed' ? (
-            <Send className="size-3.5 text-sky-600" />
-          ) : (
-            <CheckCircle2 className="size-3.5 text-emerald-600" />
-          )}
-          <span className="font-medium">
-            {e.eventType === 'tossed' ? 'TOSS' : '完了'}
-          </span>
+          <EventIcon type={e.eventType} />
+          <span className="font-medium">{EVENT_LABEL[e.eventType]}</span>
           {e.source === 'auto_chain' && (
             <Badge variant="secondary" className="px-1 py-0 text-[10px]">
               <Zap className="size-3" />

@@ -19,7 +19,7 @@ export type MemberRef = {
 
 export type BallEventDTO = {
   id: string;
-  eventType: 'tossed' | 'completed' | 'toss_undone';
+  eventType: 'tossed' | 'completed' | 'toss_undone' | 'completion_undone';
   source: 'human' | 'auto_chain';
   actor: MemberRef | null;
   occurredAt: string;
@@ -85,7 +85,7 @@ type PlanRow = Prisma.PlanGetPayload<{
 function toEventDTO(ev: PlanRow['ballEvents'][number]): BallEventDTO {
   return {
     id: ev.id,
-    eventType: ev.eventType as 'tossed' | 'completed' | 'toss_undone',
+    eventType: ev.eventType as 'tossed' | 'completed' | 'toss_undone' | 'completion_undone',
     source: ev.source as 'human' | 'auto_chain',
     actor: toMemberRef(ev.actorMember),
     occurredAt: ev.occurredAt.toISOString(),

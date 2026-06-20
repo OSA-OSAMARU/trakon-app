@@ -30,7 +30,7 @@ export type MemberRef = {
 
 export type BallEvent = {
   id: string;
-  eventType: 'tossed' | 'completed';
+  eventType: 'tossed' | 'completed' | 'toss_undone' | 'completion_undone';
   source: 'human' | 'auto_chain';
   actor: MemberRef | null;
   occurredAt: string;
@@ -150,6 +150,12 @@ export const plansApi = {
     }),
   undoToss: (projectId: string, itemId: string, planId: string) =>
     apiRequest<{ plan: Plan }>(`${basePath(projectId, itemId)}/${planId}/toss-undo`, {
+      method: 'POST',
+      body: {},
+    }),
+  /** 完了の差し戻し (#89)。完了済みプランを完了直前 (TOSS 済み) に戻す。 */
+  undoComplete: (projectId: string, itemId: string, planId: string) =>
+    apiRequest<{ plan: Plan }>(`${basePath(projectId, itemId)}/${planId}/complete-undo`, {
       method: 'POST',
       body: {},
     }),

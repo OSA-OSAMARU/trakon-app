@@ -40,13 +40,14 @@ async function loadPlanWithIncludes(
 
 /**
  * 最新イベント 1 件で現在の ball state を判定する。
- * toss_undone (差し戻し) は直前の tossed を打ち消し ready に戻す。
+ * toss_undone (差し戻し) は直前の tossed を打ち消し ready に、
+ * completion_undone (完了の差し戻し) は直前の completed を打ち消し tossed に戻す。
  * ball_events は occurredAt DESC で取得しているので [0] が最新。
  */
 function currentBallState(plan: PlanWithIncludes): 'ready' | 'tossed' | 'completed' {
   const latest = plan.ballEvents[0];
   if (!latest || latest.eventType === 'toss_undone') return 'ready';
-  if (latest.eventType === 'tossed') return 'tossed';
+  if (latest.eventType === 'tossed' || latest.eventType === 'completion_undone') return 'tossed';
   return 'completed';
 }
 
@@ -57,7 +58,7 @@ function ballHolderMemberId(plan: PlanWithIncludes): string | null {
 async function recordAudit(input: {
   tx: Prisma.TransactionClient;
   actorUserId: string;
-  action: 'toss' | 'complete' | 'auto_toss' | 'untoss';
+  action: 'toss' | 'complete' | 'auto_toss' | 'untoss' | 'undo_complete';
   planId: string;
 }): Promise<void> {
   await input.tx.auditLog.create({
@@ -282,6 +283,101 @@ export async function undoTossPlan(input: {
       tx,
       actorUserId: input.currentUserId,
       action: 'untoss',
+      planId: plan.id,
+    });
+
+    return loadPlanWithIncludes(tx, plan.id, input.itemId);
+  });
+
+  return { plan: toPlanDTO(result, []) };
+}
+
+// -----------------------------------------------------------------------------
+// Undo Complete (完了の差し戻し) — #89
+// -----------------------------------------------------------------------------
+export async function undoCompletePlan(input: {
+  itemId: string;
+  projectId: string;
+  planId: string;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<{ plan: PlanDTO }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+
+    if (plan.status !== 'completed') {
+      throw new ApiException('PLAN_NOT_COMPLETED', 422, 'Plan is not completed.');
+    }
+
+    // 認可: 完了直前のボール保持者 (= toMember) または ディレクター。
+    // 完了済みプランの holder は toMember (完了者) なので completePlan と対称。
+    const holder = ballHolderMemberId(plan);
+    if (!input.isDirector && holder !== input.currentMemberId) {
+      throw new ApiException(
+        'FORBIDDEN',
+        403,
+        'Only the ball holder or director can undo a completion.',
+      );
+    }
+
+    // 完了時に後続を自動 TOSS していた場合、その auto_chain TOSS も巻き戻す。
+    // - 後続の最新イベントが auto_chain の tossed → この完了が誘発したもの。toss_undone で ready に戻す。
+    // - 後続が既に完了している → 差し戻すと不整合になるためブロックする。
+    // - それ以外 (自動連鎖していない / 既に人手で操作済み) → 後続には触れない。
+    if (plan.successorPlanId) {
+      const successor = await tx.plan.findFirst({
+        where: { id: plan.successorPlanId, itemId: input.itemId, deletedAt: null },
+        include: PLAN_INCLUDE,
+      });
+      if (successor) {
+        const succLatest = successor.ballEvents[0];
+        const wasAutoChainedByThis =
+          !!succLatest && succLatest.eventType === 'tossed' && succLatest.source === 'auto_chain';
+        if (wasAutoChainedByThis) {
+          await tx.ballEvent.create({
+            data: {
+              planId: successor.id,
+              eventType: 'toss_undone',
+              source: 'human',
+              actorMemberId: input.currentMemberId,
+              actorUserId: input.currentUserId,
+            },
+          });
+          await recordAudit({
+            tx,
+            actorUserId: input.currentUserId,
+            action: 'untoss',
+            planId: successor.id,
+          });
+        } else if (successor.status === 'completed') {
+          throw new ApiException(
+            'SUCCESSOR_ALREADY_COMPLETED',
+            409,
+            '後続予定が完了済みのため、この予定の完了を取り消せません。',
+          );
+        }
+      }
+    }
+
+    // append-only のため、completed 行は削除せず completion_undone を追記して tossed に戻す
+    await tx.ballEvent.create({
+      data: {
+        planId: plan.id,
+        eventType: 'completion_undone',
+        source: 'human',
+        actorMemberId: input.currentMemberId,
+        actorUserId: input.currentUserId,
+      },
+    });
+    await tx.plan.update({
+      where: { id: plan.id },
+      data: { status: 'active', completedAt: null },
+    });
+    await recordAudit({
+      tx,
+      actorUserId: input.currentUserId,
+      action: 'undo_complete',
       planId: plan.id,
     });
 
