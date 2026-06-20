@@ -14,9 +14,11 @@ import {
   updateProjectBodySchema,
 } from '../../schemas/projects.js';
 import {
+  archiveProject,
   createProject,
   getProjectDetail,
   listProjects,
+  unarchiveProject,
   updateProject,
 } from '../../services/projects.js';
 import {
@@ -41,7 +43,7 @@ export const projectsRoute = new Hono()
   .get('/', async (c) => {
     const userId = c.get('currentUserId');
     const q = listProjectsQuerySchema.parse({
-      status: c.req.query('status'),
+      archived: c.req.query('archived'),
       limit: c.req.query('limit'),
       offset: c.req.query('offset'),
     });
@@ -75,6 +77,37 @@ export const projectsRoute = new Hono()
     });
     return c.json({ data: result.project, warnings: result.warnings });
   })
+
+  // ----------------------------- /projects/:projectId/archive -----------------------------
+  .post(
+    '/:projectId/archive',
+    requireProjectMember(),
+    requireProjectDirector(),
+    async (c) => {
+      const userId = c.get('currentUserId');
+      const project = c.get('project');
+      const detail = await archiveProject({
+        projectId: project.projectId,
+        currentUserId: userId,
+      });
+      return c.json({ data: detail });
+    },
+  )
+
+  .post(
+    '/:projectId/unarchive',
+    requireProjectMember(),
+    requireProjectDirector(),
+    async (c) => {
+      const userId = c.get('currentUserId');
+      const project = c.get('project');
+      const detail = await unarchiveProject({
+        projectId: project.projectId,
+        currentUserId: userId,
+      });
+      return c.json({ data: detail });
+    },
+  )
 
   // ----------------------------- /projects/:projectId/items -----------------------------
   .get('/:projectId/items', requireProjectMember(), async (c) => {

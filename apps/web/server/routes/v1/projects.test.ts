@@ -29,4 +29,16 @@ describe('projects routes', () => {
     const res = await app.request('/api/v1/projects/abc/items');
     expect(res.status).toBe(401);
   });
+
+  it('requires authentication for POST /projects/:id/archive', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/projects/abc/archive', { method: 'POST' });
+    expect(res.status).toBe(401);
+  });
+
+  it('requires authentication for POST /projects/:id/unarchive', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/projects/abc/unarchive', { method: 'POST' });
+    expect(res.status).toBe(401);
+  });
 });

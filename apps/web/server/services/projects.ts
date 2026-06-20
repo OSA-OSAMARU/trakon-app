@@ -9,6 +9,8 @@ export type ProjectSummaryDTO = {
   startDate: string;
   endDate: string;
   status: 'active' | 'closed';
+  /// アーカイブ日時 (null = 未アーカイブ)
+  archivedAt: string | null;
   role: 'director' | 'member';
   createdBy: string;
   createdAt: string;
@@ -34,6 +36,7 @@ function toSummary(
     startDate: Date;
     endDate: Date;
     status: string;
+    archivedAt: Date | null;
     createdBy: string;
     createdAt: Date;
     updatedAt: Date;
@@ -46,6 +49,7 @@ function toSummary(
     startDate: toDateString(p.startDate),
     endDate: toDateString(p.endDate),
     status: p.status as 'active' | 'closed',
+    archivedAt: p.archivedAt ? p.archivedAt.toISOString() : null,
     role: p.createdBy === currentUserId ? 'director' : 'member',
     createdBy: p.createdBy,
     createdAt: p.createdAt.toISOString(),
@@ -55,20 +59,22 @@ function toSummary(
 
 /**
  * 自分が参加しているプロジェクトのみ返す (project_members を join)
+ * archived=true でアーカイブ済みのみ、それ以外は未アーカイブのみ返す。
  */
 export async function listProjects(
   userId: string,
-  q: { status?: 'active' | 'closed'; limit: number; offset: number },
+  q: { archived?: boolean; limit: number; offset: number },
 ): Promise<{ items: ProjectSummaryDTO[]; total: number }> {
   const where: Prisma.ProjectWhereInput = {
     deletedAt: null,
-    ...(q.status && { status: q.status }),
+    archivedAt: q.archived ? { not: null } : null,
     members: { some: { userId, deletedAt: null } },
   };
   const [rows, total] = await Promise.all([
     prisma.project.findMany({
       where,
-      orderBy: { updatedAt: 'desc' },
+      // アーカイブ一覧はアーカイブした順、それ以外は更新順
+      orderBy: q.archived ? { archivedAt: 'desc' } : { updatedAt: 'desc' },
       take: q.limit,
       skip: q.offset,
     }),
@@ -203,4 +209,34 @@ export async function updateProject(input: {
     project: await getProjectDetail(updated.id, input.currentUserId),
     warnings,
   };
+}
+
+/**
+ * プロジェクトをアーカイブする (archived_at を立てる)。
+ * 既にアーカイブ済みでも冪等に成功する。
+ */
+export async function archiveProject(input: {
+  projectId: string;
+  currentUserId: string;
+}): Promise<ProjectDetailDTO> {
+  await prisma.project.update({
+    where: { id: input.projectId },
+    data: { archivedAt: new Date() },
+  });
+  return getProjectDetail(input.projectId, input.currentUserId);
+}
+
+/**
+ * プロジェクトのアーカイブを解除する (復元)。
+ * 未アーカイブでも冪等に成功する。
+ */
+export async function unarchiveProject(input: {
+  projectId: string;
+  currentUserId: string;
+}): Promise<ProjectDetailDTO> {
+  await prisma.project.update({
+    where: { id: input.projectId },
+    data: { archivedAt: null },
+  });
+  return getProjectDetail(input.projectId, input.currentUserId);
 }

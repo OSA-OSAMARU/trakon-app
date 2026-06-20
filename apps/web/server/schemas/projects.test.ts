@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createProjectBodySchema,
+  listProjectsQuerySchema,
   updateProjectBodySchema,
 } from './projects.js';
 
@@ -61,5 +62,32 @@ describe('updateProjectBodySchema', () => {
       endDate: '2026-01-01',
     });
     expect(r.success).toBe(false);
+  });
+});
+
+describe('listProjectsQuerySchema', () => {
+  it("parses archived='true' as boolean true", () => {
+    const r = listProjectsQuerySchema.parse({ archived: 'true' });
+    expect(r.archived).toBe(true);
+  });
+
+  it("parses archived='false' as boolean false", () => {
+    const r = listProjectsQuerySchema.parse({ archived: 'false' });
+    expect(r.archived).toBe(false);
+  });
+
+  it('leaves archived undefined when omitted', () => {
+    const r = listProjectsQuerySchema.parse({});
+    expect(r.archived).toBeUndefined();
+  });
+
+  it('rejects an invalid archived value', () => {
+    expect(listProjectsQuerySchema.safeParse({ archived: 'yes' }).success).toBe(false);
+  });
+
+  it('applies default limit/offset', () => {
+    const r = listProjectsQuerySchema.parse({});
+    expect(r.limit).toBe(50);
+    expect(r.offset).toBe(0);
   });
 });
