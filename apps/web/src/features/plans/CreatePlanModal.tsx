@@ -44,12 +44,13 @@ const schema = z
     category: z.enum(PLAN_CATEGORIES.map((c) => c.value) as [PlanCategory, ...PlanCategory[]]),
     scheduledDate: isoDate,
     dueDate: z.union([isoDate, z.literal('')]).optional(),
-    fromMemberId: z.string().uuid('実施者(FROM) を選択してください'),
-    toMemberId: z.string().uuid('確認者(TO) を選択してください'),
+    // 実施者/確認者は任意。後から設定できる (#55)
+    fromMemberId: z.union([z.string().uuid(), z.literal('')]).optional(),
+    toMemberId: z.union([z.string().uuid(), z.literal('')]).optional(),
     successorPlanId: z.string().optional(),
     memo: z.string().max(2000).optional(),
   })
-  .refine((v) => v.fromMemberId !== v.toMemberId, {
+  .refine((v) => !v.fromMemberId || !v.toMemberId || v.fromMemberId !== v.toMemberId, {
     path: ['toMemberId'],
     message: '実施者(FROM)と確認者(TO)は異なるメンバーを選んでください',
   })
@@ -121,8 +122,8 @@ export function CreatePlanModal({
         category: v.category,
         scheduledDate: v.scheduledDate,
         dueDate: v.dueDate || undefined,
-        fromMemberId: v.fromMemberId,
-        toMemberId: v.toMemberId,
+        fromMemberId: v.fromMemberId || undefined,
+        toMemberId: v.toMemberId || undefined,
         successorPlanId: v.successorPlanId || undefined,
         memo: v.memo || undefined,
       }),
@@ -148,7 +149,7 @@ export function CreatePlanModal({
         memo: v.memo ?? null,
         // FROM/TO は TOSS 前のみ送信 (ロック中はサーバ側でも拒否される)
         ...(fromToEditable
-          ? { fromMemberId: v.fromMemberId, toMemberId: v.toMemberId }
+          ? { fromMemberId: v.fromMemberId || undefined, toMemberId: v.toMemberId || undefined }
           : {}),
       });
     },
@@ -204,7 +205,7 @@ export function CreatePlanModal({
 
           <div className="grid grid-cols-2 gap-3">
             <Field
-              label="実施者(FROM)"
+              label="実施者(FROM)（任意）"
               error={form.formState.errors.fromMemberId?.message}
             >
               <SelectField
@@ -215,7 +216,7 @@ export function CreatePlanModal({
                 placeholder="選択"
               />
             </Field>
-            <Field label="確認者(TO)" error={form.formState.errors.toMemberId?.message}>
+            <Field label="確認者(TO)（任意）" error={form.formState.errors.toMemberId?.message}>
               <SelectField
                 value={form.watch('toMemberId') || undefined}
                 onChange={(v) => form.setValue('toMemberId', v)}

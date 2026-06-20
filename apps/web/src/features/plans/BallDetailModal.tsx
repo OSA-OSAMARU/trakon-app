@@ -227,7 +227,8 @@ export function BallDetailModal({
                     )}
                   </div>
                   <div className="flex gap-2">
-                    {plan.ballState === 'ready' && canAct && (
+                    {/* 実施者/確認者が揃って初めて TOSS 可能 (#55) */}
+                    {plan.ballState === 'ready' && canAct && plan.fromMember && plan.toMember && (
                       <Button onClick={handleToss} disabled={tossMut.isPending}>
                         {tossMut.isPending ? (
                           <Loader2 className="size-4 animate-spin" />
@@ -236,6 +237,11 @@ export function BallDetailModal({
                         )}
                         TOSS する
                       </Button>
+                    )}
+                    {plan.ballState === 'ready' && canAct && (!plan.fromMember || !plan.toMember) && (
+                      <span className="self-center text-[11px] text-muted-foreground">
+                        実施者・確認者を設定するとTOSSできます
+                      </span>
                     )}
                     {/* 差し戻し(TOSS取消)は誤TOSS救済のため誰でも実行可 (#50) */}
                     {plan.ballState === 'tossed' && (

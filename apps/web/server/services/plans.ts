@@ -282,7 +282,10 @@ export async function createPlan(input: {
 }): Promise<PlanDTO> {
   await assertMembersBelongToProject({
     projectId: input.projectId,
-    memberIds: [input.body.fromMemberId, input.body.toMemberId],
+    // 任意項目のため、指定されたものだけ検証する (#55)
+    memberIds: [input.body.fromMemberId, input.body.toMemberId].filter(
+      (id): id is string => !!id,
+    ),
   });
   if (input.body.successorPlanId) {
     await assertSuccessorAvailable({
@@ -298,8 +301,8 @@ export async function createPlan(input: {
       category: input.body.category,
       scheduledDate: new Date(`${input.body.scheduledDate}T00:00:00Z`),
       dueDate: input.body.dueDate ? new Date(`${input.body.dueDate}T00:00:00Z`) : null,
-      fromMemberId: input.body.fromMemberId,
-      toMemberId: input.body.toMemberId,
+      fromMemberId: input.body.fromMemberId ?? null,
+      toMemberId: input.body.toMemberId ?? null,
       successorPlanId: input.body.successorPlanId ?? null,
       memo: input.body.memo ?? null,
     },

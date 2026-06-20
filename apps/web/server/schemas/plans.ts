@@ -23,12 +23,13 @@ export const createPlanBodySchema = z
     category: planCategorySchema,
     scheduledDate: isoDate,
     dueDate: isoDate.optional(),
-    fromMemberId: uuid,
-    toMemberId: uuid,
+    // 実施者(FROM)/確認者(TO) は任意。後から設定できる (#55)
+    fromMemberId: uuid.optional(),
+    toMemberId: uuid.optional(),
     successorPlanId: uuid.optional(),
     memo: z.string().max(2000).optional(),
   })
-  .refine((v) => v.fromMemberId !== v.toMemberId, {
+  .refine((v) => !v.fromMemberId || !v.toMemberId || v.fromMemberId !== v.toMemberId, {
     path: ['toMemberId'],
     message: 'fromMemberId and toMemberId must differ.',
   })

@@ -73,8 +73,9 @@ export type CreatePlanInput = {
   category: PlanCategory;
   scheduledDate: string;
   dueDate?: string;
-  fromMemberId: string;
-  toMemberId: string;
+  // 実施者/確認者は任意 (#55)
+  fromMemberId?: string;
+  toMemberId?: string;
   successorPlanId?: string;
   memo?: string;
 };

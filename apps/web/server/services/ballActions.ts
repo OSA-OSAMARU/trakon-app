@@ -92,6 +92,14 @@ export async function tossPlan(input: {
     if (currentBallState(plan) !== 'ready') {
       throw new ApiException('ALREADY_TOSSED', 409, 'Ball has already been tossed.');
     }
+    // 実施者(FROM)/確認者(TO) 未設定の予定は TOSS できない (#55)
+    if (!plan.fromMemberId || !plan.toMemberId) {
+      throw new ApiException(
+        'INCOMPLETE_PLAN',
+        422,
+        '実施者(FROM)と確認者(TO)を設定してください。',
+      );
+    }
 
     // 認可: 現在の Ball Holder (= fromMember) または ディレクター
     const holder = ballHolderMemberId(plan);
