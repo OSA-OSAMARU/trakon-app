@@ -146,7 +146,7 @@ export function SidebarLayout() {
         />
       )}
 
-      <Toaster richColors position="top-right" />
+      <Toaster richColors position="bottom-center" />
     </div>
   );
 }
