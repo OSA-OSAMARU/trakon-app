@@ -237,31 +237,32 @@ export function BallDetailModal({
                         TOSS する
                       </Button>
                     )}
+                    {/* 差し戻し(TOSS取消)は誤TOSS救済のため誰でも実行可 (#50) */}
+                    {plan.ballState === 'tossed' && (
+                      <Button
+                        variant="outline"
+                        onClick={() => undoMut.mutate()}
+                        disabled={undoMut.isPending}
+                      >
+                        {undoMut.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Undo2 className="size-4" />
+                        )}
+                        差し戻す
+                      </Button>
+                    )}
                     {plan.ballState === 'tossed' && canAct && (
-                      <>
-                        <Button
-                          variant="outline"
-                          onClick={() => undoMut.mutate()}
-                          disabled={undoMut.isPending}
-                        >
-                          {undoMut.isPending ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <Undo2 className="size-4" />
-                          )}
-                          差し戻す
-                        </Button>
-                        <Button onClick={handleComplete} disabled={completeMut.isPending}>
-                          {completeMut.isPending ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : hasSuccessor ? (
-                            <Send className="size-4" />
-                          ) : (
-                            <CheckCircle2 className="size-4" />
-                          )}
-                          {hasSuccessor ? '次のタスクへトス' : '完了する'}
-                        </Button>
-                      </>
+                      <Button onClick={handleComplete} disabled={completeMut.isPending}>
+                        {completeMut.isPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : hasSuccessor ? (
+                          <Send className="size-4" />
+                        ) : (
+                          <CheckCircle2 className="size-4" />
+                        )}
+                        {hasSuccessor ? '次のタスクへトス' : '完了する'}
+                      </Button>
                     )}
                     <Button variant="outline" onClick={onClose}>
                       閉じる
