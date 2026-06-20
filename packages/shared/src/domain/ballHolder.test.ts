@@ -40,6 +40,24 @@ describe('deriveBallHolder', () => {
     });
     expect(r.state).toBe('tossed');
   });
+
+  it('returns from member with ready state on toss_undone event', () => {
+    const r = deriveBallHolder(plan, {
+      eventType: 'toss_undone',
+      source: 'human',
+      occurredAt: '2026-06-04T00:00:00Z',
+    });
+    expect(r).toEqual({ memberId: 'from-1', state: 'ready' });
+  });
+
+  it('returns to member with tossed state on completion_undone event (#89)', () => {
+    const r = deriveBallHolder(plan, {
+      eventType: 'completion_undone',
+      source: 'human',
+      occurredAt: '2026-06-05T00:00:00Z',
+    });
+    expect(r).toEqual({ memberId: 'to-1', state: 'tossed' });
+  });
 });
 
 describe('pickLatestBallEvent', () => {

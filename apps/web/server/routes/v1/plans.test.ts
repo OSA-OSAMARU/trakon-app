@@ -55,4 +55,12 @@ describe('plans routes', () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it('requires authentication for POST /complete-undo', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/projects/abc/items/def/plans/xyz/complete-undo', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(401);
+  });
 });

@@ -22,7 +22,12 @@ import {
   setPlanSuccessor,
   updatePlan,
 } from '../../services/plans.js';
-import { completePlan, tossPlan, undoTossPlan } from '../../services/ballActions.js';
+import {
+  completePlan,
+  tossPlan,
+  undoCompletePlan,
+  undoTossPlan,
+} from '../../services/ballActions.js';
 
 /**
  * `/projects/:projectId/items/:itemId/plans` 配下のエンドポイント。
@@ -36,7 +41,9 @@ import { completePlan, tossPlan, undoTossPlan } from '../../services/ballActions
  *  - DELETE /:planId                削除 (ball_events なしのみ)
  *  - PATCH  /:planId/successor      後続紐付け
  *  - POST   /:planId/toss           TOSS 実行
+ *  - POST   /:planId/toss-undo      TOSS 差し戻し
  *  - POST   /:planId/complete       完了
+ *  - POST   /:planId/complete-undo  完了の差し戻し (#89)
  */
 export const plansRoute = new Hono()
   .use('*', requireProjectMember())
@@ -147,6 +154,22 @@ export const plansRoute = new Hono()
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
     const result = await completePlan({
+      itemId,
+      projectId: project.projectId,
+      planId,
+      currentUserId: c.get('currentUserId'),
+      currentMemberId: project.memberId,
+      isDirector: project.isDirector,
+    });
+    return c.json({ data: result });
+  })
+
+  .post('/:planId/complete-undo', async (c) => {
+    const itemId = c.get('itemId');
+    const project = c.get('project');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const result = await undoCompletePlan({
       itemId,
       projectId: project.projectId,
       planId,
