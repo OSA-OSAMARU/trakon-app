@@ -41,4 +41,19 @@ describe('createShareLinkBodySchema', () => {
     });
     expect(r.success).toBe(false);
   });
+
+  it('defaults expiresInHours to 168h (1 week)', () => {
+    const r = createShareLinkBodySchema.safeParse({ scopeType: 'project' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.expiresInHours).toBe(168);
+  });
+
+  it('accepts null expiresInHours (no expiry)', () => {
+    const r = createShareLinkBodySchema.safeParse({
+      scopeType: 'project',
+      expiresInHours: null,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.expiresInHours).toBeNull();
+  });
 });

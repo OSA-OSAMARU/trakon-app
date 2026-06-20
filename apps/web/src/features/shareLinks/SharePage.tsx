@@ -110,7 +110,9 @@ function Layout({ view, children }: { view: ShareView; children: React.ReactNode
           </div>
           <h1 className="text-xl font-semibold tracking-tight">{view.project.name}</h1>
           <p className="text-xs text-muted-foreground">
-            有効期限 {format(new Date(view.share.expiresAt), 'yyyy/M/d HH:mm')} まで
+            {view.share.expiresAt
+              ? `有効期限 ${format(new Date(view.share.expiresAt), 'yyyy/M/d HH:mm')} まで`
+              : '有効期限なし (無期限)'}
           </p>
         </div>
         <Badge variant="secondary">

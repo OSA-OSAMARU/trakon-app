@@ -138,7 +138,9 @@ function Inner({ projectId }: { projectId: string }) {
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    期限 {format(new Date(s.expiresAt), 'yyyy/M/d HH:mm')}
+                    {s.expiresAt
+                      ? `期限 ${format(new Date(s.expiresAt), 'yyyy/M/d HH:mm')}`
+                      : '期限 無期限'}
                     {s.lastAccessedAt &&
                       ` ・ 最終アクセス ${format(new Date(s.lastAccessedAt), 'M/d HH:mm')}`}
                   </p>
@@ -215,7 +217,8 @@ function CreateDialog({
 }) {
   const [scope, setScope] = useState<'project' | 'item'>('project');
   const [itemId, setItemId] = useState<string>('');
-  const [hours, setHours] = useState<number>(72);
+  // 有効期限プリセット (null = 無期限)。デフォルトは 1週間
+  const [hours, setHours] = useState<number | null>(168);
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -275,15 +278,22 @@ function CreateDialog({
             </div>
           )}
           <div className="space-y-1.5">
-            <Label>有効期限 (時間)</Label>
-            <Input
-              type="number"
-              min={1}
-              max={24 * 30}
-              value={hours}
-              onChange={(e) => setHours(Number(e.target.value) || 72)}
-            />
-            <p className="text-[11px] text-muted-foreground">最大 30 日 (720 時間)</p>
+            <Label>有効期限</Label>
+            <Select
+              value={hours === null ? 'none' : String(hours)}
+              onValueChange={(v) => setHours(v === 'none' ? null : Number(v))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="24">1日</SelectItem>
+                <SelectItem value="72">3日</SelectItem>
+                <SelectItem value="168">1週間</SelectItem>
+                <SelectItem value="720">30日</SelectItem>
+                <SelectItem value="none">無期限</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <DialogFooter>

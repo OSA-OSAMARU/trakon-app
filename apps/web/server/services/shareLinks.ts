@@ -12,7 +12,8 @@ export type ShareLinkDTO = {
   scopeTargetId: string | null;
   issuedByMemberId: string;
   issuedAt: string;
-  expiresAt: string;
+  /** null = 無期限 */
+  expiresAt: string | null;
   revokedAt: string | null;
   lastAccessedAt: string | null;
   status: 'active' | 'revoked' | 'expired';
@@ -26,10 +27,10 @@ export type CreateShareLinkResult = {
   url: string;
 };
 
-function statusOf(r: { revokedAt: Date | null; expiresAt: Date }): ShareLinkDTO['status'] {
+function statusOf(r: { revokedAt: Date | null; expiresAt: Date | null }): ShareLinkDTO['status'] {
   if (r.revokedAt) return 'revoked';
-  if (r.expiresAt.getTime() <= Date.now()) return 'expired';
-  return 'active';
+  if (r.expiresAt && r.expiresAt.getTime() <= Date.now()) return 'expired';
+  return 'active'; // expiresAt が null なら無期限
 }
 
 function toDTO(r: {
@@ -39,7 +40,7 @@ function toDTO(r: {
   scopeTargetId: string | null;
   issuedByMemberId: string;
   issuedAt: Date;
-  expiresAt: Date;
+  expiresAt: Date | null;
   revokedAt: Date | null;
   lastAccessedAt: Date | null;
 }): ShareLinkDTO {
@@ -50,7 +51,7 @@ function toDTO(r: {
     scopeTargetId: r.scopeTargetId,
     issuedByMemberId: r.issuedByMemberId,
     issuedAt: r.issuedAt.toISOString(),
-    expiresAt: r.expiresAt.toISOString(),
+    expiresAt: r.expiresAt?.toISOString() ?? null,
     revokedAt: r.revokedAt?.toISOString() ?? null,
     lastAccessedAt: r.lastAccessedAt?.toISOString() ?? null,
     status: statusOf(r),
@@ -90,7 +91,11 @@ export async function createShareLink(input: {
   }
 
   const { raw, hash } = generateInvitationToken();
-  const expiresAt = new Date(Date.now() + body.expiresInHours * 60 * 60 * 1000);
+  // expiresInHours が null の場合は無期限 (expiresAt = null)
+  const expiresAt =
+    body.expiresInHours == null
+      ? null
+      : new Date(Date.now() + body.expiresInHours * 60 * 60 * 1000);
   const created = await prisma.shareLink.create({
     data: {
       projectId: input.projectId,
@@ -160,7 +165,8 @@ export async function findActiveShareLinkByRawToken(rawToken: string) {
     where: {
       tokenHash: hash,
       revokedAt: null,
-      expiresAt: { gt: new Date() },
+      // expiresAt が null (無期限) または未来日のものを有効とみなす
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
   });
   if (!row) {
