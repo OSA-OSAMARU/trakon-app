@@ -239,7 +239,7 @@ function ManageTab({ projectId }: { projectId: string }) {
               }}
               disabled={removeMut.isPending}
             >
-              削除する
+              削除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

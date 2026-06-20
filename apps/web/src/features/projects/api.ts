@@ -6,6 +6,8 @@ export type ProjectSummary = {
   startDate: string;
   endDate: string;
   status: 'active' | 'closed';
+  /** アーカイブ日時 (null = 未アーカイブ) */
+  archivedAt: string | null;
   role: 'director' | 'member';
   createdBy: string;
   createdAt: string;
@@ -51,12 +53,17 @@ export type UpdateProjectInput = Partial<{
 export type Warning = { code: string; message: string };
 
 export const projectsApi = {
-  list: () => apiRequest<ProjectSummary[]>('/projects'),
+  list: (params?: { archived?: boolean }) =>
+    apiRequest<ProjectSummary[]>(`/projects${params?.archived ? '?archived=true' : ''}`),
   get: (projectId: string) => apiRequest<ProjectDetail>(`/projects/${projectId}`),
   create: (body: CreateProjectInput) =>
     apiRequest<ProjectDetail>('/projects', { method: 'POST', body }),
   update: (projectId: string, body: UpdateProjectInput) =>
     apiRequest<ProjectDetail>(`/projects/${projectId}`, { method: 'PATCH', body }),
+  archive: (projectId: string) =>
+    apiRequest<ProjectDetail>(`/projects/${projectId}/archive`, { method: 'POST' }),
+  unarchive: (projectId: string) =>
+    apiRequest<ProjectDetail>(`/projects/${projectId}/unarchive`, { method: 'POST' }),
 
   listItems: (projectId: string) =>
     apiRequest<ProjectItem[]>(`/projects/${projectId}/items`),
@@ -77,6 +84,7 @@ export const projectsApi = {
 
 export const projectsQueryKey = {
   all: ['projects'] as const,
+  archived: ['projects', 'archived'] as const,
   detail: (id: string) => ['projects', id] as const,
   items: (id: string) => ['projects', id, 'items'] as const,
 };

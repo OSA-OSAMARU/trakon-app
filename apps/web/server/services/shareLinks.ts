@@ -70,6 +70,8 @@ export async function createShareLink(input: {
   projectId: string;
   issuerMemberId: string;
   body: CreateShareLinkBody;
+  /** 共有 URL の基底オリジン (発行元と同一ドメインにするため)。未指定なら env フォールバック。 */
+  baseUrl?: string;
 }): Promise<CreateShareLinkResult> {
   const { body } = input;
 
@@ -118,11 +120,11 @@ export async function createShareLink(input: {
     },
   });
 
-  const env = getServerEnv();
+  const base = input.baseUrl ?? getServerEnv().PUBLIC_APP_URL;
   return {
     shareLink: toDTO(created),
     rawToken: raw,
-    url: `${env.PUBLIC_APP_URL}/share/${raw}`,
+    url: `${base}/share/${raw}`,
   };
 }
 

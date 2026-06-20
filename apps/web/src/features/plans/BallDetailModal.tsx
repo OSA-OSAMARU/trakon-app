@@ -264,7 +264,7 @@ export function BallDetailModal({
                         ) : (
                           <Send className="size-4" />
                         )}
-                        TOSS する
+                        TOSS
                       </Button>
                     )}
                     {plan.ballState === 'ready' && canAct && (!plan.fromMember || !plan.toMember) && (
@@ -296,7 +296,7 @@ export function BallDetailModal({
                         ) : (
                           <CheckCircle2 className="size-4" />
                         )}
-                        {hasSuccessor ? '次のタスクへトス' : '完了する'}
+                        {hasSuccessor ? '次のタスクへトス' : '完了'}
                       </Button>
                     )}
                   </div>
@@ -323,7 +323,7 @@ export function BallDetailModal({
               }}
               disabled={deleteMut.isPending}
             >
-              削除する
+              削除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

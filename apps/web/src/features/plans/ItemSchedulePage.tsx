@@ -31,6 +31,7 @@ import { useSetSuccessor } from './useOptimisticBallAction';
 import {
   assignLanes,
   ballTier,
+  chipVerticalBounds,
   dayIndex,
   isActiveNow,
   isOverdue,
@@ -387,6 +388,42 @@ function isValidLinkTarget(source: Plan, target: Plan, itemPlans: Plan[]): boole
   return true;
 }
 
+/**
+ * planId が属する後続チェーン (前後双方向にたどった全 plan) と、
+ * その内部リンク (チェーン内の先行→後続) の source id 集合を返す。
+ * ホバー時のチェーン強調に使う。
+ */
+function computeChain(
+  itemPlans: Plan[],
+  planId: string,
+): { chainIds: Set<string>; linkSourceIds: Set<string> } {
+  const byId = new Map(itemPlans.map((p) => [p.id, p]));
+  const predOf = new Map<string, string>(); // successorId -> predecessorId
+  for (const p of itemPlans) {
+    if (p.successorPlanId) predOf.set(p.successorPlanId, p.id);
+  }
+  const chainIds = new Set<string>();
+  // 後続方向
+  let cur: Plan | undefined = byId.get(planId);
+  while (cur && !chainIds.has(cur.id)) {
+    chainIds.add(cur.id);
+    cur = cur.successorPlanId ? byId.get(cur.successorPlanId) : undefined;
+  }
+  // 先行方向
+  let prevId = predOf.get(planId);
+  while (prevId && !chainIds.has(prevId)) {
+    chainIds.add(prevId);
+    prevId = predOf.get(prevId);
+  }
+  // チェーン内リンク (両端がチェーンに含まれる先行 plan)
+  const linkSourceIds = new Set<string>();
+  for (const id of chainIds) {
+    const succ = byId.get(id)?.successorPlanId;
+    if (succ && chainIds.has(succ)) linkSourceIds.add(id);
+  }
+  return { chainIds, linkSourceIds };
+}
+
 function ScheduleBoard({
   days,
   items,
@@ -423,6 +460,9 @@ function ScheduleBoard({
   const [linkDrag, setLinkDrag] = useState<LinkDrag | null>(null);
   const linkRef = useRef<LinkDrag | null>(null);
   linkRef.current = linkDrag;
+
+  // ホバー中の予定 (チェーン強調用)。ドラッグ中は抑制する。
+  const [hoveredPlanId, setHoveredPlanId] = useState<string | null>(null);
 
   const startLink = (e: React.PointerEvent, plan: Plan) => {
     e.stopPropagation();
@@ -473,6 +513,10 @@ function ScheduleBoard({
   const [createDrag, setCreateDrag] = useState<CreateDrag | null>(null);
   const createDragRef = useRef<CreateDrag | null>(null);
   createDragRef.current = createDrag;
+
+  // ドラッグ系の操作中はホバー強調を抑制する。
+  const interacting = drag !== null || linkDrag !== null || createDrag !== null;
+  const activeHoverId = interacting ? null : hoveredPlanId;
 
   useEffect(() => {
     if (!createDrag) return;
@@ -613,6 +657,17 @@ function ScheduleBoard({
           const repHolder = activePlans.length
             ? activePlans[activePlans.length - 1]!.ballHolder
             : null;
+          // コネクト印用: 先行 (誰かの後続として指されている) plan の id 集合
+          const predecessorTargetIds = new Set(
+            itemPlans
+              .map((p) => p.successorPlanId)
+              .filter((id): id is string => id !== null),
+          );
+          // ホバー中の予定がこの列に属するならチェーンを算出
+          const chain =
+            activeHoverId && itemPlans.some((p) => p.id === activeHoverId)
+              ? computeChain(itemPlans, activeHoverId)
+              : null;
           return (
             <div
               key={item.id}
@@ -695,17 +750,6 @@ function ScheduleBoard({
                   );
                 })}
 
-                {/* 後続リンク (同一列内) を線で可視化 */}
-                <LinkLayer
-                  plans={itemPlans}
-                  laneOf={laneOf}
-                  days={days}
-                  rowHeight={rowHeight}
-                  laneWidth={laneWidth}
-                  width={colWidth}
-                  height={totalHeight}
-                />
-
                 {/* ボール */}
                 {itemPlans.map((plan) => (
                   <BallChip
@@ -718,9 +762,13 @@ function ScheduleBoard({
                     today={today}
                     drag={drag?.plan.id === plan.id ? drag : null}
                     linkTarget={linkDrag?.targetId === plan.id}
+                    hasSuccessor={plan.successorPlanId !== null}
+                    hasPredecessor={predecessorTargetIds.has(plan.id)}
+                    inChain={chain?.chainIds.has(plan.id) ?? false}
                     copying={copyingPlanId === plan.id}
                     onActivate={() => onOpenDetail(plan.id)}
                     onCopy={() => onCopy(plan)}
+                    onHoverChange={setHoveredPlanId}
                     onPointerDownConnector={(e) => startLink(e, plan)}
                     onPointerDownBall={(e, mode) => {
                       e.stopPropagation();
@@ -736,6 +784,19 @@ function ScheduleBoard({
                     }}
                   />
                 ))}
+
+                {/* 後続コネクト (同一列内) を線で可視化。チップより後ろに描き前面に出す */}
+                <LinkLayer
+                  plans={itemPlans}
+                  laneOf={laneOf}
+                  days={days}
+                  rowHeight={rowHeight}
+                  laneWidth={laneWidth}
+                  width={colWidth}
+                  height={totalHeight}
+                  highlightSourceIds={chain?.linkSourceIds ?? null}
+                  dimOthers={chain !== null}
+                />
               </div>
             </div>
           );
@@ -775,11 +836,10 @@ function chipCenters(
   const { start, end } = planRange(plan);
   const startIdx = dayIndex(days, start);
   const endIdx = dayIndex(days, end);
-  const top = startIdx * rowHeight + 1;
-  const height = (endIdx - startIdx + 1) * rowHeight - 3;
+  const { top, bottom } = chipVerticalBounds(startIdx, endIdx, rowHeight);
   const lane = laneOf.get(plan.id) ?? 0;
   const cx = lane * laneWidth + 6 + (laneWidth - 12) / 2;
-  return { cx, top, bottom: top + height };
+  return { cx, top, bottom };
 }
 
 function LinkLayer({
@@ -790,6 +850,8 @@ function LinkLayer({
   laneWidth,
   width,
   height,
+  highlightSourceIds,
+  dimOthers,
 }: {
   plans: Plan[];
   laneOf: Map<string, number>;
@@ -798,43 +860,66 @@ function LinkLayer({
   laneWidth: number;
   width: number;
   height: number;
+  // チェーン強調対象 (先行 plan の id 集合)。null ならホバー強調なし
+  highlightSourceIds: Set<string> | null;
+  // ホバー中、チェーン外のリンクを減光するか
+  dimOthers: boolean;
 }) {
   const byId = new Map(plans.map((p) => [p.id, p]));
-  const links: { x1: number; y1: number; x2: number; y2: number }[] = [];
+  const links: { x1: number; y1: number; x2: number; y2: number; sourceId: string }[] = [];
   for (const p of plans) {
     if (!p.successorPlanId) continue;
     const succ = byId.get(p.successorPlanId);
     if (!succ) continue; // 別制作物 or 未ロード
     const a = chipCenters(p, days, rowHeight, laneWidth, laneOf);
     const b = chipCenters(succ, days, rowHeight, laneWidth, laneOf);
-    links.push({ x1: a.cx, y1: a.bottom, x2: b.cx, y2: b.top });
+    links.push({ x1: a.cx, y1: a.bottom, x2: b.cx, y2: b.top, sourceId: p.id });
   }
   if (links.length === 0) return null;
   return (
     <svg
-      className="pointer-events-none absolute inset-0 z-0"
+      className="pointer-events-none absolute inset-0 z-20"
       width={width}
       height={height}
       style={{ overflow: 'visible' }}
       aria-hidden
     >
       <defs>
-        <marker id="succ-arrow" markerWidth="6" markerHeight="6" refX="4.5" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" className="fill-sky-400" />
+        <marker id="succ-arrow" markerWidth="7" markerHeight="7" refX="5" refY="3.5" orient="auto">
+          <path d="M0,0 L7,3.5 L0,7 Z" className="fill-sky-500" />
+        </marker>
+        <marker
+          id="succ-arrow-hl"
+          markerWidth="8"
+          markerHeight="8"
+          refX="5.5"
+          refY="4"
+          orient="auto"
+        >
+          <path d="M0,0 L8,4 L0,8 Z" className="fill-sky-600" />
         </marker>
       </defs>
       {links.map((l, i) => {
         const midY = (l.y1 + l.y2) / 2;
         const d = `M ${l.x1} ${l.y1} C ${l.x1} ${midY}, ${l.x2} ${midY}, ${l.x2} ${l.y2}`;
+        const highlighted = highlightSourceIds?.has(l.sourceId) ?? false;
+        const dimmed = dimOthers && !highlighted;
         return (
-          <path
-            key={i}
-            d={d}
-            strokeWidth={1.5}
-            strokeDasharray="3 3"
-            markerEnd="url(#succ-arrow)"
-            className="fill-none stroke-sky-400"
-          />
+          <g key={i} className={cn(dimmed && 'opacity-30')}>
+            {/* 白い裏地 (halo): 背景色差に負けず線を浮き立たせる */}
+            <path
+              d={d}
+              strokeWidth={highlighted ? 5 : 4}
+              className="fill-none stroke-background opacity-80"
+            />
+            <path
+              d={d}
+              strokeWidth={highlighted ? 2.5 : 2}
+              strokeDasharray="4 3"
+              markerEnd={highlighted ? 'url(#succ-arrow-hl)' : 'url(#succ-arrow)'}
+              className={cn('fill-none', highlighted ? 'stroke-sky-600' : 'stroke-sky-500')}
+            />
+          </g>
         );
       })}
     </svg>
@@ -854,9 +939,13 @@ function BallChip({
   today,
   drag,
   linkTarget,
+  hasSuccessor,
+  hasPredecessor,
+  inChain,
   copying,
   onActivate,
   onCopy,
+  onHoverChange,
   onPointerDownBall,
   onPointerDownConnector,
 }: {
@@ -868,9 +957,13 @@ function BallChip({
   today: Date;
   drag: DragState | null;
   linkTarget: boolean;
+  hasSuccessor: boolean;
+  hasPredecessor: boolean;
+  inChain: boolean;
   copying: boolean;
   onActivate: () => void;
   onCopy: () => void;
+  onHoverChange: (planId: string | null) => void;
   onPointerDownBall: (e: React.PointerEvent, mode: DragState['mode']) => void;
   onPointerDownConnector: (e: React.PointerEvent) => void;
 }) {
@@ -890,8 +983,7 @@ function BallChip({
     }
   }
 
-  const top = startIdx * rowHeight + 1;
-  const height = (endIdx - startIdx + 1) * rowHeight - 3;
+  const { top, height } = chipVerticalBounds(startIdx, endIdx, rowHeight);
   const tier = ballTier(height);
   const style = CATEGORY_STYLE[plan.category];
   const completed = plan.status === 'completed';
@@ -909,6 +1001,15 @@ function BallChip({
         ? 'border-slate-300 bg-slate-100 text-slate-600'
         : cn(style.bg, style.border, style.text);
 
+  // リング表現は排他にして色の衝突を避ける (紐づけ対象 > チェーン > 進行中)
+  const ringClass = linkTarget
+    ? 'ring-2 ring-primary ring-offset-1'
+    : inChain
+      ? 'ring-2 ring-sky-500'
+      : active && !completed
+        ? 'ring-2 ring-primary/40'
+        : undefined;
+
   return (
     <div
       role="button"
@@ -921,11 +1022,12 @@ function BallChip({
       }}
       data-plan-id={plan.id}
       onPointerDown={(e) => onPointerDownBall(e, 'move')}
+      onPointerEnter={() => onHoverChange(plan.id)}
+      onPointerLeave={() => onHoverChange(null)}
       className={cn(
         'group absolute overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm',
         cardClass,
-        active && !completed && 'ring-2 ring-primary/40',
-        linkTarget && 'ring-2 ring-primary ring-offset-1',
+        ringClass,
         drag?.mode === 'move' && 'opacity-70',
         editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
       )}
@@ -960,6 +1062,14 @@ function BallChip({
       >
         {copying ? <Loader2 className="size-3 animate-spin" /> : <Copy className="size-3" />}
       </button>
+
+      {/* 先行コネクトの受け口 (上端中央): 先行予定がある場合に常時表示する線の終点アンカー */}
+      {hasPredecessor && (
+        <div
+          className="pointer-events-none absolute left-1/2 top-0 z-10 size-2.5 -translate-x-1/2 rounded-full border-2 border-background bg-sky-500 shadow"
+          aria-hidden
+        />
+      )}
 
       <div className="flex items-center justify-between gap-1">
         <span className="line-clamp-1 font-medium">{plan.title}</span>
@@ -1003,12 +1113,24 @@ function BallChip({
         />
       )}
 
-      {/* 後続紐づけコネクタ (下端中央): ドラッグして別カードに重ねると後続に設定 */}
+      {/* 後続コネクトの起点 (下端中央): 後続予定がある場合に常時表示する線の起点アンカー。
+          編集可・mini以外ではホバー時に作成/張り替えハンドルへ譲る。 */}
+      {hasSuccessor && (
+        <div
+          className={cn(
+            'pointer-events-none absolute bottom-0 left-1/2 z-10 size-2.5 -translate-x-1/2 rounded-full border-2 border-background bg-sky-500 shadow',
+            editable && tier !== 'mini' && 'transition-opacity group-hover:opacity-0',
+          )}
+          aria-hidden
+        />
+      )}
+
+      {/* 後続紐づけハンドル (下端中央): ドラッグして別カードに重ねると後続に設定/張り替え */}
       {editable && tier !== 'mini' && (
         <div
           onPointerDown={onPointerDownConnector}
-          className="absolute bottom-0 left-1/2 z-10 size-3 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background bg-sky-500 opacity-0 shadow transition-opacity group-hover:opacity-100"
-          title="ドラッグして後続タスクに紐づけ"
+          className="absolute bottom-0 left-1/2 z-20 size-3 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background bg-sky-500 opacity-0 shadow transition-opacity group-hover:opacity-100"
+          title={hasSuccessor ? 'ドラッグして後続予定を張り替え' : 'ドラッグして後続予定に紐づけ'}
           aria-hidden
         />
       )}

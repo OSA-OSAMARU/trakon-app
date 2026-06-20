@@ -13,7 +13,7 @@ export type ShareViewDTO = {
     /** null = 無期限 */
     expiresAt: string | null;
   };
-  project: { id: string; name: string };
+  project: { id: string; name: string; startDate: string; endDate: string };
   items: Array<{ id: string; name: string }>;
   plans: PlanDTO[];
 };
@@ -96,7 +96,13 @@ export async function viewShare(input: {
       scopeTargetId: share.scopeTargetId,
       expiresAt: share.expiresAt?.toISOString() ?? null,
     },
-    project: { id: project.id, name: project.name },
+    project: {
+      id: project.id,
+      name: project.name,
+      // カレンダー日付軸の生成に使用 (YYYY-MM-DD)
+      startDate: project.startDate.toISOString().slice(0, 10),
+      endDate: project.endDate.toISOString().slice(0, 10),
+    },
     items: items.map((it) => ({ id: it.id, name: it.name })),
     plans,
   };

@@ -38,7 +38,7 @@ export type ShareView = {
     /** null = 無期限 */
     expiresAt: string | null;
   };
-  project: { id: string; name: string };
+  project: { id: string; name: string; startDate: string; endDate: string };
   items: Array<{ id: string; name: string }>;
   plans: Plan[];
 };
@@ -58,18 +58,9 @@ export const shareLinksApi = {
 };
 
 export const shareAccessApi = {
+  // 共有画面は閲覧専用 (#59)。操作系 (toss/complete) は FE からは呼び出さない。
   view: (token: string) =>
     apiRequest<ShareView>(`/share/${encodeURIComponent(token)}`),
-  toss: (token: string, planId: string) =>
-    apiRequest<{ plan: Plan }>(
-      `/share/${encodeURIComponent(token)}/plans/${planId}/toss`,
-      { method: 'POST' },
-    ),
-  complete: (token: string, planId: string) =>
-    apiRequest<{ plan: Plan; autoTossed: Plan | null }>(
-      `/share/${encodeURIComponent(token)}/plans/${planId}/complete`,
-      { method: 'POST' },
-    ),
 };
 
 export const shareLinksQueryKey = {

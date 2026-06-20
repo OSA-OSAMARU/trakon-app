@@ -194,7 +194,7 @@ function Inner({ projectId }: { projectId: string }) {
               }}
               disabled={revokeMut.isPending}
             >
-              失効する
+              失効
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -308,7 +308,7 @@ function CreateDialog({
             }
           >
             {createMut.isPending && <Loader2 className="size-4 animate-spin" />}
-            発行する
+            発行
           </Button>
         </DialogFooter>
       </DialogContent>
