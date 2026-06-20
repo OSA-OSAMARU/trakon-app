@@ -5,6 +5,7 @@ import {
   requireProjectDirector,
   requireProjectMember,
 } from '../../middleware/projectAuth.js';
+import { resolveRequestOrigin } from '../../lib/requestOrigin.js';
 import { createShareLinkBodySchema } from '../../schemas/shareLinks.js';
 import {
   createShareLink,
@@ -35,6 +36,7 @@ export const shareLinksRoute = new Hono()
         projectId: project.projectId,
         issuerMemberId: project.memberId,
         body,
+        baseUrl: resolveRequestOrigin(c),
       });
       return c.json({ data: result }, 201);
     },
