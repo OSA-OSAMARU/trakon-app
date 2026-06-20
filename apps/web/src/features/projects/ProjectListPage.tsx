@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, ArrowRight, AlertCircle } from 'lucide-react';
+import { Plus, ArrowRight, AlertCircle, Pencil } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -66,9 +66,16 @@ export function ProjectListPage() {
                 <CardHeader>
                   <div className="flex items-start justify-between gap-2">
                     <CardTitle className="text-base">{p.name}</CardTitle>
-                    <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
-                      {p.status === 'active' ? '進行中' : '終了'}
-                    </Badge>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
+                        {p.status === 'active' ? '進行中' : '終了'}
+                      </Badge>
+                      <Button variant="ghost" size="icon" className="size-7" asChild>
+                        <Link to={`/projects/${p.id}/edit`} aria-label="編集">
+                          <Pencil className="size-4" />
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
@@ -82,11 +89,8 @@ export function ProjectListPage() {
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" asChild>
-                      <Link to={`/projects/${p.id}/edit`}>編集</Link>
-                    </Button>
-                    <Button variant="ghost" size="sm" asChild>
                       <Link to={`/projects/${p.id}`}>
-                        詳細
+                        スケジュール
                         <ArrowRight className="size-3.5" />
                       </Link>
                     </Button>

@@ -96,13 +96,17 @@ export function SidebarLayout() {
                 <span className="truncate">{p.name}</span>
               </NavLink>
             ))}
-            <NavLink
-              to="/projects"
-              className="mt-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              すべて見る →
-            </NavLink>
           </nav>
+        </div>
+
+        {/* 「全て」導線はスクロール領域の外に固定し、プロジェクトが増えても隠れないようにする (#54) */}
+        <div className="shrink-0 px-3 pb-2">
+          <NavLink
+            to="/projects"
+            className="block px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            全て →
+          </NavLink>
         </div>
 
         {/* ユーザー情報フッター: 全ページ共通で常時表示 (読込中は Skeleton) */}
