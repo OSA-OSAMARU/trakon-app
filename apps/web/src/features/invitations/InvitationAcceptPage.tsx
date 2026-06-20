@@ -132,7 +132,7 @@ export function InvitationAcceptPage() {
                   ) : (
                     <CheckCircle2 className="size-4" />
                   )}
-                  招待を承諾する
+                  承諾
                 </Button>
               ) : (
                 <Button
@@ -144,7 +144,7 @@ export function InvitationAcceptPage() {
                   }
                 >
                   <LogIn className="size-4" />
-                  ログインして承諾する
+                  ログインして承諾
                 </Button>
               )}
             </CardContent>

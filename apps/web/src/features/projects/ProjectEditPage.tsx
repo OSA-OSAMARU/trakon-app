@@ -314,7 +314,7 @@ function ItemsSection({
               }}
               disabled={deleteMut.isPending}
             >
-              削除する
+              削除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

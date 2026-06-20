@@ -290,7 +290,7 @@ function EmailSent({
           disabled={cooldown > 0 || resending || !email}
           onClick={resend}
         >
-          {cooldown > 0 ? `再送する (${cooldown}s)` : '再送する'}
+          {cooldown > 0 ? `再送 (${cooldown}s)` : '再送'}
         </Button>
         <Button
           type="button"
@@ -435,7 +435,7 @@ function CreateAccountForm() {
           {serverError && <p className="text-sm text-destructive">{serverError}</p>}
           <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
-            登録を完了する
+            登録
           </Button>
         </form>
       </CardContent>

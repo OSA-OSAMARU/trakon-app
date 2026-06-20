@@ -568,7 +568,7 @@ function PlanCard({
           ) : (
             <CheckCircle2 className="size-3" />
           )}
-          完了する
+          完了
         </Button>
       </div>
     </div>
