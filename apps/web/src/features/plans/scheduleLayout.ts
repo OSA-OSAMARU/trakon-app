@@ -15,6 +15,26 @@ export const ROW_HEIGHT_DEFAULT = 40;
 export const ROW_HEIGHT_STEP = 5;
 
 /**
+ * カードの上下インセット px。隣接日のカード間に `CARD_INSET_Y*2` の隙間を生み、
+ * 後続コネクト線と矢印を描く余白を確保する (#64)。
+ */
+export const CARD_INSET_Y = 4;
+
+/**
+ * 行インデックス範囲からカードの縦位置 (top/height/bottom) を求める共通関数。
+ * BallChip の配置と LinkLayer の端点計算で同じ式を使い、線とカードのズレを防ぐ。
+ */
+export function chipVerticalBounds(
+  startIdx: number,
+  endIdx: number,
+  rowHeight: number,
+): { top: number; height: number; bottom: number } {
+  const top = startIdx * rowHeight + CARD_INSET_Y;
+  const height = (endIdx - startIdx + 1) * rowHeight - CARD_INSET_Y * 2;
+  return { top, height, bottom: top + height };
+}
+
+/**
  * 縦方向のズーム量 (rowHeight) から横方向の倍率を導出する。
  * 拡大バー1本で縦横を連動させるための共通係数 (既定40で1.0 / 20で0.5 / 80で2.0)。
  */
