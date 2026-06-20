@@ -99,10 +99,18 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
         title={project.name}
         description="プロジェクト設定"
         actions={
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeft className="size-4" />
-            一覧に戻る
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" asChild>
+              <Link to={`/projects/${projectId}`}>
+                <CalendarDays className="size-4" />
+                スケジュール
+              </Link>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onBack}>
+              <ArrowLeft className="size-4" />
+              プロジェクト一覧に戻る
+            </Button>
+          </div>
         }
       />
       <PageContainer width="md">
@@ -398,7 +406,7 @@ function NotFound() {
       <AlertCircle className="size-8 text-muted-foreground" />
       <p className="text-sm text-muted-foreground">プロジェクトが見つかりませんでした。</p>
       <Button asChild variant="outline" size="sm">
-        <Link to="/projects">一覧に戻る</Link>
+        <Link to="/projects">プロジェクト一覧に戻る</Link>
       </Button>
     </div>
   );
