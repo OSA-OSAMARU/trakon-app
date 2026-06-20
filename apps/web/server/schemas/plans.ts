@@ -47,6 +47,8 @@ export const updatePlanBodySchema = z
     dueDate: isoDate.nullable().optional(),
     fromMemberId: uuid.optional(),
     toMemberId: uuid.optional(),
+    // 別制作物への移動 (#52)。同一プロジェクト内の item への付け替え。
+    itemId: uuid.optional(),
     successorPlanId: uuid.nullable().optional(),
     memo: z.string().max(2000).nullable().optional(),
   })

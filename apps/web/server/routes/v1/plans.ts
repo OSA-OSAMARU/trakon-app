@@ -16,6 +16,7 @@ import {
 import {
   createPlan,
   deletePlan,
+  duplicatePlan,
   getPlan,
   listPlans,
   setPlanSuccessor,
@@ -27,11 +28,11 @@ import { completePlan, tossPlan, undoTossPlan } from '../../services/ballActions
  * `/projects/:projectId/items/:itemId/plans` 配下のエンドポイント。
  * 親 projectsRoute で requireAuth + attachCurrentUserId が適用済み。
  *
- * 全 8 本:
  *  - GET    /                       一覧
  *  - POST   /                       作成
+ *  - POST   /:planId/copy           複製 (#51)
  *  - GET    /:planId                詳細 (events 含む)
- *  - PATCH  /:planId                更新
+ *  - PATCH  /:planId                更新 (itemId 指定で別制作物へ移動 #52)
  *  - DELETE /:planId                削除 (ball_events なしのみ)
  *  - PATCH  /:planId/successor      後続紐付け
  *  - POST   /:planId/toss           TOSS 実行
@@ -61,6 +62,14 @@ export const plansRoute = new Hono()
     const project = c.get('project');
     const body = createPlanBodySchema.parse(await c.req.json());
     const plan = await createPlan({ itemId, projectId: project.projectId, body });
+    return c.json({ data: plan }, 201);
+  })
+
+  .post('/:planId/copy', async (c) => {
+    const itemId = c.get('itemId');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const plan = await duplicatePlan({ itemId, planId });
     return c.json({ data: plan }, 201);
   })
 

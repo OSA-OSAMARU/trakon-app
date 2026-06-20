@@ -242,6 +242,23 @@ async function assertMembersBelongToProject(input: {
   }
 }
 
+async function assertItemInProject(input: {
+  projectId: string;
+  itemId: string;
+}): Promise<void> {
+  const item = await prisma.projectItem.findFirst({
+    where: { id: input.itemId, projectId: input.projectId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!item) {
+    throw new ApiException(
+      'INVALID_ITEM',
+      422,
+      'itemId does not belong to this project.',
+    );
+  }
+}
+
 async function assertSuccessorAvailable(input: {
   successorPlanId: string;
   itemId: string;
@@ -311,6 +328,35 @@ export async function createPlan(input: {
   return toPlanDTO(row, []);
 }
 
+/**
+ * 既存予定を複製する (#51)。同一制作物・同一期間・同内容で ready 状態の新規予定を作る。
+ * successorPlanId と ballEvents (履歴) はコピーしない (新規予定は未TOSS)。
+ */
+export async function duplicatePlan(input: {
+  itemId: string;
+  planId: string;
+}): Promise<PlanDTO> {
+  const source = await prisma.plan.findFirst({
+    where: { id: input.planId, itemId: input.itemId, deletedAt: null },
+  });
+  if (!source) throw new ApiException('NOT_FOUND', 404, 'Plan not found.');
+
+  const row = await prisma.plan.create({
+    data: {
+      itemId: source.itemId,
+      title: source.title,
+      category: source.category,
+      scheduledDate: source.scheduledDate,
+      dueDate: source.dueDate,
+      fromMemberId: source.fromMemberId,
+      toMemberId: source.toMemberId,
+      memo: source.memo,
+    },
+    include: PLAN_INCLUDE,
+  });
+  return toPlanDTO(row, []);
+}
+
 export async function updatePlan(input: {
   itemId: string;
   planId: string;
@@ -330,6 +376,24 @@ export async function updatePlan(input: {
 
   // PlanUncheckedUpdateInput を使うことでスカラ FK (fromMemberId 等) を直接指定できる。
   const data: Prisma.PlanUncheckedUpdateInput = {};
+
+  // 別制作物への移動 (#52)。移動すると同一item前提の successor 紐付けが壊れるため、
+  // 自分の successor と、自分を指す先行予定の紐付けを自動解除する。
+  const movingItem =
+    input.body.itemId !== undefined && input.body.itemId !== existing.itemId;
+  if (movingItem) {
+    await assertItemInProject({
+      projectId: input.projectId,
+      itemId: input.body.itemId!,
+    });
+    data.itemId = input.body.itemId!;
+    data.successorPlanId = null;
+    await prisma.plan.updateMany({
+      where: { successorPlanId: input.planId },
+      data: { successorPlanId: null },
+    });
+  }
+
   if (input.body.title !== undefined) data.title = input.body.title;
   if (input.body.category !== undefined) data.category = input.body.category;
   if (input.body.scheduledDate !== undefined)
@@ -372,7 +436,8 @@ export async function updatePlan(input: {
   }
 
   // 後続の予定 (setPlanSuccessor と同じ検証ロジック)。
-  if (input.body.successorPlanId !== undefined) {
+  // 別制作物へ移動する場合はクロスitem参照を防ぐため successor 指定を無視する (上で null 化済み)。
+  if (!movingItem && input.body.successorPlanId !== undefined) {
     if (input.body.successorPlanId === null) {
       data.successorPlanId = null;
     } else {

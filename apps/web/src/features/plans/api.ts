@@ -87,6 +87,8 @@ export type UpdatePlanInput = Partial<{
   dueDate: string | null;
   fromMemberId: string;
   toMemberId: string;
+  // 別制作物へ移動 (#52)
+  itemId: string;
   successorPlanId: string | null;
   memo: string | null;
 }>;
@@ -119,6 +121,9 @@ export const plansApi = {
     apiRequest<PlanDetail>(`${basePath(projectId, itemId)}/${planId}`),
   create: (projectId: string, itemId: string, body: CreatePlanInput) =>
     apiRequest<Plan>(`${basePath(projectId, itemId)}`, { method: 'POST', body }),
+  /** 予定を複製する (#51)。同一制作物・同一期間・同内容の ready 状態の新規予定。 */
+  copy: (projectId: string, itemId: string, planId: string) =>
+    apiRequest<Plan>(`${basePath(projectId, itemId)}/${planId}/copy`, { method: 'POST', body: {} }),
   update: (projectId: string, itemId: string, planId: string, body: UpdatePlanInput) =>
     apiRequest<Plan>(`${basePath(projectId, itemId)}/${planId}`, { method: 'PATCH', body }),
   remove: (projectId: string, itemId: string, planId: string) =>
