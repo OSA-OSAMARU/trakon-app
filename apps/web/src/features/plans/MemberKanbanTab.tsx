@@ -1,8 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { ArrowRight, CheckCircle2, Loader2, Undo2 } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Undo2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -199,6 +206,28 @@ function MemberBoard({
     return map;
   }, [plans]);
 
+  /**
+   * 完了済み予定を「完了者 (= ballHolder, 完了時の to_member)」ごとに集約 (#63)。
+   * 各メンバー列の下部に履歴として表示する。完了日時の新しい順に並べる。
+   */
+  const completedByHolder = useMemo(() => {
+    const map = new Map<string, Plan[]>();
+    for (const p of plans) {
+      if (p.status !== 'completed' || !p.ballHolder) continue;
+      const arr = map.get(p.ballHolder.id) ?? [];
+      arr.push(p);
+      map.set(p.ballHolder.id, arr);
+    }
+    for (const arr of map.values()) {
+      arr.sort(
+        (a, b) =>
+          new Date(b.completedAt ?? b.updatedAt).getTime() -
+          new Date(a.completedAt ?? a.updatedAt).getTime(),
+      );
+    }
+    return map;
+  }, [plans]);
+
   const production = members.filter((m) => m.memberType === 'production');
   const clients = members.filter((m) => m.memberType === 'client');
 
@@ -227,6 +256,7 @@ function MemberBoard({
               key={m.id}
               member={m}
               plans={plansByHolder.get(m.id) ?? []}
+              completedPlans={completedByHolder.get(m.id) ?? []}
               tossing={tossMut.isPending}
               undoing={undoMut.isPending}
               completing={completeMut.isPending}
@@ -262,6 +292,7 @@ function MemberBoard({
 function MemberColumn({
   member,
   plans,
+  completedPlans,
   tossing,
   undoing,
   completing,
@@ -273,6 +304,7 @@ function MemberColumn({
 }: {
   member: ProjectMember;
   plans: Plan[];
+  completedPlans: Plan[];
   tossing: boolean;
   undoing: boolean;
   completing: boolean;
@@ -315,6 +347,105 @@ function MemberColumn({
           ))
         )}
       </div>
+      {completedPlans.length > 0 && (
+        <CompletedHistory
+          plans={completedPlans}
+          itemNameById={itemNameById}
+          onOpenDetail={onOpenDetail}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * 完了済み予定の履歴セクション (#63)。
+ * メンバー列の下部に折りたたみ式で表示し、既定は閉じた状態。
+ */
+function CompletedHistory({
+  plans,
+  itemNameById,
+  onOpenDetail,
+}: {
+  plans: Plan[];
+  itemNameById: Map<string, string>;
+  onOpenDetail: (planId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1 rounded px-1 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent/30"
+      >
+        {open ? (
+          <ChevronDown className="size-3" />
+        ) : (
+          <ChevronRight className="size-3" />
+        )}
+        履歴 {plans.length} 件
+      </button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-2">
+          {plans.map((p) => (
+            <CompletedPlanCard
+              key={p.id}
+              plan={p}
+              itemName={itemNameById.get(p.itemId)}
+              onOpenDetail={onOpenDetail}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 完了済み予定の読み取り専用カード (アクションなし、クリックで詳細)。 */
+function CompletedPlanCard({
+  plan,
+  itemName,
+  onOpenDetail,
+}: {
+  plan: Plan;
+  itemName?: string;
+  onOpenDetail: (planId: string) => void;
+}) {
+  const cat = CATEGORY_STYLE[plan.category];
+  const completedOn = plan.completedAt ?? plan.updatedAt;
+  return (
+    <div className="rounded-md border border-slate-200 bg-muted/40 opacity-80">
+      <div className="flex items-center gap-1 rounded-t-md bg-slate-100 px-2 py-1 text-[10px] text-slate-600">
+        <span>{cat.label}</span>
+        <Badge
+          variant="secondary"
+          className="ml-auto gap-0.5 px-1 py-0 text-[10px] text-slate-600"
+        >
+          <CheckCircle2 className="size-2.5" />
+          完了
+        </Badge>
+      </div>
+      <button
+        type="button"
+        onClick={() => onOpenDetail(plan.id)}
+        className="block w-full px-2 py-1.5 text-left text-xs hover:bg-accent/30"
+      >
+        <p className="line-clamp-2 font-medium text-slate-600">{plan.title}</p>
+        {itemName && (
+          <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{itemName}</p>
+        )}
+        <p className="mt-0.5 text-[10px] text-muted-foreground">
+          完了 {format(new Date(completedOn), 'M/d')}
+        </p>
+        {(plan.fromMember || plan.toMember) && (
+          <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="truncate">{plan.fromMember?.name ?? '—'}</span>
+            <ArrowRight className="size-2.5 shrink-0 opacity-60" />
+            <span className="truncate">{plan.toMember?.name ?? '—'}</span>
+          </p>
+        )}
+      </button>
     </div>
   );
 }
