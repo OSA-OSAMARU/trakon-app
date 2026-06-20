@@ -58,7 +58,12 @@ export const updateProjectBodySchema = z
 export type UpdateProjectBody = z.infer<typeof updateProjectBodySchema>;
 
 export const listProjectsQuerySchema = z.object({
-  status: z.enum(['active', 'closed']).optional(),
+  // 'true' のときのみアーカイブ済みを返す。未指定/'false' は未アーカイブのみ。
+  // z.coerce.boolean() は 'false' も true になるため使わない。
+  archived: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

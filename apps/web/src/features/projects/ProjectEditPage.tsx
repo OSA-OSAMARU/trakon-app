@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays, Link2 } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays, Link2, Archive, ArchiveRestore } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -176,8 +176,111 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
           </Button>
         </CardContent>
       </Card>
+
+      {project.role === 'director' && (
+        <ArchiveCard
+          projectId={projectId}
+          name={project.name}
+          archived={project.archivedAt !== null}
+          onUnarchived={onBack}
+        />
+      )}
       </PageContainer>
     </>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// アーカイブセクション (director のみ)
+// -----------------------------------------------------------------------------
+function ArchiveCard({
+  projectId,
+  name,
+  archived,
+  onUnarchived,
+}: {
+  projectId: string;
+  name: string;
+  archived: boolean;
+  onUnarchived: () => void;
+}) {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      archived ? projectsApi.unarchive(projectId) : projectsApi.archive(projectId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: projectsQueryKey.detail(projectId) });
+      qc.invalidateQueries({ queryKey: projectsQueryKey.all });
+      qc.invalidateQueries({ queryKey: projectsQueryKey.archived });
+      toast.success(archived ? 'プロジェクトを復元しました' : 'プロジェクトをアーカイブしました');
+      setConfirming(false);
+      // アーカイブした直後は一覧に残らないため一覧へ戻す
+      if (!archived) onUnarchived();
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '操作に失敗しました'),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">アーカイブ</CardTitle>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {archived
+            ? 'このプロジェクトはアーカイブ済みです。復元すると一覧・サイドバーに再表示されます。'
+            : 'アーカイブするとプロジェクト一覧とサイドバーから非表示になります。'}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setConfirming(true)}
+          disabled={mutation.isPending}
+        >
+          {archived ? (
+            <>
+              <ArchiveRestore className="size-4" />
+              復元する
+            </>
+          ) : (
+            <>
+              <Archive className="size-4" />
+              アーカイブする
+            </>
+          )}
+        </Button>
+      </CardContent>
+
+      <AlertDialog open={confirming} onOpenChange={(o) => !o && setConfirming(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {archived ? `「${name}」を復元しますか？` : `「${name}」をアーカイブしますか？`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {archived
+                ? 'アーカイブを解除し、進行中の一覧に戻します。'
+                : 'プロジェクト一覧とサイドバーから非表示になります。アーカイブ済みタブから復元できます。'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                mutation.mutate();
+              }}
+              disabled={mutation.isPending}
+            >
+              {archived ? '復元する' : 'アーカイブする'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
   );
 }
 
