@@ -1,6 +1,12 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { syncUser as SyncUserType, completeSignup as CompleteSignupType } from './auth.js';
+import type {
+  syncUser as SyncUserType,
+  completeSignup as CompleteSignupType,
+  updateProfile as UpdateProfileType,
+  getCurrentUser as GetCurrentUserType,
+  recordLogin as RecordLoginType,
+} from './auth.js';
 
 // =============================================================================
 // Mocks
@@ -34,6 +40,8 @@ type MockAudit = {
   resourceType: string;
   resourceId: string | null;
   result: string;
+  ip?: string | null;
+  userAgent?: string | null;
 };
 
 let nextId = 1;
@@ -50,6 +58,15 @@ const userTx = {
     userStore[u.authUserId] = u;
     return u;
   }),
+  // updateProfile 用。id で対象 user を引き、指定フィールドのみ上書きする。
+  update: vi.fn(
+    async ({ where, data }: { where: { id: string }; data: Partial<MockUser> }) => {
+      const u = Object.values(userStore).find((x) => x.id === where.id);
+      if (!u) throw new Error(`mock user not found: ${where.id}`);
+      Object.assign(u, data);
+      return u;
+    },
+  ),
 };
 const oauthTx = {
   create: vi.fn(async ({ data }: { data: Omit<MockOAuth, 'id'> }) => {
@@ -78,6 +95,7 @@ const prismaMock = {
     }),
     // バッチ (配列) トランザクション用。tx 版と同一挙動。
     create: userTx.create,
+    update: userTx.update,
   },
   auditLog: { create: auditTx.create },
   // 配列形式 ($transaction([...])) とコールバック形式 ($transaction(fn)) の両対応。
@@ -94,7 +112,12 @@ const prismaMock = {
 vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
 
 const getUserByIdMock = vi.fn();
-const updateUserByIdMock = vi.fn(async () => ({ data: { user: {} }, error: null }));
+const updateUserByIdMock = vi.fn(
+  async (): Promise<{ data: { user: object | null }; error: { message: string } | null }> => ({
+    data: { user: {} },
+    error: null,
+  }),
+);
 vi.mock('../lib/supabaseAdmin.js', () => ({
   getSupabaseAdmin: () => ({
     auth: { admin: { getUserById: getUserByIdMock, updateUserById: updateUserByIdMock } },
@@ -107,9 +130,14 @@ vi.mock('../lib/supabaseAdmin.js', () => ({
 
 let syncUser: typeof SyncUserType;
 let completeSignup: typeof CompleteSignupType;
+let updateProfile: typeof UpdateProfileType;
+let getCurrentUser: typeof GetCurrentUserType;
+let recordLogin: typeof RecordLoginType;
 
 beforeAll(async () => {
-  ({ syncUser, completeSignup } = await import('./auth.js'));
+  ({ syncUser, completeSignup, updateProfile, getCurrentUser, recordLogin } = await import(
+    './auth.js'
+  ));
 });
 
 afterEach(() => {
@@ -279,5 +307,156 @@ describe('completeSignup', () => {
       code: 'ALREADY_COMPLETED',
       status: 409,
     });
+  });
+
+  it('throws 409 SAME_EMAIL_DIFFERENT_PROVIDER when the email is taken by another (OAuth) user', async () => {
+    // 別 authUserId で同一メールの既存ユーザー (例: Google 登録済み) が存在するケース。
+    userStore['auth-other'] = {
+      id: 'u-other',
+      authUserId: 'auth-other',
+      email: 'cs@example.com',
+      fullName: 'Other',
+      displayName: 'Other',
+      primaryAuthMethod: 'google',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      deletedAt: null,
+    };
+    await expect(completeSignup(input)).rejects.toMatchObject({
+      code: 'SAME_EMAIL_DIFFERENT_PROVIDER',
+      status: 409,
+      details: { primaryAuthMethod: 'google' },
+    });
+    // 衝突で弾かれたので user 行は作られない
+    expect(userStore['auth-cs']).toBeUndefined();
+  });
+
+  it('throws 500 SUPABASE_UPDATE_FAILED when Supabase password update fails', async () => {
+    updateUserByIdMock.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: 'password too weak' },
+    });
+    await expect(completeSignup(input)).rejects.toMatchObject({
+      code: 'SUPABASE_UPDATE_FAILED',
+      status: 500,
+    });
+    // Supabase 更新失敗時はトランザクションへ進まない
+    expect(userStore['auth-cs']).toBeUndefined();
+    expect(auditStore).toHaveLength(0);
+  });
+});
+
+describe('updateProfile', () => {
+  const seedUser = (overrides: Partial<MockUser> = {}) => {
+    userStore['auth-up'] = {
+      id: 'u-up',
+      authUserId: 'auth-up',
+      email: 'up@example.com',
+      fullName: '旧 氏名',
+      displayName: '旧表示名',
+      primaryAuthMethod: 'password',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      deletedAt: null,
+      ...overrides,
+    };
+  };
+
+  it('updates fullName / displayName and records an audit log', async () => {
+    seedUser();
+    const res = await updateProfile({
+      authUserId: 'auth-up',
+      fullName: '新 氏名',
+      displayName: '新表示名',
+    });
+
+    expect(res).toMatchObject({ id: 'u-up', fullName: '新 氏名', displayName: '新表示名' });
+    // パスワード未指定なので Supabase 側は呼ばれない
+    expect(updateUserByIdMock).not.toHaveBeenCalled();
+    expect(userStore['auth-up']?.fullName).toBe('新 氏名');
+    expect(auditStore).toHaveLength(1);
+    expect(auditStore[0]).toMatchObject({
+      actorUserId: 'u-up',
+      action: 'update_profile',
+      resourceId: 'u-up',
+      result: 'success',
+    });
+  });
+
+  it('updates the Supabase password when newPassword is given', async () => {
+    seedUser();
+    await updateProfile({ authUserId: 'auth-up', newPassword: 'N3w!Passw0rd456' });
+    expect(updateUserByIdMock).toHaveBeenCalledWith('auth-up', { password: 'N3w!Passw0rd456' });
+  });
+
+  it('throws 404 PROFILE_NOT_COMPLETED when the user does not exist', async () => {
+    await expect(
+      updateProfile({ authUserId: 'auth-missing', fullName: 'X' }),
+    ).rejects.toMatchObject({ code: 'PROFILE_NOT_COMPLETED', status: 404 });
+  });
+
+  it('throws 500 SUPABASE_UPDATE_FAILED when the Supabase password update fails', async () => {
+    seedUser();
+    updateUserByIdMock.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: 'rejected' },
+    });
+    await expect(
+      updateProfile({ authUserId: 'auth-up', newPassword: 'bad' }),
+    ).rejects.toMatchObject({ code: 'SUPABASE_UPDATE_FAILED', status: 500 });
+    // 更新は走らず audit も書かれない
+    expect(auditStore).toHaveLength(0);
+  });
+});
+
+describe('getCurrentUser', () => {
+  it('returns the DTO when the user exists', async () => {
+    userStore['auth-gc'] = {
+      id: 'u-gc',
+      authUserId: 'auth-gc',
+      email: 'gc@example.com',
+      fullName: 'GC',
+      displayName: 'GC',
+      primaryAuthMethod: 'google',
+      createdAt: new Date('2026-02-02T00:00:00Z'),
+      deletedAt: null,
+    };
+    const res = await getCurrentUser('auth-gc');
+    expect(res).toMatchObject({
+      id: 'u-gc',
+      email: 'gc@example.com',
+      primaryAuthMethod: 'google',
+      createdAt: '2026-02-02T00:00:00.000Z',
+    });
+  });
+
+  it('returns null when the user does not exist', async () => {
+    expect(await getCurrentUser('auth-none')).toBeNull();
+  });
+});
+
+describe('recordLogin', () => {
+  it('writes a login audit log with ip / userAgent', async () => {
+    await recordLogin({ userId: 'u-1', ip: '203.0.113.7', userAgent: 'jest-UA' });
+    expect(auditStore).toHaveLength(1);
+    expect(auditStore[0]).toMatchObject({
+      actorUserId: 'u-1',
+      action: 'login',
+      resourceType: 'user',
+      resourceId: 'u-1',
+      result: 'success',
+      ip: '203.0.113.7',
+      userAgent: 'jest-UA',
+    });
+  });
+
+  it('defaults ip / userAgent to null when omitted', async () => {
+    await recordLogin({ userId: 'u-2' });
+    expect(auditStore[0]).toMatchObject({ ip: null, userAgent: null });
+  });
+
+  it('swallows write errors (best-effort, non-fatal)', async () => {
+    auditTx.create.mockRejectedValueOnce(new Error('db down'));
+    // 例外を投げずに解決すること
+    await expect(recordLogin({ userId: 'u-3' })).resolves.toBeUndefined();
+    expect(auditStore).toHaveLength(0);
   });
 });

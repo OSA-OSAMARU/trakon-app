@@ -24,10 +24,10 @@ export default defineConfig({
       // 閾値は「現状値より少し低い固定の下限」とし、目標 80% へ手動で段階的に引き上げる。
       // autoUpdate は使わない: 実測ぴったりを下限にすると CI と僅かな環境差で落ちるため。
       thresholds: {
-        // BE ユニット（目標 80%）— 現状 ~26.5% / branches ~69%
-        'server/**': { lines: 24, functions: 35, branches: 65, statements: 24 },
-        // FE（ユニット + MSW 統合の合算、目標 80%）— 現状 ~6.8% / branches ~52%
-        'src/**': { lines: 6, functions: 40, branches: 45, statements: 6 },
+        // BE ユニット（目標 80%）— 現状 lines ~82.8% / functions ~93% / branches ~91%
+        'server/**': { lines: 80, functions: 88, branches: 85, statements: 80 },
+        // FE（ユニット + MSW 統合の合算、目標 80%）— 現状 lines ~94.5% / functions ~86% / branches ~84%
+        'src/**': { lines: 88, functions: 80, branches: 78, statements: 88 },
       },
     },
   },
