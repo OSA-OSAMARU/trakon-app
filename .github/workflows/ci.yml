@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build:
-    name: lint / type-check / test
+    name: lint / type-check / unit + coverage
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -44,5 +44,105 @@ jobs:
       - name: Type check
         run: pnpm type-check
 
-      - name: Test
-        run: pnpm test
+      - name: Unit tests with coverage
+        run: pnpm test:coverage
+
+      - name: Coverage summary
+        id: coverage
+        run: node scripts/coverage-summary.mjs
+
+      # --- カバレッジバッジ更新 (main への push 時のみ) ---
+      # 事前準備: Gist scope 付き PAT を Secret `GIST_TOKEN` に、バッジ用 Gist の ID を
+      # Variable `COVERAGE_GIST_ID` に設定する。未設定でも continue-on-error で CI は止めない。
+      - name: Badge — backend coverage
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ${{ vars.COVERAGE_GIST_ID }}
+          filename: trakon-backend-coverage.json
+          label: backend coverage
+          message: ${{ steps.coverage.outputs.be_pct }}%
+          valColorRange: ${{ steps.coverage.outputs.be_pct }}
+          minColorRange: 50
+          maxColorRange: 90
+
+      - name: Badge — frontend coverage
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ${{ vars.COVERAGE_GIST_ID }}
+          filename: trakon-frontend-coverage.json
+          label: frontend coverage
+          message: ${{ steps.coverage.outputs.fe_pct }}%
+          valColorRange: ${{ steps.coverage.outputs.fe_pct }}
+          minColorRange: 50
+          maxColorRange: 90
+
+      - name: Badge — shared coverage
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ${{ vars.COVERAGE_GIST_ID }}
+          filename: trakon-shared-coverage.json
+          label: shared coverage
+          message: ${{ steps.coverage.outputs.shared_pct }}%
+          valColorRange: ${{ steps.coverage.outputs.shared_pct }}
+          minColorRange: 50
+          maxColorRange: 90
+
+  integration:
+    name: backend integration (real DB)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trakon_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/trakon_test
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/trakon_test
+      # requireAuth() が要求する env (統合テストは JWKS をローカル鍵に差し替えるため実接続しない)
+      SUPABASE_URL: http://127.0.0.1:54321
+      SUPABASE_SERVICE_ROLE_KEY: test-service-role-key-1234567890
+      SUPABASE_JWT_AUD: authenticated
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.19.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Apply migrations to test DB
+        run: pnpm --filter @trakon/db exec prisma migrate deploy
+
+      - name: Integration tests
+        run: pnpm --filter @trakon/web test:integration

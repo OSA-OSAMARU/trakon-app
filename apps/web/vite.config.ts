@@ -21,9 +21,5 @@ export default defineConfig({
       },
     },
   },
-  test: {
-    environment: 'jsdom',
-    globals: true,
-    setupFiles: ['./src/test/setup.ts'],
-  },
+  // テスト設定は vitest.config.ts に委譲（projects 分割 + カバレッジ）。
 });
