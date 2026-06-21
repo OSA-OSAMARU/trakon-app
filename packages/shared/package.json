@@ -15,12 +15,14 @@
   "scripts": {
     "lint": "echo '(shared) no lint configured yet'",
     "type-check": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.5.4",
     "vitest": "^2.1.4"
   }

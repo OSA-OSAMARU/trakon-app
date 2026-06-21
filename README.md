@@ -4,6 +4,13 @@
 
 進行を整え、前に進めるためのプロダクト。制作プロジェクトの「ボール（責任の所在）」を可視化し、停滞を検知して次の一手を判断できる状態をつくる。
 
+[![CI](https://github.com/OSA-OSAMARU/trakon-app/actions/workflows/ci.yml/badge.svg)](https://github.com/OSA-OSAMARU/trakon-app/actions/workflows/ci.yml)
+![backend coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/GIST_USER/GIST_ID/raw/trakon-backend-coverage.json)
+![frontend coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/GIST_USER/GIST_ID/raw/trakon-frontend-coverage.json)
+![shared coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/GIST_USER/GIST_ID/raw/trakon-shared-coverage.json)
+
+> カバレッジバッジは初回セットアップが必要です（[テスト](#テスト) 参照）。`GIST_USER` / `GIST_ID` を実際の Gist に置き換えてください。
+
 ---
 
 ## ステータス
@@ -183,6 +190,62 @@ pnpm dev
 - ローカル開発 DB：[docs/design/06-infrastructure.md](docs/design/06-infrastructure.md)（§6.3.4、Supabase CLI でフルローカル）
 - 環境変数：[docs/design/06-infrastructure.md](docs/design/06-infrastructure.md)（§6.5.3 / §6.7）
 - マイグレーション運用：[docs/design/06-infrastructure.md](docs/design/06-infrastructure.md)（§6.9）
+
+---
+
+## テスト
+
+テストは Vitest で、3 つのプロジェクトに分割している（`apps/web/vitest.workspace.ts`）。
+
+| 種別 | プロジェクト | 環境 | 対象 |
+|---|---|---|---|
+| FE ユニット / 統合 | `web-client` | jsdom + MSW | `apps/web/src/**/*.test.{ts,tsx}` |
+| BE ユニット | `web-server-unit` | node（Prisma モック） | `apps/web/server/**/*.test.ts` |
+| BE 統合 | `web-server-integration` | node（実テスト DB） | `apps/web/server/**/*.integration.test.ts` |
+| 共有ドメイン | `@trakon/shared` | node | `packages/shared/src/**/*.test.ts` |
+
+### コマンド
+
+| コマンド | 内容 |
+|---|---|
+| `pnpm test` | 全 workspace のユニット + FE 統合（DB 不要） |
+| `pnpm test:coverage` | カバレッジ付きで実行（`coverage/coverage-summary.json` 生成） |
+| `pnpm test:integration` | BE 統合テスト（**実テスト DB が必要**） |
+| `node scripts/coverage-summary.mjs` | BE / FE / shared の層別カバレッジを表示 |
+
+> 単体テストの目標は **カバレッジ 80%**。閾値は各 `vitest.config.ts` の `coverage.thresholds` に固定の下限として保持し（現状値より少し低めに設定して環境差での誤検知を防ぐ）、退行を検知する。目標 80% へはテスト追加に合わせて段階的に手動で引き上げる。
+
+### BE 統合テストの方針とローカル実行
+
+ルートを `app.request()` でミドルウェアチェーン（認証 → 認可 → service → Prisma）ごと実行し、基本的な正常系と異常系（401 / 404 集約 / 422 / 409）を網羅する。
+
+- 認証は Supabase のリモート JWKS をテスト用ローカル鍵に差し替え（`apps/web/server/test/auth.ts`）、`jwtVerify`・issuer / audience 検証は本物のまま任意ユーザーの JWT を発行する。
+- DB は **使い捨てのテスト DB** を前提に、各テスト前に全テーブルを TRUNCATE する（`apps/web/server/test/integration.setup.ts`）。開発 DB を指さないこと。
+
+```bash
+# 例: Supabase ローカルとは別の test DB を用意して実行
+createdb -h 127.0.0.1 -p 54322 -U postgres trakon_test   # 任意の方法で作成
+export DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/trakon_test
+export DIRECT_URL=$DATABASE_URL
+pnpm --filter @trakon/db exec prisma migrate deploy        # スキーマ適用
+pnpm test:integration
+```
+
+CI では `postgres:15` サービスコンテナ上で同等に実行する（`.github/workflows/ci.yml` の `integration` ジョブ）。
+
+### FE 統合テストの方針
+
+Playwright による実ブラウザ E2E は将来 Phase へ先送りし、当面は **jsdom + Testing Library + MSW** によるコンポーネント統合で主要ページ / モーダルのユーザー操作〜表示を検証する（`apps/web/src/test/render.tsx`・`handlers.ts`）。
+
+### カバレッジバッジのセットアップ
+
+非公開リポジトリのため、外部 SaaS を使わず GitHub Actions + Gist で可視化する。
+
+1. Gist scope を付与した GitHub PAT を作成し、リポジトリの Secret `GIST_TOKEN` に登録。
+2. 空の公開 Gist を 1 つ作成し、その ID をリポジトリの Variable `COVERAGE_GIST_ID` に登録。
+3. README 冒頭のバッジ URL の `GIST_USER` / `GIST_ID` を、その Gist のユーザー名 / ID に置き換え。
+
+`main` への push 時に CI が `schneegans/dynamic-badges-action` で Gist を更新し、shields.io エンドポイント経由でバッジに反映される。
 
 ---
 
