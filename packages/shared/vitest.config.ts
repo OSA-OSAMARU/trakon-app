@@ -12,12 +12,12 @@ export default defineConfig({
       reportsDirectory: './coverage',
       include: ['src/**/*.ts'],
       exclude: ['**/*.test.ts', 'src/index.ts', 'src/**/index.ts', '**/*.d.ts'],
+      // 固定の下限（現状 ~93% / branches ~92%）。環境差の余裕を持たせる。
       thresholds: {
-        autoUpdate: true,
-        lines: 93.75,
-        functions: 100,
-        branches: 92.85,
-        statements: 93.75,
+        lines: 88,
+        functions: 95,
+        branches: 85,
+        statements: 88,
       },
     },
   },

@@ -39,6 +39,11 @@ export default defineWorkspace([
       globals: true,
       include: ['server/**/*.integration.test.ts'],
       setupFiles: ['./server/test/integration.setup.ts'],
+      // 実 DB を共有するため、ファイル間並列を無効化し単一プロセスで直列実行する。
+      // (並列だと各ファイルの beforeEach TRUNCATE が衝突しデッドロック/データ消失する)
+      fileParallelism: false,
+      pool: 'forks',
+      poolOptions: { forks: { singleFork: true } },
     },
   },
 ]);

@@ -213,7 +213,7 @@ pnpm dev
 | `pnpm test:integration` | BE 統合テスト（**実テスト DB が必要**） |
 | `node scripts/coverage-summary.mjs` | BE / FE / shared の層別カバレッジを表示 |
 
-> 単体テストの目標は **カバレッジ 80%**。閾値は各 `vitest.config.ts` の `coverage.thresholds` に保持し、`autoUpdate: true` で現状値を下限として退行を検知する。目標 80% へは段階的に手動で引き上げる。
+> 単体テストの目標は **カバレッジ 80%**。閾値は各 `vitest.config.ts` の `coverage.thresholds` に固定の下限として保持し（現状値より少し低めに設定して環境差での誤検知を防ぐ）、退行を検知する。目標 80% へはテスト追加に合わせて段階的に手動で引き上げる。
 
 ### BE 統合テストの方針とローカル実行
 

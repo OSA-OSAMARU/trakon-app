@@ -21,12 +21,13 @@ export default defineConfig({
         'server/dev.ts',
         '**/*.d.ts',
       ],
+      // 閾値は「現状値より少し低い固定の下限」とし、目標 80% へ手動で段階的に引き上げる。
+      // autoUpdate は使わない: 実測ぴったりを下限にすると CI と僅かな環境差で落ちるため。
       thresholds: {
-        autoUpdate: true,
-        // BE ユニット（目標 80%）
-        'server/**': { lines: 26.59, functions: 38.31, branches: 69.63, statements: 26.59 },
-        // FE（ユニット + MSW 統合の合算、目標 80%）
-        'src/**': { lines: 6.8, functions: 44.61, branches: 52.17, statements: 6.8 },
+        // BE ユニット（目標 80%）— 現状 ~26.5% / branches ~69%
+        'server/**': { lines: 24, functions: 35, branches: 65, statements: 24 },
+        // FE（ユニット + MSW 統合の合算、目標 80%）— 現状 ~6.8% / branches ~52%
+        'src/**': { lines: 6, functions: 40, branches: 45, statements: 6 },
       },
     },
   },
