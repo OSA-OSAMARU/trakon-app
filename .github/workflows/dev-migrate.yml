@@ -1,0 +1,56 @@
+name: Dev Migrate
+
+# preview(dev) DB へマイグレーションを適用する。Release(本番) とは独立したフロー。
+#   - main へのマージ時 (migrations 変更を含む push) に自動適用
+#   - 手動 (workflow_dispatch) でも実行可
+#
+# 本番への適用は release-deploy.yml (GitHub Release 公開時) が担当し、こちらは
+# preview(dev) DB のみを対象とする。
+#
+# 必要な GitHub Secrets:
+#   DEV_DATABASE_URL  — dev/preview DB の DATABASE_URL (Prisma 接続)
+#   DEV_DIRECT_URL    — dev/preview DB の DIRECT_URL (migrate 用)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/db/prisma/migrations/**'
+  workflow_dispatch:
+
+concurrency:
+  # dev DB へのマイグレーションは同時実行させない (ref に依らずグローバルに直列化)
+  group: dev-migrate
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: prisma migrate deploy (dev)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.19.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Run database migrations (dev/preview)
+        env:
+          DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DEV_DIRECT_URL }}
+        run: pnpm --filter @trakon/db exec prisma migrate deploy
