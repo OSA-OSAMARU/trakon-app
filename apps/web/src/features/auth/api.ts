@@ -1,3 +1,5 @@
+import type { WithdrawalReason } from '@trakon/shared';
+
 import { apiRequest } from '@/lib/api';
 
 export type CurrentUser = {
@@ -25,6 +27,10 @@ export type UpdateProfileInput = {
   newPassword?: string;
 };
 
+export type DeleteAccountInput = {
+  reason: WithdrawalReason;
+};
+
 export const authApi = {
   syncMe: () => apiRequest<SyncResponse>('/auth/me/sync', { method: 'POST' }),
   getMe: () => apiRequest<CurrentUser>('/auth/me'),
@@ -32,4 +38,6 @@ export const authApi = {
     apiRequest<CurrentUser>('/auth/me/complete-signup', { method: 'POST', body }),
   updateProfile: (body: UpdateProfileInput) =>
     apiRequest<CurrentUser>('/auth/me', { method: 'PATCH', body }),
+  deleteAccount: (body: DeleteAccountInput) =>
+    apiRequest<{ ok: true }>('/auth/me', { method: 'DELETE', body }),
 };

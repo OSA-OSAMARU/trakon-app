@@ -1,4 +1,5 @@
 import { prisma } from '@trakon/db';
+import type { WithdrawalReason } from '@trakon/shared';
 import { uuidv7 } from 'uuidv7';
 
 import { ApiException } from '../lib/errors.js';
@@ -89,7 +90,8 @@ function deriveOAuthNames(meta: Record<string, unknown>, email: string) {
  */
 export async function syncUser(authUserId: string, jwtEmail: string): Promise<SyncResult> {
   const existing = await prisma.user.findUnique({ where: { authUserId } });
-  if (existing) {
+  // 退会済み (deletedAt) は未存在として扱い、ready を返さない (締め出し)。
+  if (existing && !existing.deletedAt) {
     return { status: 'ready', user: toDTO(existing) };
   }
 
@@ -257,7 +259,7 @@ export async function updateProfile(input: {
   newPassword?: string;
 }): Promise<CurrentUserDTO> {
   const existing = await prisma.user.findUnique({ where: { authUserId: input.authUserId } });
-  if (!existing) {
+  if (!existing || existing.deletedAt) {
     throw new ApiException('PROFILE_NOT_COMPLETED', 404, 'User profile not found.');
   }
 
@@ -296,7 +298,79 @@ export async function updateProfile(input: {
 
 export async function getCurrentUser(authUserId: string): Promise<CurrentUserDTO | null> {
   const user = await prisma.user.findUnique({ where: { authUserId } });
-  return user ? toDTO(user) : null;
+  // 退会済み (deletedAt) は未存在として扱う (締め出し)。
+  return user && !user.deletedAt ? toDTO(user) : null;
+}
+
+/**
+ * 退会 (アカウント削除) を行う (issue #95)。物理削除は Project.createdBy の Restrict
+ * 制約で不可なため、論理削除 (deletedAt) + 個人情報の匿名化 + Supabase Auth ユーザー削除
+ * で実現する。
+ * - users: deletedAt をセットし email / fullName / displayName を匿名化
+ *   (email @unique を維持したまま同一メールでの再登録を可能にする)
+ * - oauth_identities: 物理削除 (再登録時の uq_oauth_identities_* 衝突を回避。
+ *   Supabase 側 auth ユーザーも削除するため整合する)
+ * - audit_logs: account_delete を退会理由 (extra.reason) 付きで記録
+ *
+ * 整合性のため Prisma を先にコミットしてから Supabase Auth を削除する。Supabase 削除が
+ * 失敗しても論理削除済みで締め出しガード (getCurrentUser / attachCurrentUserId) が効くため
+ * リカバリ可能。
+ */
+export async function deleteAccount(input: {
+  authUserId: string;
+  reason: WithdrawalReason;
+  ip?: string;
+  userAgent?: string;
+}): Promise<void> {
+  const existing = await withTimeout(
+    prisma.user.findUnique({ where: { authUserId: input.authUserId } }),
+    STEP_TIMEOUT_MS,
+    'findUnique',
+  );
+  if (!existing || existing.deletedAt) {
+    throw new ApiException('PROFILE_NOT_COMPLETED', 404, 'User profile not found.');
+  }
+
+  await withTimeout(
+    prisma.$transaction([
+      prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          deletedAt: new Date(),
+          email: `deleted+${existing.id}@trakon.invalid`,
+          fullName: '退会済みユーザー',
+          displayName: '退会済みユーザー',
+        },
+      }),
+      prisma.oAuthIdentity.deleteMany({ where: { userId: existing.id } }),
+      prisma.auditLog.create({
+        data: {
+          actorUserId: existing.id,
+          action: 'account_delete',
+          resourceType: 'user',
+          resourceId: existing.id,
+          result: 'success',
+          extra: { reason: input.reason },
+          ip: input.ip ?? null,
+          userAgent: input.userAgent ?? null,
+        },
+      }),
+    ]),
+    STEP_TIMEOUT_MS,
+    'transaction',
+  );
+
+  // Supabase Auth ユーザーを削除し、再ログインを物理的に不可にする。
+  // Prisma は既にコミット済みのため、ここで失敗してもデータ整合は保たれる。
+  const supabase = getSupabaseAdmin();
+  const { error } = await withTimeout(
+    supabase.auth.admin.deleteUser(input.authUserId),
+    STEP_TIMEOUT_MS,
+    'supabase.deleteUser',
+  );
+  if (error) {
+    throw new ApiException('SUPABASE_DELETE_FAILED', 500, error.message);
+  }
 }
 
 export async function recordLogin(input: {
