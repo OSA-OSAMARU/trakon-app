@@ -115,7 +115,7 @@ export function SidebarLayout() {
             <button
               type="button"
               onClick={() => setProfileOpen(true)}
-              className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-accent/40"
+              className="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left hover:bg-accent/40"
             >
               <Avatar name={user.displayName || user.email} className="size-8 text-xs" />
               <span className="min-w-0">
