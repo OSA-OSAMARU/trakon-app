@@ -9,17 +9,19 @@ import { createElement } from 'react';
 import { server } from '@/test/handlers';
 import { createTestQueryClient } from '@/test/render';
 
-// supabase をモックして getSession / onAuthStateChange を制御する。
+// supabase をモックして getSession / onAuthStateChange / signOut を制御する。
 const getSession = vi.fn();
 const onAuthStateChange = vi.fn(() => ({
   data: { subscription: { unsubscribe() {} } },
 }));
+const signOut = vi.fn().mockResolvedValue({ error: null });
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: (...args: unknown[]) => getSession(...args),
       onAuthStateChange: (...args: unknown[]) => onAuthStateChange(...(args as [])),
+      signOut: (...args: unknown[]) => signOut(...args),
     },
   },
 }));
@@ -103,5 +105,23 @@ describe('useCurrentUser', () => {
 
     await waitFor(() => expect(result.current.error).toBeTruthy());
     expect(result.current.data).toBeUndefined();
+    // 401 以外 (500) では stale セッション破棄を行わない
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it('sync が 401 を返すと stale セッションを local scope で破棄する', async () => {
+    server.use(
+      http.post('*/api/v1/auth/me/sync', () =>
+        HttpResponse.json(
+          { error: { code: 'AUTH_INVALID', message: 'Supabase auth user not found.' } },
+          { status: 401 },
+        ),
+      ),
+    );
+
+    const { result } = renderHook(() => useCurrentUser(), { wrapper });
+
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    await waitFor(() => expect(signOut).toHaveBeenCalledWith({ scope: 'local' }));
   });
 });
