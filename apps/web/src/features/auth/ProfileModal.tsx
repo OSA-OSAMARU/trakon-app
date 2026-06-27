@@ -127,13 +127,13 @@ function ViewMode({
         )}
       </div>
 
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          閉じる
-        </Button>
-        <Button variant="outline" onClick={onSignOut}>
+      <DialogFooter className="sm:justify-between">
+        <Button variant="ghost" size="sm" onClick={onSignOut}>
           <LogOut className="size-4" />
           サインアウト
+        </Button>
+        <Button variant="outline" size="sm" onClick={onClose}>
+          閉じる
         </Button>
       </DialogFooter>
     </>
