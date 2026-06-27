@@ -4,8 +4,17 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 
 // supabase は apiRequest の Authorization 注入で getSession を呼ぶためモックする。
+// 退会成功時の signOut({ scope: 'local' }) も捕捉する。
+const { signOutMock } = vi.hoisted(() => ({
+  signOutMock: vi.fn().mockResolvedValue({ error: null }),
+}));
 vi.mock('@/lib/supabase', () => ({
-  supabase: { auth: { getSession: vi.fn().mockResolvedValue({ data: { session: null } }) } },
+  supabase: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+      signOut: signOutMock,
+    },
+  },
 }));
 
 // sonner の toast を捕捉する。
@@ -179,7 +188,7 @@ describe('ProfileModal', () => {
     expect(body).toEqual({ newPassword: 'abcd1234!' });
   });
 
-  it('退会する → 理由選択＋「退会」入力で DELETE /auth/me を送り onSignOut を呼ぶ', async () => {
+  it('退会する → 理由選択＋「退会」入力で DELETE /auth/me を送り local signOut する', async () => {
     let body: { reason?: string } | null = null;
     server.use(
       http.delete('*/api/v1/auth/me', async ({ request }) => {
@@ -188,10 +197,10 @@ describe('ProfileModal', () => {
       }),
     );
 
-    const onSignOut = vi.fn();
+    signOutMock.mockClear();
     const u = userEvent.setup({ pointerEventsCheck: 0 });
     renderWithProviders(
-      <ProfileModal user={user} open onClose={() => {}} onSignOut={onSignOut} />,
+      <ProfileModal user={user} open onClose={() => {}} onSignOut={() => {}} />,
     );
 
     await u.click(screen.getByRole('button', { name: '退会する' }));
@@ -205,7 +214,8 @@ describe('ProfileModal', () => {
 
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('退会が完了しました'));
     expect(body).toEqual({ reason: 'switching_tool' });
-    expect(onSignOut).toHaveBeenCalledTimes(1);
+    // stale セッションを残さないよう local scope で signOut する
+    await waitFor(() => expect(signOutMock).toHaveBeenCalledWith({ scope: 'local' }));
   });
 
   it('退会フォームで理由未選択／「退会」未入力だとバリデーションエラーを出し送信しない', async () => {
@@ -217,10 +227,10 @@ describe('ProfileModal', () => {
       }),
     );
 
-    const onSignOut = vi.fn();
+    signOutMock.mockClear();
     const u = userEvent.setup({ pointerEventsCheck: 0 });
     renderWithProviders(
-      <ProfileModal user={user} open onClose={() => {}} onSignOut={onSignOut} />,
+      <ProfileModal user={user} open onClose={() => {}} onSignOut={() => {}} />,
     );
 
     await u.click(screen.getByRole('button', { name: '退会する' }));
@@ -230,7 +240,7 @@ describe('ProfileModal', () => {
     expect(await screen.findByText('退会理由を選択してください')).toBeInTheDocument();
     expect(screen.getByText('「退会」と正しく入力してください')).toBeInTheDocument();
     expect(called).toBe(false);
-    expect(onSignOut).not.toHaveBeenCalled();
+    expect(signOutMock).not.toHaveBeenCalled();
   });
 
   it('OAuth ユーザーにはパスワード変更ボタンを出さない', () => {

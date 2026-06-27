@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,6 +8,7 @@ import { Loader2, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { WITHDRAWAL_REASONS, type WithdrawalReason } from '@trakon/shared';
 
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -80,9 +82,7 @@ export function ProfileModal({
         )}
         {mode === 'profile' && <ProfileForm user={user} onDone={() => setMode('view')} />}
         {mode === 'password' && <PasswordForm onDone={() => setMode('view')} />}
-        {mode === 'withdraw' && (
-          <WithdrawForm onCancel={() => setMode('view')} onSignOut={onSignOut} />
-        )}
+        {mode === 'withdraw' && <WithdrawForm onCancel={() => setMode('view')} />}
       </DialogContent>
     </Dialog>
   );
@@ -267,16 +267,24 @@ type WithdrawValues = z.infer<typeof withdrawSchema>;
 
 /**
  * 退会 (アカウント削除) フォーム。退会理由のラジオ選択 +「退会」入力を必須にし、
- * DELETE /auth/me を送る。成功時は onSignOut (ローカルセッション破棄 → /login) を呼ぶ。
+ * DELETE /auth/me を送る。
+ *
+ * 成功時は `signOut({ scope: 'local' })` でローカルセッションのみ破棄してから /login へ。
+ * この時点でサーバー側の Supabase ユーザーは既に削除済みのため、通常の global signOut は
+ * `/logout` が無効トークンで失敗し localStorage を消し残す → stale セッションが残り、
+ * 再ログイン/再登録時に sync(401) + projects(404) の無限ループを誘発する。local scope なら
+ * サーバーを呼ばず確実にローカルを消せる。
  */
-function WithdrawForm({ onCancel, onSignOut }: { onCancel: () => void; onSignOut: () => void }) {
+function WithdrawForm({ onCancel }: { onCancel: () => void }) {
+  const navigate = useNavigate();
   const form = useForm<WithdrawValues>({ resolver: zodResolver(withdrawSchema) });
 
   const mut = useMutation({
     mutationFn: (v: WithdrawValues) => authApi.deleteAccount({ reason: v.reason }),
-    onSuccess: () => {
+    onSuccess: async () => {
       toast.success('退会が完了しました');
-      onSignOut();
+      await supabase.auth.signOut({ scope: 'local' });
+      navigate('/login', { replace: true });
     },
     onError: (e) =>
       toast.error(e instanceof ApiClientError ? e.message : '退会に失敗しました'),
