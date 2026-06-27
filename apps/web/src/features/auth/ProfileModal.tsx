@@ -146,12 +146,12 @@ function ViewMode({
           退会する
         </Button>
         <div className="flex gap-2">
-          <Button variant="ghost" onClick={onClose}>
-            閉じる
-          </Button>
-          <Button variant="outline" onClick={onSignOut}>
+          <Button variant="ghost" size="sm" onClick={onSignOut}>
             <LogOut className="size-4" />
             サインアウト
+          </Button>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            閉じる
           </Button>
         </div>
       </DialogFooter>
