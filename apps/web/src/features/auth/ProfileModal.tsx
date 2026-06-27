@@ -292,7 +292,7 @@ function WithdrawForm({ onCancel, onSignOut }: { onCancel: () => void; onSignOut
               <input
                 type="radio"
                 value={r.value}
-                className="size-4 accent-primary"
+                className="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:border-[5px] checked:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 {...form.register('reason')}
               />
               {r.label}
