@@ -263,7 +263,7 @@ model AuditLog {
   actorUserId  String?  @map("actor_user_id") @db.Uuid
   /// share_links FK は Sub-Phase 0.5 で実装 (share_links テーブル追加時)
   shareLinkId  String?  @map("share_link_id") @db.Uuid
-  /// Phase 0 許可値: login | logout | toss | complete | share_access | share_create | share_revoke | share_toss | share_complete
+  /// Phase 0 許可値: login | logout | complete_signup | update_profile | account_delete | toss | untoss | complete | undo_complete | auto_toss | share_access | share_create | share_revoke | share_toss | share_complete
   action       String
   resourceType String   @map("resource_type")
   resourceId   String?  @map("resource_id") @db.Uuid

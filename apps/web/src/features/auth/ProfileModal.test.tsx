@@ -179,6 +179,60 @@ describe('ProfileModal', () => {
     expect(body).toEqual({ newPassword: 'abcd1234!' });
   });
 
+  it('退会する → 理由選択＋「退会」入力で DELETE /auth/me を送り onSignOut を呼ぶ', async () => {
+    let body: { reason?: string } | null = null;
+    server.use(
+      http.delete('*/api/v1/auth/me', async ({ request }) => {
+        body = (await request.json()) as { reason?: string };
+        return HttpResponse.json({ data: { ok: true } });
+      }),
+    );
+
+    const onSignOut = vi.fn();
+    const u = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(
+      <ProfileModal user={user} open onClose={() => {}} onSignOut={onSignOut} />,
+    );
+
+    await u.click(screen.getByRole('button', { name: '退会する' }));
+    // 理由ラジオを1つ選ぶ
+    await u.click(await screen.findByLabelText('他のツールに移行'));
+    // 「退会」と入力
+    await u.type(screen.getByPlaceholderText('退会'), '退会');
+    // フッターの退会実行ボタン (複数ある「退会する」の最後)
+    const buttons = screen.getAllByRole('button', { name: '退会する' });
+    await u.click(buttons[buttons.length - 1]!);
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('退会が完了しました'));
+    expect(body).toEqual({ reason: 'switching_tool' });
+    expect(onSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('退会フォームで理由未選択／「退会」未入力だとバリデーションエラーを出し送信しない', async () => {
+    let called = false;
+    server.use(
+      http.delete('*/api/v1/auth/me', () => {
+        called = true;
+        return HttpResponse.json({ data: { ok: true } });
+      }),
+    );
+
+    const onSignOut = vi.fn();
+    const u = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(
+      <ProfileModal user={user} open onClose={() => {}} onSignOut={onSignOut} />,
+    );
+
+    await u.click(screen.getByRole('button', { name: '退会する' }));
+    const buttons = screen.getAllByRole('button', { name: '退会する' });
+    await u.click(buttons[buttons.length - 1]!);
+
+    expect(await screen.findByText('退会理由を選択してください')).toBeInTheDocument();
+    expect(screen.getByText('「退会」と正しく入力してください')).toBeInTheDocument();
+    expect(called).toBe(false);
+    expect(onSignOut).not.toHaveBeenCalled();
+  });
+
   it('OAuth ユーザーにはパスワード変更ボタンを出さない', () => {
     renderWithProviders(
       <ProfileModal

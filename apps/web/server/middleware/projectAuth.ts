@@ -27,9 +27,10 @@ export function attachCurrentUserId(): MiddlewareHandler {
     const authUser = c.get('authUser');
     const user = await prisma.user.findUnique({
       where: { authUserId: authUser.authUserId },
-      select: { id: true },
+      select: { id: true, deletedAt: true },
     });
-    if (!user) {
+    // 退会済み (deletedAt) は未存在として扱う (締め出し)。
+    if (!user || user.deletedAt) {
       throw new ApiException(
         'PROFILE_NOT_COMPLETED',
         404,

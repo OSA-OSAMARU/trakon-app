@@ -6,6 +6,7 @@ import type {
   updateProfile as UpdateProfileType,
   getCurrentUser as GetCurrentUserType,
   recordLogin as RecordLoginType,
+  deleteAccount as DeleteAccountType,
 } from './auth.js';
 
 // =============================================================================
@@ -42,6 +43,7 @@ type MockAudit = {
   result: string;
   ip?: string | null;
   userAgent?: string | null;
+  extra?: Record<string, unknown>;
 };
 
 let nextId = 1;
@@ -74,6 +76,13 @@ const oauthTx = {
     oauthStore.push(r);
     return r;
   }),
+  deleteMany: vi.fn(async ({ where }: { where: { userId: string } }) => {
+    const before = oauthStore.length;
+    for (let i = oauthStore.length - 1; i >= 0; i--) {
+      if (oauthStore[i]!.userId === where.userId) oauthStore.splice(i, 1);
+    }
+    return { count: before - oauthStore.length };
+  }),
 };
 const auditTx = {
   create: vi.fn(async ({ data }: { data: Omit<MockAudit, 'id'> }) => {
@@ -97,6 +106,7 @@ const prismaMock = {
     create: userTx.create,
     update: userTx.update,
   },
+  oAuthIdentity: { create: oauthTx.create, deleteMany: oauthTx.deleteMany },
   auditLog: { create: auditTx.create },
   // 配列形式 ($transaction([...])) とコールバック形式 ($transaction(fn)) の両対応。
   $transaction: vi.fn(async (arg: unknown) => {
@@ -118,9 +128,21 @@ const updateUserByIdMock = vi.fn(
     error: null,
   }),
 );
+const deleteUserMock = vi.fn(
+  async (): Promise<{ data: { user: object | null }; error: { message: string } | null }> => ({
+    data: { user: {} },
+    error: null,
+  }),
+);
 vi.mock('../lib/supabaseAdmin.js', () => ({
   getSupabaseAdmin: () => ({
-    auth: { admin: { getUserById: getUserByIdMock, updateUserById: updateUserByIdMock } },
+    auth: {
+      admin: {
+        getUserById: getUserByIdMock,
+        updateUserById: updateUserByIdMock,
+        deleteUser: deleteUserMock,
+      },
+    },
   }),
 }));
 
@@ -133,11 +155,11 @@ let completeSignup: typeof CompleteSignupType;
 let updateProfile: typeof UpdateProfileType;
 let getCurrentUser: typeof GetCurrentUserType;
 let recordLogin: typeof RecordLoginType;
+let deleteAccount: typeof DeleteAccountType;
 
 beforeAll(async () => {
-  ({ syncUser, completeSignup, updateProfile, getCurrentUser, recordLogin } = await import(
-    './auth.js'
-  ));
+  ({ syncUser, completeSignup, updateProfile, getCurrentUser, recordLogin, deleteAccount } =
+    await import('./auth.js'));
 });
 
 afterEach(() => {
@@ -162,6 +184,33 @@ describe('syncUser', () => {
     const res = await syncUser('auth-1', 'a@example.com');
     expect(res.status).toBe('ready');
     if (res.status === 'ready') expect(res.user.id).toBe('u-pre');
+  });
+
+  it('does not return ready for a soft-deleted row (falls through to provider sync)', async () => {
+    userStore['auth-del'] = {
+      id: 'u-del',
+      authUserId: 'auth-del',
+      email: 'deleted+u-del@trakon.invalid',
+      fullName: '退会済みユーザー',
+      displayName: '退会済みユーザー',
+      primaryAuthMethod: 'password',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      deletedAt: new Date('2026-03-03T00:00:00Z'),
+    };
+    getUserByIdMock.mockResolvedValueOnce({
+      data: {
+        user: {
+          email: 'new@example.com',
+          app_metadata: { provider: 'email' },
+          user_metadata: {},
+          identities: [],
+        },
+      },
+      error: null,
+    });
+    const res = await syncUser('auth-del', 'new@example.com');
+    // ready ではなく provider 同期フローに流れる (締め出し)
+    expect(res.status).toBe('requires_profile_completion');
   });
 
   it('returns requires_profile_completion for Magic-link provider', async () => {
@@ -430,6 +479,105 @@ describe('getCurrentUser', () => {
 
   it('returns null when the user does not exist', async () => {
     expect(await getCurrentUser('auth-none')).toBeNull();
+  });
+
+  it('returns null for a soft-deleted (withdrawn) user', async () => {
+    userStore['auth-del'] = {
+      id: 'u-del',
+      authUserId: 'auth-del',
+      email: 'deleted+u-del@trakon.invalid',
+      fullName: '退会済みユーザー',
+      displayName: '退会済みユーザー',
+      primaryAuthMethod: 'password',
+      createdAt: new Date('2026-02-02T00:00:00Z'),
+      deletedAt: new Date('2026-03-03T00:00:00Z'),
+    };
+    expect(await getCurrentUser('auth-del')).toBeNull();
+  });
+});
+
+describe('deleteAccount', () => {
+  const seed = (overrides: Partial<MockUser> = {}) => {
+    userStore['auth-del'] = {
+      id: 'u-del',
+      authUserId: 'auth-del',
+      email: 'bye@example.com',
+      fullName: '河津 正和',
+      displayName: 'Kawazu',
+      primaryAuthMethod: 'password',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      deletedAt: null,
+      ...overrides,
+    };
+  };
+
+  it('soft-deletes + anonymizes the user, removes oauth, logs the reason, deletes the Supabase auth user', async () => {
+    seed({ primaryAuthMethod: 'google' });
+    oauthStore.push({
+      id: 'o-1',
+      userId: 'u-del',
+      provider: 'google',
+      providerUserId: 'google-sub',
+      email: 'bye@example.com',
+    });
+
+    await deleteAccount({
+      authUserId: 'auth-del',
+      reason: 'switching_tool',
+      ip: '203.0.113.9',
+      userAgent: 'jest-UA',
+    });
+
+    const stored = userStore['auth-del'];
+    expect(stored?.deletedAt).toBeInstanceOf(Date);
+    expect(stored?.email).toBe('deleted+u-del@trakon.invalid');
+    expect(stored?.fullName).toBe('退会済みユーザー');
+    expect(stored?.displayName).toBe('退会済みユーザー');
+    // oauth_identities は物理削除
+    expect(oauthStore).toHaveLength(0);
+    // 監査ログに退会理由を残す
+    expect(auditStore).toHaveLength(1);
+    expect(auditStore[0]).toMatchObject({
+      actorUserId: 'u-del',
+      action: 'account_delete',
+      resourceType: 'user',
+      resourceId: 'u-del',
+      result: 'success',
+      extra: { reason: 'switching_tool' },
+      ip: '203.0.113.9',
+      userAgent: 'jest-UA',
+    });
+    // Supabase Auth ユーザーも削除
+    expect(deleteUserMock).toHaveBeenCalledWith('auth-del');
+  });
+
+  it('throws 404 PROFILE_NOT_COMPLETED when the user does not exist', async () => {
+    await expect(
+      deleteAccount({ authUserId: 'auth-missing', reason: 'other' }),
+    ).rejects.toMatchObject({ code: 'PROFILE_NOT_COMPLETED', status: 404 });
+    expect(deleteUserMock).not.toHaveBeenCalled();
+  });
+
+  it('throws 404 when the user is already withdrawn (deletedAt set)', async () => {
+    seed({ deletedAt: new Date('2026-02-02T00:00:00Z') });
+    await expect(
+      deleteAccount({ authUserId: 'auth-del', reason: 'other' }),
+    ).rejects.toMatchObject({ code: 'PROFILE_NOT_COMPLETED', status: 404 });
+    expect(deleteUserMock).not.toHaveBeenCalled();
+  });
+
+  it('throws 500 SUPABASE_DELETE_FAILED but keeps the Prisma soft-delete committed', async () => {
+    seed();
+    deleteUserMock.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: 'supabase down' },
+    });
+    await expect(
+      deleteAccount({ authUserId: 'auth-del', reason: 'not_using' }),
+    ).rejects.toMatchObject({ code: 'SUPABASE_DELETE_FAILED', status: 500 });
+    // Prisma は先にコミット済みなので論理削除は残る (締め出し済み)
+    expect(userStore['auth-del']?.deletedAt).toBeInstanceOf(Date);
+    expect(auditStore).toHaveLength(1);
   });
 });
 

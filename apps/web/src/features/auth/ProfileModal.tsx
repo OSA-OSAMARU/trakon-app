@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
+import { WITHDRAWAL_REASONS, type WithdrawalReason } from '@trakon/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,7 +28,7 @@ const AUTH_METHOD_LABEL: Record<CurrentUser['primaryAuthMethod'], string> = {
   microsoft: 'Microsoft',
 };
 
-type Mode = 'view' | 'profile' | 'password';
+type Mode = 'view' | 'profile' | 'password' | 'withdraw';
 
 /**
  * プロフィール / 認証情報モーダル (プロトタイプ ProfileModal 準拠)。
@@ -61,7 +62,9 @@ export function ProfileModal({
               ? 'パスワードを変更します。'
               : mode === 'profile'
                 ? 'お名前と表示名を変更します。'
-                : 'プロフィール情報を確認・編集できます。'}
+                : mode === 'withdraw'
+                  ? 'アカウントを退会します。この操作は取り消せません。'
+                  : 'プロフィール情報を確認・編集できます。'}
           </DialogDescription>
         </DialogHeader>
 
@@ -70,12 +73,16 @@ export function ProfileModal({
             user={user}
             onEdit={() => setMode('profile')}
             onChangePassword={() => setMode('password')}
+            onWithdraw={() => setMode('withdraw')}
             onSignOut={onSignOut}
             onClose={close}
           />
         )}
         {mode === 'profile' && <ProfileForm user={user} onDone={() => setMode('view')} />}
         {mode === 'password' && <PasswordForm onDone={() => setMode('view')} />}
+        {mode === 'withdraw' && (
+          <WithdrawForm onCancel={() => setMode('view')} onSignOut={onSignOut} />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -85,12 +92,14 @@ function ViewMode({
   user,
   onEdit,
   onChangePassword,
+  onWithdraw,
   onSignOut,
   onClose,
 }: {
   user: CurrentUser;
   onEdit: () => void;
   onChangePassword: () => void;
+  onWithdraw: () => void;
   onSignOut: () => void;
   onClose: () => void;
 }) {
@@ -127,14 +136,24 @@ function ViewMode({
         )}
       </div>
 
-      <DialogFooter>
-        <Button variant="ghost" onClick={onClose}>
-          閉じる
+      <DialogFooter className="sm:justify-between">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onWithdraw}
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+        >
+          退会する
         </Button>
-        <Button variant="outline" onClick={onSignOut}>
-          <LogOut className="size-4" />
-          サインアウト
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            閉じる
+          </Button>
+          <Button variant="outline" onClick={onSignOut}>
+            <LogOut className="size-4" />
+            サインアウト
+          </Button>
+        </div>
       </DialogFooter>
     </>
   );
@@ -230,6 +249,79 @@ function PasswordForm({ onDone }: { onDone: () => void }) {
         <Button type="submit" disabled={mut.isPending}>
           {mut.isPending && <Loader2 className="size-4 animate-spin" />}
           パスワードを変更
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+const withdrawSchema = z.object({
+  reason: z.enum(WITHDRAWAL_REASONS.map((r) => r.value) as [WithdrawalReason, ...WithdrawalReason[]], {
+    errorMap: () => ({ message: '退会理由を選択してください' }),
+  }),
+  confirm: z.literal('退会', {
+    errorMap: () => ({ message: '「退会」と正しく入力してください' }),
+  }),
+});
+type WithdrawValues = z.infer<typeof withdrawSchema>;
+
+/**
+ * 退会 (アカウント削除) フォーム。退会理由のラジオ選択 +「退会」入力を必須にし、
+ * DELETE /auth/me を送る。成功時は onSignOut (ローカルセッション破棄 → /login) を呼ぶ。
+ */
+function WithdrawForm({ onCancel, onSignOut }: { onCancel: () => void; onSignOut: () => void }) {
+  const form = useForm<WithdrawValues>({ resolver: zodResolver(withdrawSchema) });
+
+  const mut = useMutation({
+    mutationFn: (v: WithdrawValues) => authApi.deleteAccount({ reason: v.reason }),
+    onSuccess: () => {
+      toast.success('退会が完了しました');
+      onSignOut();
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '退会に失敗しました'),
+  });
+
+  return (
+    <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-4">
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">退会理由を教えてください</legend>
+        <div className="space-y-1.5">
+          {WITHDRAWAL_REASONS.map((r) => (
+            <label key={r.value} className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                value={r.value}
+                className="size-4 accent-primary"
+                {...form.register('reason')}
+              />
+              {r.label}
+            </label>
+          ))}
+        </div>
+        {form.formState.errors.reason && (
+          <p className="text-xs text-destructive">{form.formState.errors.reason.message}</p>
+        )}
+      </fieldset>
+
+      <FormField
+        label="確認のため「退会」と入力してください"
+        error={form.formState.errors.confirm?.message}
+      >
+        <Input {...form.register('confirm')} autoComplete="off" placeholder="退会" />
+      </FormField>
+
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={mut.isPending}>
+          キャンセル
+        </Button>
+        <Button
+          type="submit"
+          disabled={mut.isPending}
+          className="bg-destructive text-white hover:bg-destructive/90"
+        >
+          {mut.isPending && <Loader2 className="size-4 animate-spin" />}
+          退会する
         </Button>
       </DialogFooter>
     </form>

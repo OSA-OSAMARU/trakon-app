@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { withdrawalReasonSchema } from '@trakon/shared';
 
 export const completeSignupBodySchema = z.object({
   fullName: z.string().trim().min(1).max(100),
@@ -33,3 +34,10 @@ export const updateProfileBodySchema = z
   });
 
 export type UpdateProfileBody = z.infer<typeof updateProfileBodySchema>;
+
+/** 退会 (アカウント削除) リクエスト。退会理由は必須。 */
+export const deleteAccountBodySchema = z.object({
+  reason: withdrawalReasonSchema,
+});
+
+export type DeleteAccountBody = z.infer<typeof deleteAccountBodySchema>;

@@ -1,9 +1,14 @@
 import { Hono } from 'hono';
 
 import { requireAuth } from '../../middleware/auth.js';
-import { completeSignupBodySchema, updateProfileBodySchema } from '../../schemas/auth.js';
+import {
+  completeSignupBodySchema,
+  deleteAccountBodySchema,
+  updateProfileBodySchema,
+} from '../../schemas/auth.js';
 import {
   completeSignup,
+  deleteAccount,
   getCurrentUser,
   recordLogin,
   syncUser,
@@ -84,4 +89,17 @@ export const authRoute = new Hono()
       userAgent: c.req.header('user-agent') ?? undefined,
     });
     return c.json({ data: user }, 201);
+  })
+
+  /** 退会 (アカウント削除): 論理削除 + 匿名化 + Supabase Auth 削除 */
+  .delete('/me', async (c) => {
+    const authUser = c.get('authUser');
+    const body = deleteAccountBodySchema.parse(await c.req.json());
+    await deleteAccount({
+      authUserId: authUser.authUserId,
+      reason: body.reason,
+      ip: c.req.header('x-forwarded-for') ?? undefined,
+      userAgent: c.req.header('user-agent') ?? undefined,
+    });
+    return c.json({ data: { ok: true } });
   });
