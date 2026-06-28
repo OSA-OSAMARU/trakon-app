@@ -45,17 +45,42 @@ Phase 0 商用リリースに必要な **外部サービスのセットアップ
 
 [apps/web/README.md §「OAuth プロバイダ設定」](../apps/web/README.md) を参照。dev / prod で別 OAuth App を作成。
 
-### 2.4 Resend（招待メール）
+### 2.4 Resend（メール送信）
+
+TRAKON のメールは **2 系統** あり、いずれも Resend に集約する：
+
+| 系統 | 送信経路 | 対象メール | from / 文面の管理 |
+|---|---|---|---|
+| **アプリ独自** | Resend SDK（`server/lib/mailer.ts`） | プロジェクト招待 | コードで制御（`RESEND_FROM_EMAIL` / `mailer.ts`） |
+| **認証系** | **Supabase Auth → Resend Custom SMTP** | サインアップ確認 / Magic Link / パスワード再設定 | Supabase の Email Templates / SMTP 送信者設定 |
+
+> **重要（レート制限）**：Supabase の認証メールは、Custom SMTP を設定しないと **Supabase 共有のデフォルト SMTP**（1 時間あたり数通の極めて厳しい制限）で送られる。複数人が一斉にサインアップすると即詰まる。**下記 2.4.2 の Custom SMTP 設定でこの制限を解消する**こと。
+
+#### 2.4.1 Resend セットアップ（共通）
 
 1. <https://resend.com/signup>
-2. Domains で送信元ドメイン（例 `trakon.example.com`）を追加し、表示される **SPF / DKIM / DMARC** の DNS レコードを設定
+2. Domains で送信元ドメイン（例 `trakon.example.com`）を追加し、表示される **SPF / DKIM / DMARC** の DNS レコードを設定（**検証完了**まで待つ。未検証だと迷惑メール判定・送信失敗の原因）
 3. API Keys から API キーを発行
-4. Vercel Env に投入：
+4. Vercel Env に投入（招待メール = アプリ独自送信用）：
    - `RESEND_API_KEY=<key>`
    - `RESEND_FROM_EMAIL=TRAKON <noreply@trakon.example.com>`
 5. `APP_ENV=prod` のとき必須。未設定だと起動時に例外
 
 > dev / local では `RESEND_API_KEY` を空のままでも `console.log` ダミー送信にフォールバックする。
+
+#### 2.4.2 Supabase Custom SMTP（認証メールを Resend 経由にする）
+
+prod の Supabase プロジェクトで設定する（dev も同様に設定推奨）。
+
+1. Resend の SMTP 接続情報を用意：
+   - Host: `smtp.resend.com` / Port: `465`（または `587`）
+   - Username: `resend` / Password: **Resend API キー**（2.4.1 で発行したもの）
+2. Supabase Dashboard → **Authentication → Emails → SMTP Settings** を有効化し、上記を入力
+3. **Sender**（送信者）に `noreply@trakon.example.com` / 表示名 `TRAKON` を設定 → これが認証メールの `from` になる
+4. **Authentication → Rate Limits → Email sending** を運用想定に合わせて引き上げる（Custom SMTP 設定後はここが実質の上限。デフォルトの 30 通/時などでは一斉登録で不足する場合あり）
+5. **Authentication → Email Templates** で Confirm signup / Magic Link / Reset Password / Change Email の **件名・本文** を編集。**貼り付け用テンプレートは [email-templates.md](email-templates.md) に用意済み**（PRD UXR-05「煽らず濁さず逃げない」。招待メール `mailer.ts` とトーン統一）
+
+> ローカル（`supabase start`）は `[inbucket]` でメールを受けるため Custom SMTP 設定は不要。
 
 ### 2.5 DB ロール分離
 
@@ -93,7 +118,7 @@ psql "$DIRECT_URL" \
 
 - **PITR**: 有効化（任意の時点へリストア可能）
 - **Daily backups**: 7 日間保持
-- **Custom SMTP**: 不要（Resend を使うため）
+- **Custom SMTP**: **必須**（Resend を Custom SMTP として設定する。手順は [2.4.2 節](#242-supabase-custom-smtp認証メールを-resend-経由にする)）。未設定だと認証メールが Supabase デフォルト SMTP の厳しいレート制限に当たり、一斉サインアップで失敗する
 
 ### 2.9 GitHub Actions Secrets
 
@@ -127,11 +152,19 @@ psql "$DIRECT_URL" \
 - **DB マイグレーション**：**前進的修正リリース**で対応（後方互換のあるカラム追加/データ移行で巻き戻す）
 - 緊急時：Supabase PITR で本番 DB を直前の時点に巻き戻し（要 Pro プラン）
 
-### 3.3 招待メール送信失敗時の対応
+### 3.3 メール送信失敗時の対応
+
+**招待メール（アプリ独自送信）**
 
 1. Sentry でエラー詳細を確認
 2. Resend Dashboard で送信ログを確認（バウンス / SPF / DKIM）
 3. ユーザーには手動で再送（管理画面の参加者管理タブから削除→再追加）
+
+**認証メール（サインアップ / Magic Link / パスワード再設定）**
+
+1. **「メールが届かない・一斉登録で失敗する」場合、まず Custom SMTP（[2.4.2](#242-supabase-custom-smtp認証メールを-resend-経由にする)）が設定済みか確認**。未設定だと Supabase デフォルト SMTP の数通/時の制限に当たる
+2. Resend Dashboard の送信ログに認証メールが出ているか確認（出ていなければ Supabase 側で Custom SMTP が効いていない）
+3. Supabase Dashboard → Authentication → Rate Limits の上限と、ドメインの SPF/DKIM 検証状態を確認
 
 ---
 

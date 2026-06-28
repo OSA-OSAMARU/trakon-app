@@ -61,7 +61,7 @@ function createResendMailer(apiKey: string, fromEmail: string): Mailer {
       const { error } = await client.emails.send({
         from: fromEmail,
         to: input.to,
-        subject: `[TRAKON] ${input.projectName} への招待`,
+        subject: `「${input.projectName}」への参加のご案内 | TRAKON`,
         html,
         text,
       });
@@ -81,15 +81,17 @@ function renderInvitationText(input: {
   expiresHuman: string;
 }): string {
   return [
-    `TRAKON のプロジェクト「${input.projectName}」への招待が届きました。`,
+    `${input.inviterName} さんが、TRAKON のプロジェクト「${input.projectName}」にあなたを招待しました。`,
     '',
-    `招待者: ${input.inviterName}`,
-    `期限  : ${input.expiresHuman}`,
+    'TRAKON は、いま誰が次の対応を持っているか（ボール）を可視化し、制作の進行をスムーズにするツールです。',
     '',
-    '以下の URL からアカウント作成・招待受諾を行ってください。',
+    '▼ 参加する（アカウント作成・招待の受諾）',
     input.acceptUrl,
     '',
-    '本メールに心当たりがない場合は無視してください。',
+    `このリンクの有効期限は ${input.expiresHuman} です。`,
+    '期限を過ぎた場合は、お手数ですが招待した方にご連絡ください。',
+    '',
+    'お心当たりがない場合は、このメールを破棄していただいて問題ありません。',
     '— TRAKON',
   ].join('\n');
 }
@@ -101,16 +103,21 @@ function renderInvitationHtml(input: {
   expiresHuman: string;
 }): string {
   // シンプルな HTML テンプレート。Phase 1 で React Email に移行候補
-  return `<!doctype html><html lang="ja"><body style="font-family:-apple-system,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;color:#0f172a;line-height:1.6">
-  <div style="max-width:560px;margin:0 auto;padding:24px">
-    <h1 style="font-size:18px;margin:0 0 12px">TRAKON プロジェクトへの招待</h1>
-    <p>「<strong>${escapeHtml(input.projectName)}</strong>」への招待が届きました。</p>
-    <p style="margin:8px 0"><strong>招待者:</strong> ${escapeHtml(input.inviterName)}<br/><strong>期限:</strong> ${escapeHtml(input.expiresHuman)}</p>
-    <p style="margin:24px 0">
-      <a href="${input.acceptUrl}" style="display:inline-block;padding:10px 16px;background:#030213;color:#fff;border-radius:6px;text-decoration:none">招待を受諾する</a>
+  // 認証メール（Supabase Email Templates）と同一トーン: docs/email-templates.md
+  return `<!doctype html><html lang="ja"><body style="font-family:-apple-system,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;color:#0f172a;line-height:1.7;background:#f8fafc;margin:0;padding:24px">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:32px">
+    <p style="font-size:13px;letter-spacing:.08em;color:#64748b;margin:0 0 16px">TRAKON</p>
+    <h1 style="font-size:18px;margin:0 0 16px">「${escapeHtml(input.projectName)}」への参加のご案内</h1>
+    <p style="margin:0 0 12px"><strong>${escapeHtml(input.inviterName)}</strong> さんが、あなたをプロジェクトに招待しました。</p>
+    <p style="margin:0 0 24px;color:#475569;font-size:14px">TRAKON は、いま誰が次の対応を持っているか（ボール）を可視化し、制作の進行をスムーズにするツールです。</p>
+    <p style="margin:0 0 24px">
+      <a href="${input.acceptUrl}" style="display:inline-block;padding:12px 20px;background:#030213;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">参加する</a>
     </p>
-    <p style="font-size:12px;color:#64748b">ボタンが動かない場合は次の URL を直接開いてください:<br/>${input.acceptUrl}</p>
-    <p style="font-size:12px;color:#64748b;margin-top:32px">本メールに心当たりがない場合は無視してください。 — TRAKON</p>
+    <p style="font-size:13px;color:#64748b;margin:0 0 4px">このリンクの有効期限は <strong>${escapeHtml(input.expiresHuman)}</strong> です。</p>
+    <p style="font-size:13px;color:#64748b;margin:0 0 24px">期限を過ぎた場合は、お手数ですが招待した方にご連絡ください。</p>
+    <p style="font-size:12px;color:#94a3b8;margin:0 0 8px">ボタンが開けない場合は、次の URL をブラウザに貼り付けてください:<br/>${input.acceptUrl}</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0"/>
+    <p style="font-size:12px;color:#94a3b8;margin:0">お心当たりがない場合は、このメールを破棄していただいて問題ありません。<br/>— TRAKON</p>
   </div></body></html>`;
 }
 
