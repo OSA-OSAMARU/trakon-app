@@ -122,7 +122,7 @@ describe('getMailer (resend)', () => {
     };
     expect(payload.from).toBe('noreply@trakon.test');
     expect(payload.to).toBe(invitation.to);
-    expect(payload.subject).toBe('[TRAKON] プロジェクト<X> への招待');
+    expect(payload.subject).toBe('「プロジェクト<X>」への参加のご案内 | TRAKON');
     // HTML 本文には受諾 URL とエスケープ済みのプロジェクト名が含まれる
     expect(payload.html).toContain(invitation.acceptUrl);
     expect(payload.html).toContain('プロジェクト&lt;X&gt;');
