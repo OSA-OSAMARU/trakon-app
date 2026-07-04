@@ -201,7 +201,7 @@ describe('SC01LoginPage — password-reset-request 画面', () => {
     await waitFor(() =>
       expect(auth.resetPasswordForEmail).toHaveBeenCalledWith(
         'reset@example.com',
-        expect.objectContaining({ redirectTo: expect.stringContaining('/auth/callback') }),
+        expect.objectContaining({ redirectTo: expect.stringContaining('/auth/reset-password') }),
       ),
     );
     expect(
