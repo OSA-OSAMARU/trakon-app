@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { AuthCallbackPage } from './app/AuthCallbackPage';
 import { DashboardPage } from './app/DashboardPage';
+import { ResetPasswordPage } from './app/ResetPasswordPage';
 import { SidebarLayout } from './app/SidebarLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { SC01LoginPage } from './features/auth/SC01LoginPage';
@@ -24,6 +25,7 @@ export function App() {
     <Routes>
       <Route path="/login" element={<SC01LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
       <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
       <Route path="/share/:token" element={<SharePage />} />
 
