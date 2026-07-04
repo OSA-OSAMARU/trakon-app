@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 
+import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
 
 /**
@@ -12,8 +13,23 @@ import { useCurrentUser } from '@/features/auth/useCurrentUser';
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const { session, sessionLoading, data, isLoading, error } = useCurrentUser();
+  // 後方互換: 旧リセットメールは /auth/callback に着地する。PASSWORD_RECOVERY を
+  // 検出したら専用のパスワード再設定ページへ振り替える (detectSessionInUrl が
+  // hash を消費するため type=recovery は直接読めず、イベントで判定する)。
+  const [isRecovery, setIsRecovery] = useState(false);
 
   useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') setIsRecovery(true);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (isRecovery) {
+      navigate('/auth/reset-password', { replace: true });
+      return;
+    }
     if (sessionLoading || isLoading) return;
     if (!session) {
       navigate('/login', { replace: true });
@@ -30,7 +46,7 @@ export function AuthCallbackPage() {
     if (data && !data.requiresProfileCompletion) {
       navigate('/dashboard', { replace: true });
     }
-  }, [session, sessionLoading, data, isLoading, error, navigate]);
+  }, [session, sessionLoading, data, isLoading, error, navigate, isRecovery]);
 
   return (
     <div className="flex min-h-screen items-center justify-center gap-2 text-sm text-muted-foreground">

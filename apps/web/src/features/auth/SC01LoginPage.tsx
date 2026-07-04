@@ -524,7 +524,7 @@ function PasswordResetRequest({
   const onSubmit = async (values: SignupInput) => {
     setServerError(null);
     const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo: `${window.location.origin}/auth/reset-password`,
     });
     if (error) {
       // 機密第一: 存在判定を漏らさないため成功扱いに統一
