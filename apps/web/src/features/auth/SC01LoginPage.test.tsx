@@ -133,6 +133,7 @@ describe('SC01LoginPage — signup 画面', () => {
 
     expect(await screen.findByRole('button', { name: /認証メールを送る/ })).toBeInTheDocument();
     await user.type(screen.getByLabelText('メールアドレス'), 'new@example.com');
+    await user.click(screen.getByRole('checkbox')); // 規約同意
     await user.click(screen.getByRole('button', { name: /認証メールを送る/ }));
 
     await waitFor(() => expect(auth.signInWithOtp).toHaveBeenCalledTimes(1));
@@ -147,9 +148,28 @@ describe('SC01LoginPage — signup 画面', () => {
     renderWithProviders(<SC01LoginPage />, { route: '/login?screen=signup' });
 
     await user.type(screen.getByLabelText('メールアドレス'), 'new@example.com');
+    await user.click(screen.getByRole('checkbox')); // 規約同意
     await user.click(screen.getByRole('button', { name: /認証メールを送る/ }));
 
     expect(await screen.findByText(/メールの送信に失敗しました/)).toBeInTheDocument();
+  });
+
+  it('規約に未同意だと送信ボタンが無効で signInWithOtp を呼ばない', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(<SC01LoginPage />, { route: '/login?screen=signup' });
+
+    await user.type(
+      await screen.findByLabelText('メールアドレス'),
+      'new@example.com',
+    );
+    // 未チェックの状態ではメール送信ボタンも OAuth ボタンも無効。
+    expect(screen.getByRole('button', { name: /認証メールを送る/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Google で続ける/ })).toBeDisabled();
+
+    // チェックすると解放される。
+    await user.click(screen.getByRole('checkbox'));
+    expect(screen.getByRole('button', { name: /認証メールを送る/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Google で続ける/ })).toBeEnabled();
   });
 
   it('「既にアカウントをお持ちの方」でログイン画面へ戻る', async () => {

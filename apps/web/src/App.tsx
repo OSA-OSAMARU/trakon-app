@@ -7,6 +7,9 @@ import { SidebarLayout } from './app/SidebarLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { SC01LoginPage } from './features/auth/SC01LoginPage';
 import { InvitationAcceptPage } from './features/invitations/InvitationAcceptPage';
+import { CommercePage } from './features/legal/CommercePage';
+import { PrivacyPage } from './features/legal/PrivacyPage';
+import { TermsPage } from './features/legal/TermsPage';
 import { ItemSchedulePage } from './features/plans/ItemSchedulePage';
 import { MembersPage } from './features/projects/MembersPage';
 import { ProjectCreatePage } from './features/projects/ProjectCreatePage';
@@ -23,6 +26,11 @@ export function App() {
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
       <Route path="/share/:token" element={<SharePage />} />
+
+      {/* 未ログインでも閲覧可能な法務ページ */}
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/commerce" element={<CommercePage />} />
 
       <Route
         element={
