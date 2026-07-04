@@ -9,8 +9,12 @@ type TrakonProvider = 'google' | 'azure';
  * Google / Microsoft の OAuth ログインボタン。
  * Supabase SDK の signInWithOAuth が PKCE / state を内部処理し、
  * /auth/callback にリダイレクトしてくる (AuthCallbackPage が sync を呼ぶ)。
+ *
+ * OAuth はボタン押下＝即プロバイダ遷移のため、押下前にチェックさせるのが難しい。
+ * 新規ユーザーはそのままプロフィールが自動生成されるため、規約同意はボタン下部の
+ * 「みなし同意」文言で担保する (login / signup 両画面に表示される)。
  */
-export function OAuthButtons({ disabled = false }: { disabled?: boolean }) {
+export function OAuthButtons() {
   const [busy, setBusy] = useState<TrakonProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +41,7 @@ export function OAuthButtons({ disabled = false }: { disabled?: boolean }) {
         type="button"
         variant="outline"
         className="w-full"
-        disabled={disabled || busy !== null}
+        disabled={busy !== null}
         onClick={() => start('google')}
       >
         <GoogleMark />
@@ -47,13 +51,34 @@ export function OAuthButtons({ disabled = false }: { disabled?: boolean }) {
         type="button"
         variant="outline"
         className="w-full"
-        disabled={disabled || busy !== null}
+        disabled={busy !== null}
         onClick={() => start('azure')}
       >
         <MicrosoftMark />
         Microsoft で続ける
       </Button>
       {error && <p className="text-xs text-destructive">{error}</p>}
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        Google・Microsoft で続けると、
+        <a
+          href="/terms"
+          target="_blank"
+          rel="noreferrer"
+          className="text-foreground underline underline-offset-2"
+        >
+          利用規約
+        </a>
+        および
+        <a
+          href="/privacy"
+          target="_blank"
+          rel="noreferrer"
+          className="text-foreground underline underline-offset-2"
+        >
+          プライバシーポリシー
+        </a>
+        に同意したものとみなされます。
+      </p>
     </div>
   );
 }

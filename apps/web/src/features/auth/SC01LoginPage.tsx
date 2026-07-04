@@ -268,7 +268,9 @@ function SignupForm({
           </Button>
         </form>
         <div className="mt-6">
-          <OAuthButtons disabled={!agreed} />
+          {/* OAuth は「みなし同意」文言 (OAuthButtons 内) で担保するため、規約チェック
+              未完でも押下可能。チェックボックスはメール登録ボタン専用。 */}
+          <OAuthButtons />
         </div>
         <p className="mt-5 text-center text-[11px] leading-relaxed text-muted-foreground">
           <a href="/terms" target="_blank" rel="noreferrer" className="underline underline-offset-2">
