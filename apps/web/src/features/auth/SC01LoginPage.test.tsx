@@ -117,6 +117,18 @@ describe('SC01LoginPage — login 画面', () => {
     expect(cb).not.toBeChecked();
   });
 
+  it('OAuth ボタン下に「みなし同意」文言と規約リンクを表示する', async () => {
+    renderWithProviders(<SC01LoginPage />, { route: '/login' });
+    expect(
+      await screen.findByText(/同意したものとみなされます/),
+    ).toBeInTheDocument();
+    // みなし同意文言内の利用規約リンクが /terms を指す。
+    const termsLinks = screen
+      .getAllByRole('link', { name: '利用規約' })
+      .filter((a) => a.getAttribute('href') === '/terms');
+    expect(termsLinks.length).toBeGreaterThan(0);
+  });
+
   it('認証済みかつ create-account 以外なら /dashboard へリダイレクトする', async () => {
     auth.getSession.mockResolvedValue({ data: { session: makeSession() } });
     renderWithProviders(<SC01LoginPage />, { route: '/login' });
@@ -154,7 +166,7 @@ describe('SC01LoginPage — signup 画面', () => {
     expect(await screen.findByText(/メールの送信に失敗しました/)).toBeInTheDocument();
   });
 
-  it('規約に未同意だと送信ボタンが無効で signInWithOtp を呼ばない', async () => {
+  it('規約未同意ではメール送信ボタンのみ無効、OAuth はみなし同意で常時有効', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderWithProviders(<SC01LoginPage />, { route: '/login?screen=signup' });
 
@@ -162,11 +174,11 @@ describe('SC01LoginPage — signup 画面', () => {
       await screen.findByLabelText('メールアドレス'),
       'new@example.com',
     );
-    // 未チェックの状態ではメール送信ボタンも OAuth ボタンも無効。
+    // 未チェックではメール送信ボタンは無効。OAuth は「みなし同意」文言で担保するため常時有効。
     expect(screen.getByRole('button', { name: /認証メールを送る/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Google で続ける/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Google で続ける/ })).toBeEnabled();
 
-    // チェックすると解放される。
+    // チェックするとメール送信ボタンも解放される。
     await user.click(screen.getByRole('checkbox'));
     expect(screen.getByRole('button', { name: /認証メールを送る/ })).toBeEnabled();
     expect(screen.getByRole('button', { name: /Google で続ける/ })).toBeEnabled();
