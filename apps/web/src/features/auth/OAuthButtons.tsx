@@ -10,7 +10,7 @@ type TrakonProvider = 'google' | 'azure';
  * Supabase SDK の signInWithOAuth が PKCE / state を内部処理し、
  * /auth/callback にリダイレクトしてくる (AuthCallbackPage が sync を呼ぶ)。
  */
-export function OAuthButtons() {
+export function OAuthButtons({ disabled = false }: { disabled?: boolean }) {
   const [busy, setBusy] = useState<TrakonProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,7 +37,7 @@ export function OAuthButtons() {
         type="button"
         variant="outline"
         className="w-full"
-        disabled={busy !== null}
+        disabled={disabled || busy !== null}
         onClick={() => start('google')}
       >
         <GoogleMark />
@@ -47,7 +47,7 @@ export function OAuthButtons() {
         type="button"
         variant="outline"
         className="w-full"
-        disabled={busy !== null}
+        disabled={disabled || busy !== null}
         onClick={() => start('azure')}
       >
         <MicrosoftMark />

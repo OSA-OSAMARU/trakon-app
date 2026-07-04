@@ -172,15 +172,29 @@ const signupSchema = z.object({
 });
 type SignupInput = z.infer<typeof signupSchema>;
 
+// 新規登録では利用規約・プライバシーポリシーへの同意を必須とする。
+// signupSchema はパスワード再設定でも再利用するため、同意付きは別スキーマにする。
+const signupWithConsentSchema = signupSchema.extend({
+  agreeToTerms: z.boolean().refine((v) => v === true, {
+    message: '利用規約とプライバシーポリシーに同意してください',
+  }),
+});
+type SignupWithConsentInput = z.infer<typeof signupWithConsentSchema>;
+
 function SignupForm({
   goTo,
 }: {
   goTo: (next: Screen, extra?: Record<string, string>) => void;
 }) {
   const [serverError, setServerError] = useState<string | null>(null);
-  const form = useForm<SignupInput>({ resolver: zodResolver(signupSchema) });
+  const form = useForm<SignupWithConsentInput>({
+    resolver: zodResolver(signupWithConsentSchema),
+    defaultValues: { agreeToTerms: false },
+  });
+  // 規約同意チェックの状態。メール・OAuth いずれの新規登録もこのチェックで解放する。
+  const agreed = form.watch('agreeToTerms');
 
-  const onSubmit = async (values: SignupInput) => {
+  const onSubmit = async (values: SignupWithConsentInput) => {
     setServerError(null);
     const { error } = await supabase.auth.signInWithOtp({
       email: values.email,
@@ -208,26 +222,76 @@ function SignupForm({
           <Field id="email" label="メールアドレス" error={form.formState.errors.email?.message}>
             <Input id="email" type="email" autoComplete="email" {...form.register('email')} />
           </Field>
+          <div className="space-y-1">
+            <label className="flex items-start gap-2 text-[13px] leading-relaxed text-muted-foreground">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 shrink-0 accent-primary"
+                {...form.register('agreeToTerms')}
+              />
+              <span>
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-foreground underline underline-offset-2"
+                >
+                  利用規約
+                </a>
+                および
+                <a
+                  href="/privacy"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-foreground underline underline-offset-2"
+                >
+                  プライバシーポリシー
+                </a>
+                に同意します
+              </span>
+            </label>
+            {form.formState.errors.agreeToTerms && (
+              <p className="text-xs text-destructive">
+                {form.formState.errors.agreeToTerms.message}
+              </p>
+            )}
+          </div>
           {serverError && <p className="text-sm text-destructive">{serverError}</p>}
-          <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={form.formState.isSubmitting || !agreed}
+          >
             {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
             <Mail className="size-4" />
             認証メールを送る
           </Button>
         </form>
         <div className="mt-6">
-          <OAuthButtons />
+          <OAuthButtons disabled={!agreed} />
         </div>
         <p className="mt-5 text-center text-[11px] leading-relaxed text-muted-foreground">
-          続けることで、
-          <a href="#" className="underline underline-offset-2">
+          <a href="/terms" target="_blank" rel="noreferrer" className="underline underline-offset-2">
             利用規約
           </a>
-          {' '}および{' '}
-          <a href="#" className="underline underline-offset-2">
+          {' ・ '}
+          <a
+            href="/privacy"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
             プライバシーポリシー
           </a>
-          に同意したものとみなされます。
+          {' ・ '}
+          <a
+            href="/commerce"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            特定商取引法に基づく表記
+          </a>
         </p>
         <div className="mt-4 text-center text-sm">
           <button
