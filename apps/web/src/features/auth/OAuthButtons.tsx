@@ -26,6 +26,10 @@ export function OAuthButtons() {
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
         queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+        // Azure (Microsoft) はスコープを明示しないと email クレームが返らず、Supabase 側が
+        // "Error getting user email from external provider" で認証中断する。設計 §6.6.1 の
+        // Graph 権限 (openid/email/profile/User.Read) と揃えて email を確実に要求する。
+        scopes: provider === 'azure' ? 'openid profile email User.Read' : undefined,
       },
     });
     if (err) {

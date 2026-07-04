@@ -30,7 +30,7 @@ describe('OAuthButtons', () => {
     expect(arg.options.redirectTo).toContain('/auth/callback');
   });
 
-  it('Microsoft ボタンで signInWithOAuth(provider=azure) を queryParams なしで呼ぶ', async () => {
+  it('Microsoft ボタンで signInWithOAuth(provider=azure) を email スコープ付き・queryParams なしで呼ぶ', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderWithProviders(<OAuthButtons />);
 
@@ -40,6 +40,8 @@ describe('OAuthButtons', () => {
     const arg = signInWithOAuth.mock.calls[0]![0];
     expect(arg.provider).toBe('azure');
     expect(arg.options.queryParams).toBeUndefined();
+    // email クレーム取得のため scope を明示する (Supabase の email 取得失敗を防ぐ)。
+    expect(arg.options.scopes).toContain('email');
   });
 
   it('エラー時はエラーメッセージを表示しボタンを再活性化する', async () => {

@@ -92,6 +92,21 @@ describe('AuthCallbackPage', () => {
     );
   });
 
+  it('プロバイダエラー (?error=...) は遷移せずエラーメッセージを表示する', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: null } });
+    renderWithProviders(<AuthCallbackPage />, {
+      route:
+        '/auth/callback?error=server_error&error_description=Error+getting+user+email+from+external+provider',
+    });
+    expect(
+      await screen.findByText(/メールアドレスを取得できなかった/),
+    ).toBeInTheDocument();
+    // 詳細 (元の error_description) も併記して再発調査を容易にする。
+    expect(screen.getByText(/Error getting user email from external provider/)).toBeInTheDocument();
+    // 無言リダイレクトは行わない。
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it('sync がエラーなら /login へ遷移する', async () => {
     auth.getSession.mockResolvedValue({ data: { session: makeSession() } });
     server.use(
