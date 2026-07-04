@@ -13,22 +13,31 @@ name: Release Deploy
 on:
   release:
     types: [published]
+  # 特定タグを指定して手動で Production デプロイする (ロールバックや再デプロイ用)。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'デプロイ対象の Git タグ (例: v1.2.3)'
+        required: true
+        type: string
 
 concurrency:
-  group: release-deploy-${{ github.ref }}
+  # タグ単位で直列化する (release / 手動どちらの経路でも同じ group にする)。
+  group: release-deploy-${{ github.event.inputs.tag || github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     name: prisma migrate deploy + vercel deploy --prod
     runs-on: ubuntu-latest
-    if: ${{ !github.event.release.prerelease }}
+    # release 経由の prerelease はスキップ。手動 (workflow_dispatch) は常に実行する。
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.inputs.tag || github.event.release.tag_name }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
