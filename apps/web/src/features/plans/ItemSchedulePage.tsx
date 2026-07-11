@@ -1038,11 +1038,12 @@ function BallChip({
         width: laneWidth - 12,
       }}
     >
-      {/* リサイズハンドル (上) */}
-      {editable && tier !== 'mini' && (
+      {/* リサイズハンドル (上)。単日/短期の予定 (mini) でも掴んで期間変更できるよう
+          tier に依らず表示する (#113)。 */}
+      {editable && (
         <div
           onPointerDown={(e) => onPointerDownBall(e, 'resize-top')}
-          className="absolute inset-x-0 top-0 h-1.5 cursor-ns-resize"
+          className="absolute inset-x-0 top-0 z-10 h-1.5 cursor-ns-resize"
           aria-hidden
         />
       )}
@@ -1104,11 +1105,12 @@ function BallChip({
         </div>
       )}
 
-      {/* リサイズハンドル (下) */}
-      {editable && tier !== 'mini' && (
+      {/* リサイズハンドル (下)。単日/短期の予定 (mini) でも掴んで期間変更できるよう
+          tier に依らず表示する (#113)。後続紐づけハンドル (z-20) より下に置く。 */}
+      {editable && (
         <div
           onPointerDown={(e) => onPointerDownBall(e, 'resize-bottom')}
-          className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize"
+          className="absolute inset-x-0 bottom-0 z-10 h-1.5 cursor-ns-resize"
           aria-hidden
         />
       )}
