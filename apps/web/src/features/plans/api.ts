@@ -85,8 +85,8 @@ export type UpdatePlanInput = Partial<{
   category: PlanCategory;
   scheduledDate: string;
   dueDate: string | null;
-  fromMemberId: string;
-  toMemberId: string;
+  fromMemberId: string | null;
+  toMemberId: string | null;
   // 別制作物へ移動 (#52)
   itemId: string;
   successorPlanId: string | null;

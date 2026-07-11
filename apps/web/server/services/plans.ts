@@ -415,18 +415,22 @@ export async function updatePlan(input: {
         'FROM/TO cannot be changed after the ball has been tossed.',
       );
     }
-    const nextFrom = input.body.fromMemberId ?? existing.fromMemberId;
-    const nextTo = input.body.toMemberId ?? existing.toMemberId;
-    if (nextFrom === nextTo) {
+    // undefined は変更なし (既存値を維持)、null は未設定へクリア (#114)
+    const nextFrom =
+      input.body.fromMemberId !== undefined ? input.body.fromMemberId : existing.fromMemberId;
+    const nextTo =
+      input.body.toMemberId !== undefined ? input.body.toMemberId : existing.toMemberId;
+    if (nextFrom && nextTo && nextFrom === nextTo) {
       throw new ApiException(
         'INVALID_MEMBER',
         422,
         'fromMemberId and toMemberId must differ.',
       );
     }
+    // 実在検証は非 null の新規指定のみ (クリア=null は検証不要)
     const changedMemberIds: string[] = [];
-    if (input.body.fromMemberId !== undefined) changedMemberIds.push(input.body.fromMemberId);
-    if (input.body.toMemberId !== undefined) changedMemberIds.push(input.body.toMemberId);
+    if (input.body.fromMemberId) changedMemberIds.push(input.body.fromMemberId);
+    if (input.body.toMemberId) changedMemberIds.push(input.body.toMemberId);
     await assertMembersBelongToProject({
       projectId: input.projectId,
       memberIds: changedMemberIds,

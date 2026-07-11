@@ -156,9 +156,10 @@ export function CreatePlanModal({
         dueDate: v.dueDate || null,
         memo: v.memo ?? null,
         ...(moving ? { itemId: v.itemId } : { successorPlanId: v.successorPlanId || null }),
-        // FROM/TO は TOSS 前のみ送信 (ロック中はサーバ側でも拒否される)
+        // FROM/TO は TOSS 前のみ送信 (ロック中はサーバ側でも拒否される)。
+        // 空選択は null を送って担当者を未設定に戻す (#114)。
         ...(fromToEditable
-          ? { fromMemberId: v.fromMemberId || undefined, toMemberId: v.toMemberId || undefined }
+          ? { fromMemberId: v.fromMemberId || null, toMemberId: v.toMemberId || null }
           : {}),
       });
     },
@@ -249,19 +250,25 @@ export function CreatePlanModal({
               error={form.formState.errors.fromMemberId?.message}
             >
               <SelectField
-                value={form.watch('fromMemberId') || undefined}
-                onChange={(v) => form.setValue('fromMemberId', v)}
+                value={form.watch('fromMemberId') || '__none__'}
+                onChange={(v) => form.setValue('fromMemberId', v === '__none__' ? '' : v)}
                 disabled={!fromToEditable}
-                options={members.map((m) => ({ value: m.id, label: `${m.name} (${m.organizationName || '—'})` }))}
+                options={[
+                  { value: '__none__', label: '未設定' },
+                  ...members.map((m) => ({ value: m.id, label: `${m.name} (${m.organizationName || '—'})` })),
+                ]}
                 placeholder="選択"
               />
             </Field>
             <Field label="確認者(TO)（任意）" error={form.formState.errors.toMemberId?.message}>
               <SelectField
-                value={form.watch('toMemberId') || undefined}
-                onChange={(v) => form.setValue('toMemberId', v)}
+                value={form.watch('toMemberId') || '__none__'}
+                onChange={(v) => form.setValue('toMemberId', v === '__none__' ? '' : v)}
                 disabled={!fromToEditable}
-                options={members.map((m) => ({ value: m.id, label: `${m.name} (${m.organizationName || '—'})` }))}
+                options={[
+                  { value: '__none__', label: '未設定' },
+                  ...members.map((m) => ({ value: m.id, label: `${m.name} (${m.organizationName || '—'})` })),
+                ]}
                 placeholder="選択"
               />
             </Field>

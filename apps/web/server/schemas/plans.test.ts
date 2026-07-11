@@ -86,6 +86,14 @@ describe('updatePlanBodySchema', () => {
     expect(updatePlanBodySchema.safeParse({ toMemberId: toId }).success).toBe(true);
   });
 
+  it('accepts fromMemberId / toMemberId = null (clears assignee) (#114)', () => {
+    expect(updatePlanBodySchema.safeParse({ fromMemberId: null }).success).toBe(true);
+    expect(updatePlanBodySchema.safeParse({ toMemberId: null }).success).toBe(true);
+    expect(
+      updatePlanBodySchema.safeParse({ fromMemberId: null, toMemberId: null }).success,
+    ).toBe(true);
+  });
+
   it('accepts successorPlanId set and null (clear)', () => {
     expect(updatePlanBodySchema.safeParse({ successorPlanId: fromId }).success).toBe(true);
     expect(updatePlanBodySchema.safeParse({ successorPlanId: null }).success).toBe(true);
