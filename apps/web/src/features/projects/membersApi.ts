@@ -4,11 +4,10 @@ export type ProjectMember = {
   id: string;
   userId: string | null;
   name: string;
-  email: string;
+  email: string | null;
   organizationName: string;
   memberType: 'client' | 'production';
   sortOrder: number;
-  inviteStatus: 'accepted' | 'pending' | 'expired';
   createdAt: string;
   updatedAt: string;
 };
@@ -16,7 +15,7 @@ export type ProjectMember = {
 export type AddMembersInput = {
   members: Array<{
     name: string;
-    email: string;
+    email?: string;
     organizationName: string;
     memberType: 'client' | 'production';
   }>;

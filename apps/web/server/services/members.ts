@@ -1,57 +1,32 @@
 import { prisma } from '@trakon/db';
 
 import { ApiException } from '../lib/errors.js';
-import { getServerEnv } from '../lib/env.js';
-import { getMailer } from '../lib/mailer.js';
-import {
-  defaultInvitationExpiresAt,
-  generateInvitationToken,
-} from '../lib/tokens.js';
 import type { AddMembersBody, UpdateMemberBody } from '../schemas/members.js';
 
 export type MemberDTO = {
   id: string;
   userId: string | null;
   name: string;
-  email: string;
+  /** スケジュール担当者としての登録ではメールは任意 (未登録は null) */
+  email: string | null;
   organizationName: string;
   memberType: 'client' | 'production';
   sortOrder: number;
-  inviteStatus: 'accepted' | 'pending' | 'expired';
   createdAt: string;
   updatedAt: string;
 };
 
-function inviteStatusOf(
-  m: {
-    userId: string | null;
-    invitations: Array<{ acceptedAt: Date | null; revokedAt: Date | null; expiresAt: Date }>;
-  },
-  now: Date,
-): MemberDTO['inviteStatus'] {
-  if (m.userId) return 'accepted';
-  // 未受諾 → 有効な招待があるか確認
-  const active = m.invitations.find(
-    (i) => !i.acceptedAt && !i.revokedAt && i.expiresAt > now,
-  );
-  return active ? 'pending' : 'expired';
-}
-
-function toDTO(
-  m: {
-    id: string;
-    userId: string | null;
-    name: string;
-    email: string;
-    organizationName: string;
-    memberType: string;
-    sortOrder: number;
-    createdAt: Date;
-    updatedAt: Date;
-    invitations: Array<{ acceptedAt: Date | null; revokedAt: Date | null; expiresAt: Date }>;
-  },
-  now: Date,
-): MemberDTO {
+function toDTO(m: {
+  id: string;
+  userId: string | null;
+  name: string;
+  email: string | null;
+  organizationName: string;
+  memberType: string;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+}): MemberDTO {
   return {
     id: m.id,
     userId: m.userId,
@@ -60,7 +35,6 @@ function toDTO(
     organizationName: m.organizationName,
     memberType: m.memberType as MemberDTO['memberType'],
     sortOrder: m.sortOrder,
-    inviteStatus: inviteStatusOf(m, now),
     createdAt: m.createdAt.toISOString(),
     updatedAt: m.updatedAt.toISOString(),
   };
@@ -70,37 +44,29 @@ export async function listMembers(projectId: string): Promise<MemberDTO[]> {
   const rows = await prisma.projectMember.findMany({
     where: { projectId, deletedAt: null },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-    include: {
-      invitations: {
-        select: { acceptedAt: true, revokedAt: true, expiresAt: true },
-      },
-    },
   });
-  const now = new Date();
-  return rows.map((m) => toDTO(m, now));
+  return rows.map((m) => toDTO(m));
 }
 
 /**
- * 参加者を追加。仮メンバー + 招待トークン INSERT + メール送信を 1 トランザクションで。
- * メール送信失敗時はトランザクション全体をロールバック (Phase 1 で Inngest 非同期化検討)。
+ * 参加者を追加。参加者はスケジュール上の担当者として登録するもので、
+ * メールは任意・自動招待やメール送信は行わない。
+ * (メールは将来フェーズで「予定変更時の共有リンク自動送信」に使用予定)
  */
 export async function addMembers(input: {
   projectId: string;
-  projectName: string;
-  inviterDisplayName: string;
   body: AddMembersBody;
 }): Promise<MemberDTO[]> {
-  const env = getServerEnv();
-  const mailer = getMailer();
-
-  // 既存メンバーのメールと重複しないかチェック
+  // 既存メンバーのメールと重複しないかチェック (メール未登録は対象外)
   const existing = await prisma.projectMember.findMany({
     where: { projectId: input.projectId, deletedAt: null },
     select: { email: true },
   });
-  const taken = new Set(existing.map((m) => m.email.toLowerCase()));
+  const taken = new Set(
+    existing.flatMap((m) => (m.email ? [m.email.toLowerCase()] : [])),
+  );
   for (const m of input.body.members) {
-    if (taken.has(m.email)) {
+    if (m.email && taken.has(m.email)) {
       throw new ApiException(
         'MEMBER_EMAIL_TAKEN',
         409,
@@ -109,13 +75,6 @@ export async function addMembers(input: {
       );
     }
   }
-
-  // 招待トークンとメール内容を生成
-  const expiresAt = defaultInvitationExpiresAt();
-  const prepared = input.body.members.map((m, idx) => {
-    const { raw, hash } = generateInvitationToken();
-    return { member: m, raw, hash, idx };
-  });
 
   // 末尾の sortOrder を取得して採番
   const last = await prisma.projectMember.findFirst({
@@ -127,48 +86,19 @@ export async function addMembers(input: {
 
   const created = await prisma.$transaction(async (tx) => {
     const result: MemberDTO[] = [];
-    for (const p of prepared) {
+    for (const [idx, m] of input.body.members.entries()) {
       const member = await tx.projectMember.create({
         data: {
           projectId: input.projectId,
           userId: null,
-          name: p.member.name,
-          email: p.member.email,
-          organizationName: p.member.organizationName,
-          memberType: p.member.memberType,
-          sortOrder: baseOrder + p.idx,
+          name: m.name,
+          email: m.email ?? null,
+          organizationName: m.organizationName,
+          memberType: m.memberType,
+          sortOrder: baseOrder + idx,
         },
       });
-      await tx.invitation.create({
-        data: {
-          projectId: input.projectId,
-          invitedMemberId: member.id,
-          email: p.member.email,
-          tokenHash: p.hash,
-          expiresAt,
-        },
-      });
-      const acceptUrl = `${env.PUBLIC_APP_URL}/invitations/${p.raw}`;
-      // メール送信は同期、失敗時 tx は throw でロールバックされる
-      await mailer.sendInvitation({
-        to: p.member.email,
-        projectName: input.projectName,
-        inviterName: input.inviterDisplayName,
-        acceptUrl,
-        expiresAt,
-      });
-      result.push({
-        id: member.id,
-        userId: null,
-        name: member.name,
-        email: member.email,
-        organizationName: member.organizationName,
-        memberType: member.memberType as MemberDTO['memberType'],
-        sortOrder: member.sortOrder,
-        inviteStatus: 'pending',
-        createdAt: member.createdAt.toISOString(),
-        updatedAt: member.updatedAt.toISOString(),
-      });
+      result.push(toDTO(member));
     }
     return result;
   });
@@ -193,11 +123,8 @@ export async function updateMember(input: {
       memberType: input.body.memberType ?? undefined,
       sortOrder: input.body.sortOrder ?? undefined,
     },
-    include: {
-      invitations: { select: { acceptedAt: true, revokedAt: true, expiresAt: true } },
-    },
   });
-  return toDTO(updated, new Date());
+  return toDTO(updated);
 }
 
 export async function deleteMember(input: {

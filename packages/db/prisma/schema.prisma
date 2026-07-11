@@ -89,7 +89,8 @@ model ProjectMember {
   /// 招待受諾前は NULL
   userId           String?   @map("user_id") @db.Uuid
   name             String
-  email            String
+  /// スケジュール担当者としての登録ではメールは任意 (未登録は NULL)
+  email            String?
   organizationName String    @map("organization_name")
   /// 'client' | 'production' (CHECK 制約)
   memberType       String    @map("member_type")

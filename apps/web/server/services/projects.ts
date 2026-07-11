@@ -127,8 +127,9 @@ export async function createProject(input: {
   }
 
   // 作成者のメールがメンバー入力に被ると uq_pm_project_email 違反になるため除外
+  // (メール未登録の参加者は衝突しないためそのまま残す)
   const filteredMembers = body.members.filter(
-    (m) => m.email.toLowerCase() !== creator.email.toLowerCase(),
+    (m) => !m.email || m.email.toLowerCase() !== creator.email.toLowerCase(),
   );
 
   const created = await prisma.$transaction(async (tx) => {
@@ -169,7 +170,7 @@ export async function createProject(input: {
           projectId: project.id,
           userId: null,
           name: m.name,
-          email: m.email,
+          email: m.email ?? null,
           organizationName: m.organizationName,
           memberType: m.memberType,
           sortOrder: idx + 1,

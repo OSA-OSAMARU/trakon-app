@@ -4,9 +4,15 @@ const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.');
 
+// メールは任意 (スケジュール担当者としての登録)。空文字は「未登録」= undefined に正規化。
+const optionalEmail = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.string().trim().toLowerCase().email().max(320).optional(),
+);
+
 const memberInput = z.object({
   name: z.string().trim().min(1).max(100),
-  email: z.string().trim().toLowerCase().email().max(320),
+  email: optionalEmail,
   organizationName: z.string().trim().max(255).default(''),
   memberType: z.enum(['client', 'production']),
 });
@@ -29,8 +35,10 @@ export const createProjectBodySchema = z
   })
   .refine(
     (v) => {
+      // メール未登録 (undefined) の参加者は重複チェック対象外
       const seen = new Set<string>();
       for (const m of v.members) {
+        if (!m.email) continue;
         if (seen.has(m.email)) return false;
         seen.add(m.email);
       }

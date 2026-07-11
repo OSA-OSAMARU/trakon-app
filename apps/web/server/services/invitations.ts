@@ -30,7 +30,8 @@ export async function verifyInvitation(rawToken: string): Promise<InvitationVeri
     invitedMember: {
       id: inv.invitedMember.id,
       name: inv.invitedMember.name,
-      email: inv.invitedMember.email,
+      // 招待先メールは invitations.email が正 (参加者行のメールは任意化され null 可)
+      email: inv.email,
       organizationName: inv.invitedMember.organizationName,
       memberType: inv.invitedMember.memberType as 'client' | 'production',
     },
@@ -58,7 +59,7 @@ export async function acceptInvitation(input: {
   });
   if (!user) throw new ApiException('PROFILE_NOT_COMPLETED', 404, 'Profile is required.');
 
-  if (user.email.toLowerCase() !== inv.invitedMember.email.toLowerCase()) {
+  if (user.email.toLowerCase() !== inv.email.toLowerCase()) {
     throw new ApiException(
       'INVITATION_EMAIL_MISMATCH',
       403,

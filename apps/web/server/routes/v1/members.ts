@@ -5,7 +5,6 @@ import {
   requireProjectMember,
 } from '../../middleware/projectAuth.js';
 import { ApiException } from '../../lib/errors.js';
-import { prisma } from '@trakon/db';
 import {
   addMembersBodySchema,
   updateMemberBodySchema,
@@ -31,21 +30,8 @@ export const membersRoute = new Hono()
 
   .post('/', requireProjectMember(), requireProjectDirector(), async (c) => {
     const project = c.get('project');
-    const userId = c.get('currentUserId');
     const body = addMembersBodySchema.parse(await c.req.json());
-
-    const [projectRow, inviter] = await Promise.all([
-      prisma.project.findUnique({ where: { id: project.projectId }, select: { name: true } }),
-      prisma.user.findUnique({ where: { id: userId }, select: { displayName: true } }),
-    ]);
-    if (!projectRow || !inviter) throw new ApiException('NOT_FOUND', 404, 'Project not found.');
-
-    const created = await addMembers({
-      projectId: project.projectId,
-      projectName: projectRow.name,
-      inviterDisplayName: inviter.displayName,
-      body,
-    });
+    const created = await addMembers({ projectId: project.projectId, body });
     return c.json({ data: created }, 201);
   })
 

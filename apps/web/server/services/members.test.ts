@@ -11,30 +11,22 @@ import type {
 // Mocks
 // =============================================================================
 
-type MockInvitation = {
-  acceptedAt: Date | null;
-  revokedAt: Date | null;
-  expiresAt: Date;
-};
 type MockMember = {
   id: string;
   projectId: string;
   userId: string | null;
   name: string;
-  email: string;
+  email: string | null;
   organizationName: string;
   memberType: string;
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
-  invitations: MockInvitation[];
 };
 
 // メンバーストア (id -> 行)。各テストで afterEach に全消去する。
 const memberStore: Record<string, MockMember> = {};
-// invitation.create 呼び出しを記録 (tx 内 INSERT の検証用)
-const invitationStore: Array<Record<string, unknown>> = [];
 
 let nextId = 1;
 const newId = (prefix: string) => `${prefix}-${nextId++}`;
@@ -48,24 +40,18 @@ const memberCreate = vi.fn(
       projectId: data.projectId ?? 'p-1',
       userId: data.userId ?? null,
       name: data.name ?? '',
-      email: data.email ?? '',
+      email: data.email ?? null,
       organizationName: data.organizationName ?? '',
       memberType: data.memberType ?? 'client',
       sortOrder: data.sortOrder ?? 0,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
-      invitations: [],
     };
     memberStore[m.id] = m;
     return m;
   },
 );
-
-const invitationCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-  invitationStore.push(data);
-  return { id: newId('inv'), ...data };
-});
 
 const prismaMock = {
   projectMember: {
@@ -74,7 +60,6 @@ const prismaMock = {
       async (args: {
         where: { projectId: string; deletedAt: null };
         select?: { email: true };
-        include?: unknown;
       }) => {
         const rows = Object.values(memberStore)
           .filter((m) => m.projectId === args.where.projectId && m.deletedAt === null)
@@ -107,7 +92,7 @@ const prismaMock = {
     ),
     create: memberCreate,
     update: vi.fn(
-      async (args: { where: { id: string }; data: Partial<MockMember>; include?: unknown }) => {
+      async (args: { where: { id: string }; data: Partial<MockMember> }) => {
         const m = memberStore[args.where.id];
         if (!m) throw new Error('not found in mock');
         for (const [k, v] of Object.entries(args.data)) {
@@ -123,28 +108,15 @@ const prismaMock = {
       return m;
     }),
   },
-  invitation: { create: invitationCreate },
   // members.ts はコールバック形式 ($transaction(fn)) のみ使用。
   $transaction: vi.fn(async (arg: unknown) => {
     return (arg as (tx: unknown) => Promise<unknown>)({
       projectMember: { create: memberCreate },
-      invitation: { create: invitationCreate },
     });
   }),
 };
 
 vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
-
-// env: PUBLIC_APP_URL のみ参照される。
-vi.mock('../lib/env.js', () => ({
-  getServerEnv: () => ({ PUBLIC_APP_URL: 'https://app.example.test' }),
-}));
-
-// mailer: sendInvitation のモック。失敗系テストで一時的に reject させる。
-const sendInvitationMock = vi.fn(async () => undefined);
-vi.mock('../lib/mailer.js', () => ({
-  getMailer: () => ({ sendInvitation: sendInvitationMock }),
-}));
 
 // =============================================================================
 // Tests
@@ -161,10 +133,7 @@ beforeAll(async () => {
 
 afterEach(() => {
   for (const k of Object.keys(memberStore)) delete memberStore[k];
-  invitationStore.length = 0;
   vi.clearAllMocks();
-  // clearAllMocks は実装を消さないため再設定は不要だが、reject 設定はリセットしておく。
-  sendInvitationMock.mockImplementation(async () => undefined);
 });
 
 // 既存メンバーをストアへ投入するヘルパ
@@ -175,14 +144,13 @@ function seedMember(over: Partial<MockMember> = {}): MockMember {
     projectId: over.projectId ?? 'p-1',
     userId: over.userId ?? null,
     name: over.name ?? 'Seed',
-    email: over.email ?? 'seed@example.com',
+    email: 'email' in over ? (over.email ?? null) : 'seed@example.com',
     organizationName: over.organizationName ?? 'Org',
     memberType: over.memberType ?? 'client',
     sortOrder: over.sortOrder ?? 0,
     createdAt: over.createdAt ?? now,
     updatedAt: over.updatedAt ?? now,
     deletedAt: over.deletedAt ?? null,
-    invitations: over.invitations ?? [],
   };
   memberStore[m.id] = m;
   return m;
@@ -206,35 +174,10 @@ describe('listMembers', () => {
     expect(res[0]!.createdAt).toBe(new Date('2026-01-01T00:00:00Z').toISOString());
   });
 
-  it('inviteStatus = accepted when userId is set', async () => {
-    seedMember({ id: 'm-acc', userId: 'u-9' });
+  it('returns null email for members without a registered email', async () => {
+    seedMember({ id: 'm-noemail', name: 'NoEmail', email: null });
     const [m] = await listMembers('p-1');
-    expect(m!.inviteStatus).toBe('accepted');
-  });
-
-  it('inviteStatus = pending when an active invitation exists', async () => {
-    seedMember({
-      id: 'm-pend',
-      userId: null,
-      invitations: [
-        { acceptedAt: null, revokedAt: null, expiresAt: new Date('2999-01-01T00:00:00Z') },
-      ],
-    });
-    const [m] = await listMembers('p-1');
-    expect(m!.inviteStatus).toBe('pending');
-  });
-
-  it('inviteStatus = expired when invitation is past expiry / revoked / accepted', async () => {
-    seedMember({
-      id: 'm-exp',
-      userId: null,
-      invitations: [
-        { acceptedAt: null, revokedAt: null, expiresAt: new Date('2000-01-01T00:00:00Z') },
-        { acceptedAt: null, revokedAt: new Date('2026-01-01T00:00:00Z'), expiresAt: new Date('2999-01-01T00:00:00Z') },
-      ],
-    });
-    const [m] = await listMembers('p-1');
-    expect(m!.inviteStatus).toBe('expired');
+    expect(m!.email).toBeNull();
   });
 
   it('returns empty array when project has no members', async () => {
@@ -244,17 +187,11 @@ describe('listMembers', () => {
 });
 
 describe('addMembers', () => {
-  const baseInput = {
-    projectId: 'p-1',
-    projectName: 'My Project',
-    inviterDisplayName: 'Director',
-  };
-
-  it('creates members + invitations + sends mail, assigning sortOrder from tail', async () => {
+  it('creates members without invitations, assigning sortOrder from tail', async () => {
     // 既存メンバー sortOrder=2 → 新規は 3, 4 と採番される
     seedMember({ id: 'm-old', email: 'old@x.test', sortOrder: 2 });
     const res = await addMembers({
-      ...baseInput,
+      projectId: 'p-1',
       body: {
         members: [
           { name: 'New1', email: 'new1@x.test', organizationName: 'O1', memberType: 'client' },
@@ -264,21 +201,34 @@ describe('addMembers', () => {
     });
     expect(res).toHaveLength(2);
     expect(res.map((m) => m.sortOrder)).toEqual([3, 4]);
-    expect(res.map((m) => m.inviteStatus)).toEqual(['pending', 'pending']);
     expect(res[0]).toMatchObject({ name: 'New1', email: 'new1@x.test', memberType: 'client', userId: null });
-    // invitation INSERT が 2 件、メール送信が 2 回
-    expect(invitationStore).toHaveLength(2);
-    expect(sendInvitationMock).toHaveBeenCalledTimes(2);
-    // acceptUrl が env の PUBLIC_APP_URL を含む
-    const mailArg = (sendInvitationMock.mock.calls[0] as unknown[])[0] as { acceptUrl: string; projectName: string; inviterName: string };
-    expect(mailArg.acceptUrl).toMatch(/^https:\/\/app\.example\.test\/invitations\//);
-    expect(mailArg.projectName).toBe('My Project');
-    expect(mailArg.inviterName).toBe('Director');
+  });
+
+  it('creates a member without an email (schedule assignee)', async () => {
+    const res = await addMembers({
+      projectId: 'p-1',
+      body: {
+        members: [{ name: 'NoEmail', organizationName: '', memberType: 'production' }],
+      },
+    });
+    expect(res[0]).toMatchObject({ name: 'NoEmail', email: null, userId: null });
+  });
+
+  it('allows multiple members without an email (no unique collision)', async () => {
+    seedMember({ id: 'm-none', email: null, sortOrder: 0 });
+    const res = await addMembers({
+      projectId: 'p-1',
+      body: {
+        members: [{ name: 'AlsoNoEmail', organizationName: '', memberType: 'client' }],
+      },
+    });
+    expect(res).toHaveLength(1);
+    expect(res[0]!.email).toBeNull();
   });
 
   it('assigns sortOrder starting at 0 when project is empty', async () => {
     const res = await addMembers({
-      ...baseInput,
+      projectId: 'p-1',
       body: {
         members: [{ name: 'First', email: 'first@x.test', organizationName: '', memberType: 'client' }],
       },
@@ -290,7 +240,7 @@ describe('addMembers', () => {
     seedMember({ id: 'm-dup', email: 'dup@x.test' });
     await expect(
       addMembers({
-        ...baseInput,
+        projectId: 'p-1',
         body: {
           members: [{ name: 'Dup', email: 'dup@x.test', organizationName: '', memberType: 'client' }],
         },
@@ -298,19 +248,6 @@ describe('addMembers', () => {
     ).rejects.toMatchObject({ code: 'MEMBER_EMAIL_TAKEN', status: 409, details: { email: 'dup@x.test' } });
     // 重複検知時は tx 自体に入らない
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
-    expect(sendInvitationMock).not.toHaveBeenCalled();
-  });
-
-  it('rolls back (rejects) when mailer fails inside the transaction', async () => {
-    sendInvitationMock.mockRejectedValueOnce(new Error('smtp down'));
-    await expect(
-      addMembers({
-        ...baseInput,
-        body: {
-          members: [{ name: 'X', email: 'x@x.test', organizationName: '', memberType: 'client' }],
-        },
-      }),
-    ).rejects.toThrow('smtp down');
   });
 });
 

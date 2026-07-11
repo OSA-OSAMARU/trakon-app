@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Mail, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare } from 'lucide-react';
+import { Loader2, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare } from 'lucide-react';
 import { MemberKanbanTab } from '@/features/plans/MemberKanbanTab';
 import { toast } from 'sonner';
 
@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -52,12 +51,6 @@ import { ApiClientError } from '@/lib/api';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { membersApi, membersQueryKey, type ProjectMember } from './membersApi';
-
-const STATUS_LABEL: Record<ProjectMember['inviteStatus'], { text: string; tone: 'default' | 'secondary' | 'destructive' }> = {
-  accepted: { text: '参加中', tone: 'default' },
-  pending: { text: '招待中', tone: 'secondary' },
-  expired: { text: '期限切れ', tone: 'destructive' },
-};
 
 export function MembersPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -178,25 +171,20 @@ function ManageTab({ projectId }: { projectId: string }) {
                 <TableHead>所属</TableHead>
                 <TableHead>メール</TableHead>
                 <TableHead>種別</TableHead>
-                <TableHead>状態</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {query.data.map((m) => {
-                const status = STATUS_LABEL[m.inviteStatus];
                 return (
                   <TableRow key={m.id}>
                     <TableCell className="font-medium">{m.name}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {m.organizationName || '—'}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{m.email}</TableCell>
+                    <TableCell className="text-muted-foreground">{m.email || '—'}</TableCell>
                     <TableCell className="text-xs">
                       {m.memberType === 'client' ? 'クライアント' : '制作側'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={status.tone}>{status.text}</Badge>
                     </TableCell>
                     <TableCell>
                       <Button
@@ -253,7 +241,8 @@ function ManageTab({ projectId }: { projectId: string }) {
 // -----------------------------------------------------------------------------
 const addSchema = z.object({
   name: z.string().trim().min(1, '氏名は必須').max(100),
-  email: z.string().trim().email('メール形式が不正').max(320),
+  // メールは任意。入力された場合のみ形式チェック
+  email: z.union([z.literal(''), z.string().trim().email('メール形式が不正').max(320)]),
   organizationName: z.string().trim().max(255),
   memberType: z.enum(['client', 'production']),
 });
@@ -275,12 +264,13 @@ function AddMembersDialog({
   });
 
   const addMut = useMutation({
-    mutationFn: (v: AddValues) => membersApi.add(projectId, { members: [v] }),
+    mutationFn: (v: AddValues) =>
+      membersApi.add(projectId, {
+        members: [{ ...v, email: v.email.trim() || undefined }],
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) });
-      toast.success('招待メールを送信しました', {
-        description: '（開発環境ではコンソールに出力されます）',
-      });
+      toast.success('参加者を追加しました');
       form.reset();
       onClose();
     },
@@ -299,7 +289,7 @@ function AddMembersDialog({
         <DialogHeader>
           <DialogTitle>参加者を追加</DialogTitle>
           <DialogDescription>
-            入力されたメールアドレスに招待を送ります（72 時間有効）。
+            スケジュール上の担当者として登録します。メールは任意です。
           </DialogDescription>
         </DialogHeader>
         <form
@@ -313,7 +303,7 @@ function AddMembersDialog({
           <Field label="所属" error={form.formState.errors.organizationName?.message}>
             <Input {...form.register('organizationName')} />
           </Field>
-          <Field label="メール" error={form.formState.errors.email?.message}>
+          <Field label="メール（任意）" error={form.formState.errors.email?.message}>
             <Input type="email" {...form.register('email')} />
           </Field>
           <Field label="種別" error={form.formState.errors.memberType?.message}>
@@ -341,9 +331,9 @@ function AddMembersDialog({
             {addMut.isPending ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
-              <Mail className="size-4" />
+              <Plus className="size-4" />
             )}
-            招待を送信
+            追加する
           </Button>
         </DialogFooter>
       </DialogContent>
