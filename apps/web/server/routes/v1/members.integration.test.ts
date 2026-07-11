@@ -86,6 +86,40 @@ describe('members routes (integration)', () => {
       expect(res.body.data[0]!.email).toBeNull();
     });
 
+    it('POST /members/reorder はディレクターが並び替えでき、新しい順序を返す (#111)', async () => {
+      const { token, project, member } = await setupProjectWithDirector();
+      const b = await createMember({ projectId: project.id, userId: null, memberType: 'client' });
+      const c = await createMember({ projectId: project.id, userId: null, memberType: 'client' });
+
+      const res = await api<{ data: Array<{ id: string; sortOrder: number }> }>(
+        `/api/v1/projects/${project.id}/members/reorder`,
+        {
+          method: 'POST',
+          token,
+          body: { orderedIds: [c.id, member.id, b.id] },
+        },
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((m) => m.id)).toEqual([c.id, member.id, b.id]);
+      expect(res.body.data.map((m) => m.sortOrder)).toEqual([0, 1, 2]);
+    });
+
+    it('POST /members/reorder は id が過不足あると 422 INVALID_REORDER', async () => {
+      const { token, project, member } = await setupProjectWithDirector();
+      await createMember({ projectId: project.id, userId: null, memberType: 'client' });
+
+      const res = await api<{ error: { code: string } }>(
+        `/api/v1/projects/${project.id}/members/reorder`,
+        {
+          method: 'POST',
+          token,
+          body: { orderedIds: [member.id] }, // 追加メンバーが欠けている
+        },
+      );
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('INVALID_REORDER');
+    });
+
     it('PATCH /members/:memberId はディレクターがメンバーを更新できる', async () => {
       const { token, project } = await setupProjectWithDirector();
       const target = await createMember({

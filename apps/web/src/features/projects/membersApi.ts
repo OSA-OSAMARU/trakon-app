@@ -45,6 +45,11 @@ export const membersApi = {
     apiRequest<void>(`/projects/${projectId}/members/${memberId}`, {
       method: 'DELETE',
     }),
+  reorder: (projectId: string, orderedIds: string[]) =>
+    apiRequest<ProjectMember[]>(`/projects/${projectId}/members/reorder`, {
+      method: 'POST',
+      body: { orderedIds },
+    }),
 };
 
 export const membersQueryKey = {

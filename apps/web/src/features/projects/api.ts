@@ -80,6 +80,11 @@ export const projectsApi = {
     }),
   deleteItem: (projectId: string, itemId: string) =>
     apiRequest<void>(`/projects/${projectId}/items/${itemId}`, { method: 'DELETE' }),
+  reorderItems: (projectId: string, orderedIds: string[]) =>
+    apiRequest<ProjectItem[]>(`/projects/${projectId}/items/reorder`, {
+      method: 'POST',
+      body: { orderedIds },
+    }),
 };
 
 export const projectsQueryKey = {
