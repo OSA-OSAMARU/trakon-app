@@ -209,40 +209,18 @@ export async function completePlan(input: {
       planId: plan.id,
     });
 
-    // 自動連鎖 (Phase 0 は同一 item 内、1 段のみ)
-    let autoTossed: PlanWithIncludes | null = null;
-    if (plan.successorPlanId) {
-      const successor = await tx.plan.findFirst({
-        where: { id: plan.successorPlanId, itemId: input.itemId, deletedAt: null },
-        include: PLAN_INCLUDE,
-      });
-      if (successor && successor.status === 'active' && currentBallState(successor) === 'ready') {
-        await tx.ballEvent.create({
-          data: {
-            planId: successor.id,
-            eventType: 'tossed',
-            source: 'auto_chain',
-            actorMemberId: null,
-            actorUserId: null,
-          },
-        });
-        await recordAudit({
-          tx,
-          actorUserId: input.currentUserId,
-          action: 'auto_toss',
-          planId: successor.id,
-        });
-        autoTossed = await loadPlanWithIncludes(tx, successor.id, input.itemId);
-      }
-    }
+    // 完了時の自動連鎖 TOSS は廃止 (#117)。
+    // 先行を完了しても後続は未TOSS (実施者=FROM にボール) のままにし、後続の実施者が
+    // 作業後に手動で TOSS する運用とする。これによりケース3 (後続未TOSS→後続の実施者) が
+    // 自然に成立する。autoTossed は後方互換のため常に null を返す。
 
     const completed = await loadPlanWithIncludes(tx, plan.id, input.itemId);
-    return { completed, autoTossed };
+    return { completed };
   });
 
   return {
     plan: toPlanDTO(result.completed, []),
-    autoTossed: result.autoTossed ? toPlanDTO(result.autoTossed, []) : null,
+    autoTossed: null,
   };
 }
 
@@ -321,42 +299,19 @@ export async function undoCompletePlan(input: {
       );
     }
 
-    // 完了時に後続を自動 TOSS していた場合、その auto_chain TOSS も巻き戻す。
-    // - 後続の最新イベントが auto_chain の tossed → この完了が誘発したもの。toss_undone で ready に戻す。
-    // - 後続が既に完了している → 差し戻すと不整合になるためブロックする。
-    // - それ以外 (自動連鎖していない / 既に人手で操作済み) → 後続には触れない。
+    // 後続が既に完了している場合は、この予定の完了を取り消すと不整合になるためブロックする。
+    // (自動連鎖 TOSS は廃止済みのため巻き戻し処理は不要 — #117)
     if (plan.successorPlanId) {
       const successor = await tx.plan.findFirst({
         where: { id: plan.successorPlanId, itemId: input.itemId, deletedAt: null },
-        include: PLAN_INCLUDE,
+        select: { status: true },
       });
-      if (successor) {
-        const succLatest = successor.ballEvents[0];
-        const wasAutoChainedByThis =
-          !!succLatest && succLatest.eventType === 'tossed' && succLatest.source === 'auto_chain';
-        if (wasAutoChainedByThis) {
-          await tx.ballEvent.create({
-            data: {
-              planId: successor.id,
-              eventType: 'toss_undone',
-              source: 'human',
-              actorMemberId: input.currentMemberId,
-              actorUserId: input.currentUserId,
-            },
-          });
-          await recordAudit({
-            tx,
-            actorUserId: input.currentUserId,
-            action: 'untoss',
-            planId: successor.id,
-          });
-        } else if (successor.status === 'completed') {
-          throw new ApiException(
-            'SUCCESSOR_ALREADY_COMPLETED',
-            409,
-            '後続予定が完了済みのため、この予定の完了を取り消せません。',
-          );
-        }
+      if (successor?.status === 'completed') {
+        throw new ApiException(
+          'SUCCESSOR_ALREADY_COMPLETED',
+          409,
+          '後続予定が完了済みのため、この予定の完了を取り消せません。',
+        );
       }
     }
 

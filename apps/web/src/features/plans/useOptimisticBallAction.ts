@@ -138,11 +138,8 @@ export function useCompletePlan(input: { projectId: string; itemId: string; plan
       }
       toast.error(err instanceof ApiClientError ? err.message : '完了に失敗しました');
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
       toast.success('完了しました');
-      if (result.autoTossed) {
-        toast.message('後続の予定に自動 TOSS しました');
-      }
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: listKey });

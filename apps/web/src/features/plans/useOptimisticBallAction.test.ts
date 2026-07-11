@@ -173,12 +173,12 @@ describe('useTossPlan', () => {
 });
 
 describe('useCompletePlan', () => {
-  it('楽観更新で status=completed になり、成功時に autoTossed トーストを出す', async () => {
+  it('楽観更新で status=completed になり、成功トーストを出す (自動連鎖廃止 #117)', async () => {
     seedList(makePlan());
     const snapshots = recordListSnapshots();
     server.use(
       http.post(completeUrl, () =>
-        HttpResponse.json({ data: { plan: makePlan(), autoTossed: makePlan() } }),
+        HttpResponse.json({ data: { plan: makePlan(), autoTossed: null } }),
       ),
     );
 
@@ -198,7 +198,8 @@ describe('useCompletePlan', () => {
     expect(optimistic).toBeDefined();
     expect(optimistic?.status).toBe('completed');
     expect(toastSuccess).toHaveBeenCalledWith('完了しました');
-    expect(toastMessage).toHaveBeenCalledWith('後続の予定に自動 TOSS しました');
+    // 自動 TOSS トーストはもう出ない
+    expect(toastMessage).not.toHaveBeenCalledWith('後続の予定に自動 TOSS しました');
   });
 
   it('エラー時にロールバックして失敗トーストを出す', async () => {

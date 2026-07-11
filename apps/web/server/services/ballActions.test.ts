@@ -458,7 +458,7 @@ describe('completePlan', () => {
     expect(auditStore.some((a) => a.action === 'complete')).toBe(true);
   });
 
-  it('後続が ready のとき auto_chain で TOSS される (autoTossed を返す)', async () => {
+  it('後続が ready でも自動 TOSS しない (自動連鎖廃止 #117)', async () => {
     const from = makeMember();
     const to = makeMember();
     const sFrom = makeMember();
@@ -475,13 +475,10 @@ describe('completePlan', () => {
       currentMemberId: to.id,
       isDirector: false,
     });
-    expect(res.autoTossed).not.toBeNull();
-    expect(res.autoTossed?.id).toBe(successor.id);
-    expect(res.autoTossed?.ballState).toBe('tossed');
-    const autoEvents = ballEventStore.filter((e) => e.planId === successor.id);
-    expect(autoEvents).toHaveLength(1);
-    expect(autoEvents[0]!.source).toBe('auto_chain');
-    expect(auditStore.some((a) => a.action === 'auto_toss' && a.resourceId === successor.id)).toBe(true);
+    expect(res.autoTossed).toBeNull();
+    // 後続にはイベントが一切追記されず、ready のまま (ボールは後続の実施者=FROM に残る)
+    expect(ballEventStore.filter((e) => e.planId === successor.id)).toHaveLength(0);
+    expect(auditStore.some((a) => a.action === 'auto_toss')).toBe(false);
   });
 
   it('後続が既に tossed (ready でない) なら auto_chain しない', async () => {
@@ -685,10 +682,11 @@ describe('undoCompletePlan', () => {
     expect(auditStore.some((a) => a.action === 'undo_complete')).toBe(true);
   });
 
-  it('後続が auto_chain で TOSS されていた場合、後続も toss_undone で巻き戻す', async () => {
+  it('完了取り消し時、後続 (未完了) には触れない (自動連鎖廃止 #117)', async () => {
     const from = makeMember();
     const to = makeMember();
     const successor = makePlan({ fromMemberId: makeMember().id, toMemberId: makeMember().id });
+    // 過去に auto_chain で TOSS された履歴があっても巻き戻さない
     addEvent(successor.id, 'tossed', 'auto_chain');
     const plan = makePlan({
       fromMemberId: from.id,
@@ -708,8 +706,9 @@ describe('undoCompletePlan', () => {
       isDirector: false,
     });
     expect(res.plan.status).toBe('active');
-    expect(eventTypesFor(successor.id)).toEqual(['tossed', 'toss_undone']);
-    expect(auditStore.some((a) => a.action === 'untoss' && a.resourceId === successor.id)).toBe(true);
+    // 後続は一切変更されない
+    expect(eventTypesFor(successor.id)).toEqual(['tossed']);
+    expect(auditStore.some((a) => a.action === 'untoss' && a.resourceId === successor.id)).toBe(false);
   });
 
   it('後続が auto_chain ではなく既に完了済みなら SUCCESSOR_ALREADY_COMPLETED 409', async () => {
