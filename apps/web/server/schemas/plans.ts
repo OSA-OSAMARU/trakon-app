@@ -45,8 +45,9 @@ export const updatePlanBodySchema = z
     category: planCategorySchema.optional(),
     scheduledDate: isoDate.optional(),
     dueDate: isoDate.nullable().optional(),
-    fromMemberId: uuid.optional(),
-    toMemberId: uuid.optional(),
+    // null を送ると担当者を未設定に戻せる (#114)。undefined は変更なし。
+    fromMemberId: uuid.nullable().optional(),
+    toMemberId: uuid.nullable().optional(),
     // 別制作物への移動 (#52)。同一プロジェクト内の item への付け替え。
     itemId: uuid.optional(),
     successorPlanId: uuid.nullable().optional(),

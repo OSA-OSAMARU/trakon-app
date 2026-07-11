@@ -56,6 +56,29 @@ describe('plans routes (integration)', () => {
       expect(res.body.data.ballState).toBe('ready');
     });
 
+    it('PATCH で fromMemberId=null を送ると担当者を未設定に戻せる (#114)', async () => {
+      const created = await createPlanViaApi({
+        title: 'Design',
+        category: 'design',
+        scheduledDate: '2026-06-01',
+        fromMemberId: fromId,
+        toMemberId: toId,
+      });
+      const planId = created.body.data.id;
+
+      const res = await api<{
+        data: { fromMember: { id: string } | null; toMember: { id: string } | null };
+      }>(`${base}/${planId}`, {
+        method: 'PATCH',
+        token: ctx.token,
+        body: { fromMemberId: null },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.data.fromMember).toBeNull();
+      // TO は未指定なので維持される
+      expect(res.body.data.toMember?.id).toBe(toId);
+    });
+
     it('TOSS すると ballState=tossed・最新イベントが tossed になる', async () => {
       const created = await createPlanViaApi({
         title: 'Design',
