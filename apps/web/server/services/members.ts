@@ -1,6 +1,7 @@
 import { prisma } from '@trakon/db';
 
 import { ApiException } from '../lib/errors.js';
+import { assertExactIdSet } from './items.js';
 import type { AddMembersBody, UpdateMemberBody } from '../schemas/members.js';
 
 export type MemberDTO = {
@@ -103,6 +104,28 @@ export async function addMembers(input: {
     return result;
   });
   return created;
+}
+
+/**
+ * 参加者の並び替え (#111)。orderedIds は現存する参加者と過不足なく一致している
+ * 必要がある。並び順に sortOrder = 0..n-1 を振り直す。
+ */
+export async function reorderMembers(input: {
+  projectId: string;
+  orderedIds: string[];
+}): Promise<MemberDTO[]> {
+  const existing = await prisma.projectMember.findMany({
+    where: { projectId: input.projectId, deletedAt: null },
+    select: { id: true },
+  });
+  assertExactIdSet(input.orderedIds, existing.map((m) => m.id));
+
+  await prisma.$transaction(
+    input.orderedIds.map((id, idx) =>
+      prisma.projectMember.update({ where: { id }, data: { sortOrder: idx } }),
+    ),
+  );
+  return listMembers(input.projectId);
 }
 
 export async function updateMember(input: {

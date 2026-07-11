@@ -10,6 +10,7 @@ import {
   createItemBodySchema,
   createProjectBodySchema,
   listProjectsQuerySchema,
+  reorderItemsBodySchema,
   updateItemBodySchema,
   updateProjectBodySchema,
 } from '../../schemas/projects.js';
@@ -26,6 +27,7 @@ import {
   deleteItem,
   getItem,
   listItems,
+  reorderItems,
   updateItem,
 } from '../../services/items.js';
 import { listProjectPlans } from '../../services/plans.js';
@@ -125,6 +127,22 @@ export const projectsRoute = new Hono()
       const body = createItemBodySchema.parse(await c.req.json());
       const item = await createItem({ projectId: project.projectId, body });
       return c.json({ data: item }, 201);
+    },
+  )
+
+  // 並び替え (#111)。静的セグメント /reorder は :itemId より優先されるよう先に定義する。
+  .post(
+    '/:projectId/items/reorder',
+    requireProjectMember(),
+    requireProjectDirector(),
+    async (c) => {
+      const project = c.get('project');
+      const body = reorderItemsBodySchema.parse(await c.req.json());
+      const items = await reorderItems({
+        projectId: project.projectId,
+        orderedIds: body.orderedIds,
+      });
+      return c.json({ data: items });
     },
   )
 

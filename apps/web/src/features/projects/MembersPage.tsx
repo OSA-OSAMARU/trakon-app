@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare } from 'lucide-react';
+import { Loader2, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare, GripVertical } from 'lucide-react';
 import { MemberKanbanTab } from '@/features/plans/MemberKanbanTab';
 import { toast } from 'sonner';
 
@@ -48,6 +48,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ApiClientError } from '@/lib/api';
+import { cn } from '@/components/ui/utils';
+import { moveItem, useDragReorder } from '@/lib/reorder';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { membersApi, membersQueryKey, type ProjectMember } from './membersApi';
@@ -147,6 +149,33 @@ function ManageTab({ projectId }: { projectId: string }) {
       toast.error(e instanceof ApiClientError ? e.message : '削除に失敗しました'),
   });
 
+  // 並び替え (#111)。楽観更新でリストを即時入れ替え、失敗時はロールバック。
+  const members = query.data ?? [];
+  const reorderMut = useMutation({
+    mutationFn: (orderedIds: string[]) => membersApi.reorder(projectId, orderedIds),
+    onMutate: async (orderedIds) => {
+      await qc.cancelQueries({ queryKey: membersQueryKey.list(projectId) });
+      const prev = qc.getQueryData<ProjectMember[]>(membersQueryKey.list(projectId));
+      if (prev) {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        const next = orderedIds
+          .map((id) => byId.get(id))
+          .filter((m): m is ProjectMember => !!m);
+        qc.setQueryData(membersQueryKey.list(projectId), next);
+      }
+      return { prev };
+    },
+    onError: (e, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(membersQueryKey.list(projectId), ctx.prev);
+      toast.error(e instanceof ApiClientError ? e.message : '並び替えに失敗しました');
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) }),
+  });
+
+  const drag = useDragReorder((from, to) => {
+    reorderMut.mutate(moveItem(members, from, to).map((m) => m.id));
+  });
+
   return (
     <Card>
       <CardHeader>
@@ -167,6 +196,7 @@ function ManageTab({ projectId }: { projectId: string }) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>氏名</TableHead>
                 <TableHead>所属</TableHead>
                 <TableHead>メール</TableHead>
@@ -175,9 +205,26 @@ function ManageTab({ projectId }: { projectId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {query.data.map((m) => {
+              {members.map((m, idx) => {
                 return (
-                  <TableRow key={m.id}>
+                  <TableRow
+                    key={m.id}
+                    {...drag.rowProps(idx)}
+                    className={cn(
+                      drag.fromIndex === idx && 'opacity-50',
+                      drag.overIndex === idx && drag.fromIndex !== idx && 'border-t-2 border-t-primary',
+                    )}
+                  >
+                    <TableCell className="pr-0">
+                      <span
+                        {...drag.handleProps(idx)}
+                        className="inline-flex cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                        aria-label="ドラッグして並び替え"
+                        title="ドラッグして並び替え"
+                      >
+                        <GripVertical className="size-4" />
+                      </span>
+                    </TableCell>
                     <TableCell className="font-medium">{m.name}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {m.organizationName || '—'}

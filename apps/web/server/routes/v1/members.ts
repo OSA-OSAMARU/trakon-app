@@ -7,12 +7,14 @@ import {
 import { ApiException } from '../../lib/errors.js';
 import {
   addMembersBodySchema,
+  reorderMembersBodySchema,
   updateMemberBodySchema,
 } from '../../schemas/members.js';
 import {
   addMembers,
   deleteMember,
   listMembers,
+  reorderMembers,
   updateMember,
 } from '../../services/members.js';
 
@@ -33,6 +35,17 @@ export const membersRoute = new Hono()
     const body = addMembersBodySchema.parse(await c.req.json());
     const created = await addMembers({ projectId: project.projectId, body });
     return c.json({ data: created }, 201);
+  })
+
+  // 並び替え (#111)。静的セグメント /reorder は :memberId より優先される。
+  .post('/reorder', requireProjectMember(), requireProjectDirector(), async (c) => {
+    const project = c.get('project');
+    const body = reorderMembersBodySchema.parse(await c.req.json());
+    const members = await reorderMembers({
+      projectId: project.projectId,
+      orderedIds: body.orderedIds,
+    });
+    return c.json({ data: members });
   })
 
   .patch(

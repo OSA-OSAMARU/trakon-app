@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays, Link2, Archive, ArchiveRestore } from 'lucide-react';
+import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays, Link2, Archive, ArchiveRestore, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ApiClientError } from '@/lib/api';
+import { cn } from '@/components/ui/utils';
+import { moveItem, useDragReorder } from '@/lib/reorder';
 import { projectsApi, projectsQueryKey, type ProjectItem } from './api';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 形式で入力してください');
@@ -334,6 +336,30 @@ function ItemsSection({
       toast.error(e instanceof ApiClientError ? e.message : '削除に失敗しました'),
   });
 
+  // 並び替え (#111)。楽観更新でリストを即時入れ替え、失敗時はロールバック。
+  const reorderMut = useMutation({
+    mutationFn: (orderedIds: string[]) => projectsApi.reorderItems(projectId, orderedIds),
+    onMutate: async (orderedIds) => {
+      await qc.cancelQueries({ queryKey: projectsQueryKey.items(projectId) });
+      const prev = qc.getQueryData<ProjectItem[]>(projectsQueryKey.items(projectId));
+      if (prev) {
+        const byId = new Map(prev.map((i) => [i.id, i]));
+        const next = orderedIds.map((id) => byId.get(id)).filter((i): i is ProjectItem => !!i);
+        qc.setQueryData(projectsQueryKey.items(projectId), next);
+      }
+      return { prev };
+    },
+    onError: (e, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(projectsQueryKey.items(projectId), ctx.prev);
+      toast.error(e instanceof ApiClientError ? e.message : '並び替えに失敗しました');
+    },
+    onSettled: () => invalidate(),
+  });
+
+  const drag = useDragReorder((from, to) => {
+    reorderMut.mutate(moveItem(items, from, to).map((i) => i.id));
+  });
+
   return (
     <Card>
       <CardHeader>
@@ -356,9 +382,27 @@ function ItemsSection({
           <p className="text-sm text-muted-foreground">まだ制作物がありません。</p>
         )}
         <ul className="divide-y divide-border">
-          {items.map((it) => (
-            <li key={it.id} className="flex items-center justify-between gap-2 py-2">
-              <div className="text-sm">{it.name}</div>
+          {items.map((it, idx) => (
+            <li
+              key={it.id}
+              {...drag.rowProps(idx)}
+              className={cn(
+                'flex items-center justify-between gap-2 py-2',
+                drag.fromIndex === idx && 'opacity-50',
+                drag.overIndex === idx && drag.fromIndex !== idx && 'border-t-2 border-t-primary',
+              )}
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  {...drag.handleProps(idx)}
+                  className="cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing"
+                  aria-label="ドラッグして並び替え"
+                  title="ドラッグして並び替え"
+                >
+                  <GripVertical className="size-4" />
+                </span>
+                <div className="truncate text-sm">{it.name}</div>
+              </div>
               <div className="flex gap-1">
                 <Button variant="ghost" size="sm" asChild>
                   <Link to={`/projects/${projectId}/items/${it.id}`}>

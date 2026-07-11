@@ -95,3 +95,9 @@ export const updateItemBodySchema = z.object({
   sortOrder: z.number().int().min(0).max(10_000).optional(),
 });
 export type UpdateItemBody = z.infer<typeof updateItemBodySchema>;
+
+/** 制作物の一括並び替え (#111)。並び順どおりの id 配列。 */
+export const reorderItemsBodySchema = z.object({
+  orderedIds: z.array(z.string().uuid()).min(1).max(200),
+});
+export type ReorderItemsBody = z.infer<typeof reorderItemsBodySchema>;

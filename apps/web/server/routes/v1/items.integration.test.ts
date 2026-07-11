@@ -75,6 +75,38 @@ describe('items routes (integration)', () => {
       expect(res.body.data.name).toBe('new');
     });
 
+    it('POST /items/reorder はディレクターが並び替えでき、新しい順序を返す (#111)', async () => {
+      const a = await createItem({ projectId: ctx.project.id, name: 'A', sortOrder: 0 });
+      const b = await createItem({ projectId: ctx.project.id, name: 'B', sortOrder: 1 });
+      const c = await createItem({ projectId: ctx.project.id, name: 'C', sortOrder: 2 });
+
+      const res = await api<{ data: ItemDTO[] }>(`${base}/reorder`, {
+        method: 'POST',
+        token: ctx.token,
+        body: { orderedIds: [c.id, a.id, b.id] },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((i) => i.id)).toEqual([c.id, a.id, b.id]);
+      expect(res.body.data.map((i) => i.sortOrder)).toEqual([0, 1, 2]);
+
+      // 永続化を GET で確認 (/reorder が /:itemId より優先されている確認も兼ねる)
+      const after = await api<{ data: ItemDTO[] }>(base, { token: ctx.token });
+      expect(after.body.data.map((i) => i.name)).toEqual(['C', 'A', 'B']);
+    });
+
+    it('POST /items/reorder は id が過不足あると 422 INVALID_REORDER', async () => {
+      const a = await createItem({ projectId: ctx.project.id, name: 'A', sortOrder: 0 });
+      await createItem({ projectId: ctx.project.id, name: 'B', sortOrder: 1 });
+
+      const res = await api<{ error: { code: string } }>(`${base}/reorder`, {
+        method: 'POST',
+        token: ctx.token,
+        body: { orderedIds: [a.id] }, // B が欠けている
+      });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('INVALID_REORDER');
+    });
+
     it('DELETE /items/:itemId は 2 件以上ある場合にディレクターが削除でき 204 を返す', async () => {
       const a = await createItem({ projectId: ctx.project.id, name: 'A', sortOrder: 0 });
       await createItem({ projectId: ctx.project.id, name: 'B', sortOrder: 1 });

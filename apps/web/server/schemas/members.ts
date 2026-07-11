@@ -26,3 +26,9 @@ export const updateMemberBodySchema = z.object({
   sortOrder: z.number().int().min(0).max(10_000).optional(),
 });
 export type UpdateMemberBody = z.infer<typeof updateMemberBodySchema>;
+
+/** 参加者の一括並び替え (#111)。並び順どおりの id 配列。 */
+export const reorderMembersBodySchema = z.object({
+  orderedIds: z.array(z.string().uuid()).min(1).max(200),
+});
+export type ReorderMembersBody = z.infer<typeof reorderMembersBodySchema>;

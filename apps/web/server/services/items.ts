@@ -125,6 +125,45 @@ export async function deleteItem(input: { itemId: string; projectId: string }): 
   await prisma.projectItem.delete({ where: { id: input.itemId } });
 }
 
+/**
+ * 制作物の並び替え (#111)。orderedIds は現存する制作物 (アクティブ) と過不足なく
+ * 一致している必要がある。並び順に sortOrder = 0..n-1 を振り直す。
+ */
+export async function reorderItems(input: {
+  projectId: string;
+  orderedIds: string[];
+}): Promise<ProjectItemDTO[]> {
+  const existing = await prisma.projectItem.findMany({
+    where: { projectId: input.projectId, deletedAt: null },
+    select: { id: true },
+  });
+  assertExactIdSet(input.orderedIds, existing.map((i) => i.id));
+
+  await prisma.$transaction(
+    input.orderedIds.map((id, idx) =>
+      prisma.projectItem.update({ where: { id }, data: { sortOrder: idx } }),
+    ),
+  );
+  return listItems(input.projectId);
+}
+
+/** orderedIds が対象集合と「重複なく・過不足なく」一致することを検証する。 */
+export function assertExactIdSet(orderedIds: string[], currentIds: string[]): void {
+  const current = new Set(currentIds);
+  const unique = new Set(orderedIds);
+  if (
+    unique.size !== orderedIds.length ||
+    orderedIds.length !== current.size ||
+    orderedIds.some((id) => !current.has(id))
+  ) {
+    throw new ApiException(
+      'INVALID_REORDER',
+      422,
+      'orderedIds must match the current items exactly (no missing, extra, or duplicate ids).',
+    );
+  }
+}
+
 async function nextSortOrder(projectId: string): Promise<number> {
   const last = await prisma.projectItem.findFirst({
     where: { projectId, deletedAt: null },
