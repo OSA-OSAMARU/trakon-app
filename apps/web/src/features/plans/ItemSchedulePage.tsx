@@ -21,7 +21,8 @@ import {
 import { cn } from '@/components/ui/utils';
 import { projectsApi, projectsQueryKey, type ProjectItem } from '@/features/projects/api';
 import { membersApi, membersQueryKey } from '@/features/projects/membersApi';
-import { plansApi, plansQueryKey, type Plan } from './api';
+import { deriveLineBallHolders } from '@trakon/shared';
+import { plansApi, plansQueryKey, type Plan, type MemberRef } from './api';
 import { CATEGORY_STYLE } from './categoryColor';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlanModalsHost } from './PlanModalsHost';
@@ -430,6 +431,31 @@ function computeChain(
   return { chainIds, linkSourceIds };
 }
 
+/**
+ * ライン単位の現在のボール保持者 (member) を解決する (#117)。
+ * deriveLineBallHolders が返す member_id を、予定に紐づく MemberRef へ解決する。
+ */
+function resolveHolders(itemPlans: Plan[]): MemberRef[] {
+  const holderIds = deriveLineBallHolders(
+    itemPlans.map((p) => ({
+      id: p.id,
+      successorPlanId: p.successorPlanId,
+      status: p.status,
+      ballState: p.ballState,
+      fromMemberId: p.fromMember?.id ?? null,
+      toMemberId: p.toMember?.id ?? null,
+    })),
+  );
+  const refById = new Map<string, MemberRef>();
+  for (const p of itemPlans) {
+    if (p.fromMember) refById.set(p.fromMember.id, p.fromMember);
+    if (p.toMember) refById.set(p.toMember.id, p.toMember);
+  }
+  return holderIds
+    .map((id) => refById.get(id))
+    .filter((m): m is MemberRef => m !== undefined);
+}
+
 function ScheduleBoard({
   days,
   items,
@@ -660,11 +686,9 @@ function ScheduleBoard({
           const { laneOf, laneCount } = assignLanes(itemPlans);
           const colWidth = Math.max(minColumnWidth, laneCount * laneWidth);
           const color = itemColor(item.id);
-          // 代表ボール = 最新の active プラン。その現ホルダーを列上部に表示
-          const activePlans = itemPlans.filter((p) => p.status === 'active');
-          const repHolder = activePlans.length
-            ? activePlans[activePlans.length - 1]!.ballHolder
-            : null;
+          // 代表ボール保持者 = ライン (後続チェーン) 単位で現在の保持者を導出 (#117)。
+          // 後続で繋がっていない予定は別ライン扱いなので、保持者が複数になりうる。
+          const repHolders = resolveHolders(itemPlans);
           // コネクト印用: 先行 (誰かの後続として指されている) plan の id 集合
           const predecessorTargetIds = new Set(
             itemPlans
@@ -693,11 +717,11 @@ function ScheduleBoard({
                 </div>
                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                   <span className="shrink-0">ボール保持:</span>
-                  {repHolder ? (
+                  {repHolders.length > 0 ? (
                     <span className="truncate font-medium text-foreground">
-                      {repHolder.organizationName
-                        ? `${repHolder.organizationName} ${repHolder.name}`
-                        : repHolder.name}
+                      {repHolders
+                        .map((h) => (h.organizationName ? `${h.organizationName} ${h.name}` : h.name))
+                        .join('、')}
                     </span>
                   ) : (
                     <span>—</span>
