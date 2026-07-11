@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { deriveLineBallHolders } from '@trakon/shared';
+
 import { api } from '../../test/request.js';
 import {
   createItem,
@@ -142,6 +144,72 @@ describe('plans routes (integration)', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.autoTossed?.id).toBe(successor.body.data.id);
       expect(res.body.data.autoTossed?.latestEvent?.source).toBe('auto_chain');
+    });
+  });
+
+  // #117: ライン単位の代表ボール保持者 (deriveLineBallHolders) を実データで検証する。
+  describe('#117 ボール保持者 (ライン単位)', () => {
+    type FullPlan = {
+      id: string;
+      status: 'active' | 'completed' | 'canceled';
+      ballState: 'ready' | 'tossed' | 'completed';
+      successorPlanId: string | null;
+      fromMember: { id: string } | null;
+      toMember: { id: string } | null;
+    };
+
+    async function holdersNow(): Promise<string[]> {
+      const list = await api<{ data: FullPlan[] }>(base, { token: ctx.token });
+      return deriveLineBallHolders(
+        list.body.data.map((p) => ({
+          id: p.id,
+          successorPlanId: p.successorPlanId,
+          status: p.status,
+          ballState: p.ballState,
+          fromMemberId: p.fromMember?.id ?? null,
+          toMemberId: p.toMember?.id ?? null,
+        })),
+      );
+    }
+
+    // ワイヤー(FROM=fromId TO=toId) → デザイン(FROM=dzFrom TO=dzTo) を後続で連結し、
+    // ワイヤーを TOSS→完了 する (完了時にデザインが auto-toss される)。
+    async function setupLinkedChain() {
+      const dzFrom = await createMember({ projectId: ctx.project.id, memberType: 'production' });
+      const dzTo = await createMember({ projectId: ctx.project.id, memberType: 'production' });
+      const design = await createPlanViaApi({
+        title: 'デザイン作成',
+        category: 'design',
+        scheduledDate: '2026-07-19',
+        dueDate: '2026-07-26',
+        fromMemberId: dzFrom.id,
+        toMemberId: dzTo.id,
+      });
+      const wire = await createPlanViaApi({
+        title: 'ワイヤー作成',
+        category: 'wireframe',
+        scheduledDate: '2026-07-11',
+        dueDate: '2026-07-18',
+        fromMemberId: fromId,
+        toMemberId: toId,
+        successorPlanId: design.body.data.id,
+      });
+      await api(`${base}/${wire.body.data.id}/toss`, { method: 'POST', token: ctx.token, body: {} });
+      await api(`${base}/${wire.body.data.id}/complete`, { method: 'POST', token: ctx.token });
+      return { wire: wire.body.data, design: design.body.data, dzFrom: dzFrom.id, dzTo: dzTo.id };
+    }
+
+    it('ケース3: ワイヤー完了・デザイン未TOSS → デザインの FROM', async () => {
+      const { design, dzFrom } = await setupLinkedChain();
+      // 完了時に auto-toss されたデザインを差し戻して「未TOSS」に戻す
+      await api(`${base}/${design.id}/toss-undo`, { method: 'POST', token: ctx.token, body: {} });
+      expect(await holdersNow()).toEqual([dzFrom]);
+    });
+
+    it('ケース4: ワイヤー完了・デザインTOSS済 → デザインの TO', async () => {
+      const { dzTo } = await setupLinkedChain();
+      // 完了時の auto-toss でデザインは tossed のまま
+      expect(await holdersNow()).toEqual([dzTo]);
     });
   });
 
