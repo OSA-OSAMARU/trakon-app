@@ -1,4 +1,5 @@
 import { LegalDefList, LegalPageLayout } from './LegalPageLayout';
+import { COMPANY, COMPANY_ADDRESS_FULL } from './companyInfo';
 
 // 特定商取引法に基づく表記 — 出典 https://trakon-test.vercel.app/commerce.html の本文をそのまま掲載。
 export function CommercePage() {
@@ -6,9 +7,9 @@ export function CommercePage() {
     <LegalPageLayout title="特定商取引法に基づく表記">
       <LegalDefList
         rows={[
-          { label: '販売事業者', value: '株式会社おさまるカンパニー' },
-          { label: '運営責任者', value: '宮丸 長（Osa MIYAMARU）' },
-          { label: '所在地', value: '埼玉県児玉郡神川町原新田21-20' },
+          { label: '販売事業者', value: COMPANY.name },
+          { label: '運営責任者', value: COMPANY.representative },
+          { label: '所在地', value: COMPANY_ADDRESS_FULL },
           {
             label: 'お問い合わせ先',
             value: (
@@ -26,7 +27,7 @@ export function CommercePage() {
               </>
             ),
           },
-          { label: '電話番号', value: '請求があった場合、遅滞なく開示いたします。' },
+          { label: '電話番号', value: COMPANY.phone },
           {
             label: '販売価格',
             value: '各プランごとに、申込ページまたは料金ページに表示する金額とします。',

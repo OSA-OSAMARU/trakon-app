@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import { ProfileModal } from '@/features/auth/ProfileModal';
 import { projectsApi, projectsQueryKey } from '@/features/projects/api';
+import { LEGAL_NAV } from '@/features/legal/companyInfo';
 
 const DOT_PALETTE = [
   'bg-violet-500',
@@ -108,6 +109,23 @@ export function SidebarLayout() {
             全て →
           </NavLink>
         </div>
+
+        {/* 会社情報・法務ページへの導線 (公開ページ)。別タブで開きアプリ操作を妨げない。 */}
+        <nav className="shrink-0 border-t border-border px-4 py-2">
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            {LEGAL_NAV.map((item) => (
+              <a
+                key={item.to}
+                href={item.to}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {item.label}
+              </a>
+            ))}
+          </div>
+        </nav>
 
         {/* ユーザー情報フッター: 全ページ共通で常時表示 (読込中は Skeleton) */}
         <div className="shrink-0 border-t border-border">
