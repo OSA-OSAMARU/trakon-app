@@ -106,7 +106,6 @@ const meMember: ProjectMember = {
   organizationName: 'Acme',
   memberType: 'production',
   sortOrder: 0,
-  inviteStatus: 'accepted',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
 };

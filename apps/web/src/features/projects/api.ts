@@ -37,7 +37,7 @@ export type CreateProjectInput = {
   items: Array<{ name: string }>;
   members: Array<{
     name: string;
-    email: string;
+    email?: string;
     organizationName: string;
     memberType: 'client' | 'production';
   }>;

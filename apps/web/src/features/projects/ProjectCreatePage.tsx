@@ -99,9 +99,15 @@ export function ProjectCreatePage() {
 
   const onSubmit = (values: FormValues) => {
     const cleanedItems = values.items.filter((i) => i.name.trim() !== '');
-    const cleanedMembers = values.members.filter(
-      (m) => m.name.trim() !== '' || m.email.trim() !== '',
-    );
+    // 参加者はスケジュール担当者。氏名があれば登録し、メールは任意 (空欄は未登録)
+    const cleanedMembers = values.members
+      .filter((m) => m.name.trim() !== '')
+      .map((m) => ({
+        name: m.name.trim(),
+        email: m.email.trim() || undefined,
+        organizationName: m.organizationName.trim(),
+        memberType: m.memberType,
+      }));
     createMut.mutate({
       name: values.name,
       startDate: values.startDate,
@@ -196,7 +202,7 @@ export function ProjectCreatePage() {
         <CardHeader>
           <CardTitle className="text-base">参加者（任意）</CardTitle>
           <p className="text-xs text-muted-foreground">
-            未入力の行はスキップされます。招待メール送信は次回リリースで有効化されます。
+            スケジュール上の担当者として登録します。氏名が未入力の行はスキップされます。メールは任意です。
           </p>
         </CardHeader>
         <CardContent className="space-y-4">

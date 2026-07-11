@@ -1,8 +1,14 @@
 import { z } from 'zod';
 
+// メールは任意 (スケジュール担当者としての登録)。空文字は「未登録」= undefined に正規化。
+const optionalEmail = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.string().trim().toLowerCase().email().max(320).optional(),
+);
+
 export const memberInputSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  email: z.string().trim().toLowerCase().email().max(320),
+  email: optionalEmail,
   organizationName: z.string().trim().max(255).default(''),
   memberType: z.enum(['client', 'production']),
 });

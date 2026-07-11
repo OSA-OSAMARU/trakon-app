@@ -30,6 +30,7 @@ type MockInvitation = {
   expiresAt: Date;
   projectId: string;
   invitedMemberId: string;
+  email: string;
 };
 type MockUser = { id: string; email: string };
 type MockAudit = {
@@ -190,6 +191,8 @@ function seedValidInvitation(
     expiresAt: new Date('2999-01-01T00:00:00Z'),
     projectId: project.id,
     invitedMemberId: member.id,
+    // 招待先メールは invitations.email が正 (既定は参加者行のメールに揃える)
+    email: member.email,
     ...overrides.inv,
   };
   projectStore[project.id] = project;

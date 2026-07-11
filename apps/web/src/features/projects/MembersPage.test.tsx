@@ -33,7 +33,6 @@ const member = (over: Partial<ProjectMember> = {}): ProjectMember => ({
   organizationName: 'Acme',
   memberType: 'production',
   sortOrder: 0,
-  inviteStatus: 'accepted',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
   ...over,
@@ -95,7 +94,6 @@ describe('MembersPage 管理タブ (integration)', () => {
         email: 'hanako@example.com',
         organizationName: 'クライアント社',
         memberType: 'client',
-        inviteStatus: 'pending',
       }),
     ]);
 
@@ -105,9 +103,6 @@ describe('MembersPage 管理タブ (integration)', () => {
     expect(screen.getByText('鈴木 花子')).toBeInTheDocument();
     expect(screen.getByText('制作側')).toBeInTheDocument();
     expect(screen.getByText('クライアント')).toBeInTheDocument();
-    // 招待状態バッジ。
-    expect(screen.getByText('参加中')).toBeInTheDocument();
-    expect(screen.getByText('招待中')).toBeInTheDocument();
   });
 
   it('参加者が空でも表が描画される', async () => {
@@ -166,7 +161,7 @@ describe('MembersPage 管理タブ (integration)', () => {
     await user.type(fieldByName(dialog, 'organizationName'), 'NewCo');
     await user.type(fieldByName(dialog, 'email'), 'new@example.com');
 
-    await user.click(within(dialog).getByRole('button', { name: /招待を送信/ }));
+    await user.click(within(dialog).getByRole('button', { name: /追加する/ }));
 
     // POST が想定ボディで送られたこと。
     await waitFor(() => expect(postBody).not.toBeNull());
@@ -202,7 +197,7 @@ describe('MembersPage 管理タブ (integration)', () => {
     await user.click(screen.getByRole('button', { name: /参加者を追加/ }));
 
     const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByRole('button', { name: /招待を送信/ }));
+    await user.click(within(dialog).getByRole('button', { name: /追加する/ }));
 
     // クライアント側 zod バリデーションでエラー表示され、POST は飛ばない。
     expect(await within(dialog).findByText('氏名は必須')).toBeInTheDocument();
@@ -229,11 +224,11 @@ describe('MembersPage 管理タブ (integration)', () => {
     const dialog = await screen.findByRole('dialog');
     await user.type(fieldByName(dialog, 'name'), 'X');
     await user.type(fieldByName(dialog, 'email'), 'dup@example.com');
-    await user.click(within(dialog).getByRole('button', { name: /招待を送信/ }));
+    await user.click(within(dialog).getByRole('button', { name: /追加する/ }));
 
     // 失敗時はダイアログが開いたまま (onClose が呼ばれない)。
     await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: /招待を送信/ })).toBeEnabled(),
+      expect(within(dialog).getByRole('button', { name: /追加する/ })).toBeEnabled(),
     );
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
