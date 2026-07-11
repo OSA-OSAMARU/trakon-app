@@ -5,6 +5,7 @@ import {
   LegalP,
   LegalPageLayout,
 } from './LegalPageLayout';
+import { COMPANY, COMPANY_ADDRESS_FULL } from './companyInfo';
 
 // プライバシーポリシー — 出典 https://trakon-test.vercel.app/privacy.html の本文をそのまま掲載。
 export function PrivacyPage() {
@@ -183,8 +184,8 @@ export function PrivacyPage() {
         </LegalP>
         <LegalDefList
           rows={[
-            { label: '会社名', value: '株式会社おさまるカンパニー' },
-            { label: '住所', value: '埼玉県児玉郡神川町原新田21-20' },
+            { label: '会社名', value: COMPANY.name },
+            { label: '住所', value: COMPANY_ADDRESS_FULL },
             { label: 'お問い合わせ', value: 'お問い合わせフォームよりご連絡ください。' },
           ]}
         />

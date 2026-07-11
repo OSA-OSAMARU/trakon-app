@@ -9,6 +9,7 @@ import { RequireAuth } from './features/auth/RequireAuth';
 import { SC01LoginPage } from './features/auth/SC01LoginPage';
 import { InvitationAcceptPage } from './features/invitations/InvitationAcceptPage';
 import { CommercePage } from './features/legal/CommercePage';
+import { CompanyPage } from './features/legal/CompanyPage';
 import { PrivacyPage } from './features/legal/PrivacyPage';
 import { TermsPage } from './features/legal/TermsPage';
 import { ItemSchedulePage } from './features/plans/ItemSchedulePage';
@@ -29,7 +30,8 @@ export function App() {
       <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
       <Route path="/share/:token" element={<SharePage />} />
 
-      {/* 未ログインでも閲覧可能な法務ページ */}
+      {/* 未ログインでも閲覧可能な会社情報・法務ページ */}
+      <Route path="/company" element={<CompanyPage />} />
       <Route path="/terms" element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/commerce" element={<CommercePage />} />

@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
+
+import { LEGAL_NAV } from './companyInfo';
 
 // =============================================================================
 // 法務ページ (利用規約 / プライバシーポリシー / 特定商取引法に基づく表記) 共通レイアウト。
@@ -28,13 +30,28 @@ export function LegalPageLayout({
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-card/80 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-6">
+        <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-5 gap-y-2 px-6 py-3">
           <Link to="/login" className="text-lg font-extrabold tracking-[0.2em]">
             TRAKON
           </Link>
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            {LEGAL_NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  isActive
+                    ? 'font-medium text-foreground'
+                    : 'text-muted-foreground underline-offset-4 hover:text-foreground hover:underline'
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
           <Link
             to="/login"
-            className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            className="ml-auto text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             <span aria-hidden>←</span> ログインに戻る
           </Link>
@@ -55,15 +72,15 @@ function LegalFooter() {
   return (
     <footer className="mt-12 border-t border-border pt-6">
       <nav className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
-        <Link to="/terms" className="underline-offset-4 hover:text-foreground hover:underline">
-          利用規約
-        </Link>
-        <Link to="/privacy" className="underline-offset-4 hover:text-foreground hover:underline">
-          プライバシーポリシー
-        </Link>
-        <Link to="/commerce" className="underline-offset-4 hover:text-foreground hover:underline">
-          特定商取引法に基づく表記
-        </Link>
+        {LEGAL_NAV.map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            className="underline-offset-4 hover:text-foreground hover:underline"
+          >
+            {item.label}
+          </Link>
+        ))}
       </nav>
       <p className="mt-4 text-xs text-muted-foreground">© 2026 株式会社おさまるカンパニー</p>
     </footer>
