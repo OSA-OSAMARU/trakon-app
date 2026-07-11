@@ -120,7 +120,7 @@ describe('plans routes (integration)', () => {
       expect(res.body.data.plan.ballState).toBe('completed');
     });
 
-    it('後続を持つ予定を完了すると後続が auto_chain で TOSS される', async () => {
+    it('後続を持つ予定を完了しても後続は自動 TOSS されない (自動連鎖廃止 #117)', async () => {
       const successor = await createPlanViaApi({
         title: 'Coding',
         category: 'coding',
@@ -142,8 +142,13 @@ describe('plans routes (integration)', () => {
         { method: 'POST', token: ctx.token },
       );
       expect(res.status).toBe(200);
-      expect(res.body.data.autoTossed?.id).toBe(successor.body.data.id);
-      expect(res.body.data.autoTossed?.latestEvent?.source).toBe('auto_chain');
+      expect(res.body.data.autoTossed).toBeNull();
+
+      // 後続は ready のまま (ボールは後続の実施者=FROM に残る)
+      const succ = await api<{ data: { plan: PlanDTO } }>(`${base}/${successor.body.data.id}`, {
+        token: ctx.token,
+      });
+      expect(succ.body.data.plan.ballState).toBe('ready');
     });
   });
 
@@ -173,7 +178,7 @@ describe('plans routes (integration)', () => {
     }
 
     // ワイヤー(FROM=fromId TO=toId) → デザイン(FROM=dzFrom TO=dzTo) を後続で連結し、
-    // ワイヤーを TOSS→完了 する (完了時にデザインが auto-toss される)。
+    // ワイヤーを TOSS→完了 する (自動連鎖廃止によりデザインは未TOSS のまま)。
     async function setupLinkedChain() {
       const dzFrom = await createMember({ projectId: ctx.project.id, memberType: 'production' });
       const dzTo = await createMember({ projectId: ctx.project.id, memberType: 'production' });
@@ -199,16 +204,16 @@ describe('plans routes (integration)', () => {
       return { wire: wire.body.data, design: design.body.data, dzFrom: dzFrom.id, dzTo: dzTo.id };
     }
 
-    it('ケース3: ワイヤー完了・デザイン未TOSS → デザインの FROM', async () => {
-      const { design, dzFrom } = await setupLinkedChain();
-      // 完了時に auto-toss されたデザインを差し戻して「未TOSS」に戻す
-      await api(`${base}/${design.id}/toss-undo`, { method: 'POST', token: ctx.token, body: {} });
+    it('ケース3: ワイヤー完了・デザイン未TOSS → デザインの FROM (実施者)', async () => {
+      // 自動連鎖廃止により、ワイヤー完了後もデザインは未TOSS のまま
+      const { dzFrom } = await setupLinkedChain();
       expect(await holdersNow()).toEqual([dzFrom]);
     });
 
-    it('ケース4: ワイヤー完了・デザインTOSS済 → デザインの TO', async () => {
-      const { dzTo } = await setupLinkedChain();
-      // 完了時の auto-toss でデザインは tossed のまま
+    it('ケース4: ワイヤー完了・デザインTOSS済 → デザインの TO (確認者)', async () => {
+      const { design, dzTo } = await setupLinkedChain();
+      // デザインの実施者が作業後に手動 TOSS するとケース4 になる
+      await api(`${base}/${design.id}/toss`, { method: 'POST', token: ctx.token, body: {} });
       expect(await holdersNow()).toEqual([dzTo]);
     });
   });
