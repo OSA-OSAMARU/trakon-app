@@ -307,6 +307,44 @@ describe('ItemSchedulePage (integration)', () => {
     expect(screen.getAllByText('ボール保持:').length).toBeGreaterThan(0);
   });
 
+  // #117 ケース3: ワイヤー完了・後続デザイン未TOSS の列ヘッダはデザインの実施者(FROM)を表示する
+  it('#117 ケース3: 完了した先行の後続(未TOSS)の実施者を代表保持者に表示する', async () => {
+    const dzFrom: ProjectMember = { ...meMember, id: 'm-dzfrom', name: 'デザイン実施', organizationName: '' };
+    const dzTo: ProjectMember = { ...meMember, id: 'm-dzto', name: 'デザイン確認', organizationName: '' };
+    const wire = makePlan({
+      id: 'w',
+      title: 'ワイヤー作成',
+      category: 'wireframe',
+      scheduledDate: '2026-06-19',
+      dueDate: '2026-06-20',
+      fromMember: ref(meMember),
+      toMember: ref(otherMember),
+      status: 'completed',
+      ballState: 'completed',
+      successorPlanId: 'd',
+    });
+    const design = makePlan({
+      id: 'd',
+      title: 'デザイン作成',
+      category: 'design',
+      scheduledDate: '2026-06-21',
+      dueDate: '2026-06-22',
+      fromMember: ref(dzFrom),
+      toMember: ref(dzTo),
+      status: 'active',
+      ballState: 'ready',
+      successorPlanId: null,
+    });
+    setupReads({ itemsResp: [items[0]!], plansResp: [wire, design] });
+    renderPage();
+
+    await screen.findByText('ワイヤー作成');
+    const holderRow = screen.getByText('ボール保持:').parentElement!;
+    // 代表保持者はデザインの FROM (デザイン実施)。ワイヤーの FROM は表示されない。
+    expect(holderRow.textContent).toContain('デザイン実施');
+    expect(holderRow.textContent).not.toContain(meMember.name);
+  });
+
   it('日付軸の日付セルとズームコントロールを描画する', async () => {
     setupReads();
     renderPage();
