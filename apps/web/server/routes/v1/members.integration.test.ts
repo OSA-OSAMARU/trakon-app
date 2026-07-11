@@ -20,7 +20,7 @@ describe('members routes (integration)', () => {
   describe('正常系', () => {
     it('GET /members はメンバーの一覧を返す', async () => {
       const { token, project } = await setupProjectWithDirector();
-      // 追加で未受諾の仮メンバーを 1 名用意 (inviteStatus 確認用)
+      // 追加で参加者 (userId=null) を 1 名用意
       await createMember({
         projectId: project.id,
         userId: null,
@@ -28,19 +28,19 @@ describe('members routes (integration)', () => {
       });
 
       const res = await api<{
-        data: Array<{ id: string; inviteStatus: string }>;
+        data: Array<{ id: string }>;
       }>(`/api/v1/projects/${project.id}/members`, { token });
 
       expect(res.status).toBe(200);
-      // ディレクター本人 (accepted) + 仮メンバー (expired: 招待行なし) = 2
+      // ディレクター本人 + 参加者 = 2
       expect(res.body.data).toHaveLength(2);
     });
 
-    it('POST /members はディレクターが仮メンバーと招待を作成し 201 を返す', async () => {
+    it('POST /members はディレクターが参加者を作成し 201 を返す (招待は送らない)', async () => {
       const { token, project } = await setupProjectWithDirector();
 
       const res = await api<{
-        data: Array<{ id: string; email: string; inviteStatus: string }>;
+        data: Array<{ id: string; email: string | null; userId: string | null }>;
       }>(`/api/v1/projects/${project.id}/members`, {
         method: 'POST',
         token,
@@ -59,7 +59,31 @@ describe('members routes (integration)', () => {
       expect(res.status).toBe(201);
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0]!.email).toBe('client-a@example.test');
-      expect(res.body.data[0]!.inviteStatus).toBe('pending');
+      expect(res.body.data[0]!.userId).toBeNull();
+    });
+
+    it('POST /members はメール無しの参加者を作成できる', async () => {
+      const { token, project } = await setupProjectWithDirector();
+
+      const res = await api<{
+        data: Array<{ id: string; email: string | null }>;
+      }>(`/api/v1/projects/${project.id}/members`, {
+        method: 'POST',
+        token,
+        body: {
+          members: [
+            {
+              name: 'メール無し 担当者',
+              organizationName: '',
+              memberType: 'production',
+            },
+          ],
+        },
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]!.email).toBeNull();
     });
 
     it('PATCH /members/:memberId はディレクターがメンバーを更新できる', async () => {
