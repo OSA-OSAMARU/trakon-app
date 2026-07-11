@@ -701,7 +701,9 @@ function ScheduleBoard({
               <div
                 data-item-id={item.id}
                 className={cn(
-                  'relative',
+                  // isolate で本体を独立した stacking context にし、内部の後続矢印 (SVG z-20)
+                  // が列ヘッダー (sticky z-20) の上に描画されるのを防ぐ (#116)
+                  'relative isolate',
                   // 別制作物からの D&D 移動ターゲットをハイライト (#52)
                   drag?.mode === 'move' &&
                     drag.targetItemId === item.id &&
