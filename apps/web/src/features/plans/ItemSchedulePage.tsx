@@ -62,7 +62,12 @@ export function ItemSchedulePage() {
 }
 
 function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
-  const [, setParams] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  // 予定シート (作成/編集/詳細) が開いている間は、右側パネルに隠れる分だけ
+  // スケジュール右端に余白を確保して全列を横スクロールで見えるようにする (#115)
+  const planSheetOpen = ['create-plan', 'edit-plan', 'ball-detail'].includes(
+    params.get('modal') ?? '',
+  );
   const [rowHeight, setRowHeight] = useState(ROW_HEIGHT_DEFAULT);
   // 表示する制作物: 'all' か特定 itemId。初期は全制作物 (#49)。
   // 単一に絞る場合は画面内セレクタで選択する。
@@ -325,6 +330,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
           onLink={commitLink}
           onCopy={(plan) => copyMut.mutate(plan)}
           copyingPlanId={copyMut.isPending ? copyMut.variables?.id ?? null : null}
+          sheetOpen={planSheetOpen}
         />
       )}
 
@@ -437,6 +443,7 @@ function ScheduleBoard({
   onLink,
   onCopy,
   copyingPlanId,
+  sheetOpen,
 }: {
   days: Date[];
   items: ProjectItem[];
@@ -450,6 +457,7 @@ function ScheduleBoard({
   onLink: (source: Plan, target: Plan) => void;
   onCopy: (plan: Plan) => void;
   copyingPlanId: string | null;
+  sheetOpen: boolean;
 }) {
   const today = new Date();
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -604,7 +612,7 @@ function ScheduleBoard({
   return (
     <>
     <div className="flex-1 overflow-auto">
-      <div className="flex w-max select-none">
+      <div className={cn('flex w-max select-none', sheetOpen && 'pr-[440px]')}>
         {/* 日付軸 (sticky left) */}
         <div
           className="sticky left-0 z-30 shrink-0 border-r border-border bg-background"
