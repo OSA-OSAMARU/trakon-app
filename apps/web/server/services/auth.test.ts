@@ -307,6 +307,52 @@ describe('syncUser', () => {
       details: { primaryAuthMethod: 'password' },
     });
   });
+
+  it('reconciles users.email when the JWT email differs (email change confirmed) and audits it', async () => {
+    userStore['auth-ec'] = {
+      id: 'u-ec',
+      authUserId: 'auth-ec',
+      email: 'old@example.com',
+      fullName: 'E',
+      displayName: 'E',
+      primaryAuthMethod: 'password',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      deletedAt: null,
+    };
+    const res = await syncUser('auth-ec', 'new@example.com');
+    expect(res.status).toBe('ready');
+    if (res.status === 'ready') {
+      expect(res.user.id).toBe('u-ec');
+      expect(res.user.email).toBe('new@example.com');
+    }
+    expect(userStore['auth-ec']!.email).toBe('new@example.com');
+    expect(auditStore).toHaveLength(1);
+    expect(auditStore[0]).toMatchObject({
+      actorUserId: 'u-ec',
+      action: 'email_changed',
+      resourceType: 'user',
+      extra: { previousEmail: 'old@example.com' },
+    });
+    // Supabase admin を叩かず (JWT email のみで) 追随する
+    expect(getUserByIdMock).not.toHaveBeenCalled();
+  });
+
+  it('does not reconcile or audit when the JWT email only differs in case', async () => {
+    userStore['auth-eq'] = {
+      id: 'u-eq',
+      authUserId: 'auth-eq',
+      email: 'Same@Example.com',
+      fullName: 'S',
+      displayName: 'S',
+      primaryAuthMethod: 'password',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      deletedAt: null,
+    };
+    const res = await syncUser('auth-eq', 'same@example.com');
+    expect(res.status).toBe('ready');
+    if (res.status === 'ready') expect(res.user.email).toBe('Same@Example.com');
+    expect(auditStore).toHaveLength(0);
+  });
 });
 
 describe('completeSignup', () => {

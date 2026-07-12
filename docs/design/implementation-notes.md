@@ -18,6 +18,7 @@ Sub-Phase 0.0〜0.6 の実装過程で、基本設計書 v1.1 から意図的に
 | **マイグレーション diff の自動生成** | `prisma migrate dev` 推奨 | **手書き SQL** で CHECK 制約・トリガを明示 | `prisma migrate dev` だけでは CHECK / トリガ / 部分インデックスを自動生成できない | 設計書 §6.9 に追記想定 |
 | **Supabase キー新方式移行（Phase 1 直前）** | 設計書 §6 は Legacy API keys（`anon` JWT / `service_role` JWT）前提 | **新方式 `sb_publishable_*` / `sb_secret_*` へ移行**。BE 側 env は `SUPABASE_SECRET_KEY` 優先 / `SUPABASE_SERVICE_ROLE_KEY` フォールバック、FE 側は `VITE_SUPABASE_PUBLISHABLE_KEY` に完全切替。JWT 署名キーとは独立管理になったため、`server/middleware/auth.ts` の iss/aud/JWKS 検証ロジックは不変 | Supabase Legacy API keys は 2026 年末でサポート終了予定。商用デプロイ前に新方式へ寄せて将来負債を回避。supabase-js は ^2.106.2 へ更新（新キー形式は apikey ヘッダーに渡すだけで透過対応） | 設計書 v1.2 § 6 環境変数表を新方式に書き換え |
 | **認証メールのブランド統制（§5.3.2）** | Supabase 標準メールを OFF にし **auth Webhook 経由で Resend 送信**、テンプレは `server/lib/mail/` でコード管理 | **Supabase Custom SMTP に Resend を設定**し、件名/本文は Supabase Email Templates、from は SMTP 送信者設定で管理 | Webhook + Send Email Hook 実装より大幅に軽量。レート制限解消（デフォルト共有 SMTP 脱却）とブランド文言変更を設定作業のみで両立。手順は `operations.md §2.4.2` | 文言をコード/i18n で一元管理したくなれば Send Email Hook 方式へ移行 |
+| **メールアドレス変更（#129）** | §5.3.9.5 は OAuth のメール変更を Webhook で片方向同期する想定 | **パスワードユーザーのみ実装**。FE `supabase.auth.updateUser({ email })`（`double_confirm_changes=true` で新旧両アドレスへ Resend 経由の確認メール）→ 確認後 `/auth/callback` 着地で `/auth/me/sync` が走り、`syncUser` の `reconcileEmailIfChanged` が `public.users.email` を JWT(=auth.users) に追随。Webhook は使わない | Supabase 組み込みフローを使うため BE の変更点は sync のリコンサイル 1 箇所のみ。監査は `email_changed`（`extra.previousEmail`）。OAuth ユーザーの変更 UI は非表示 | OAuth のメール変更（下記参照）と、必要なら変更完了の Resend 通知メール |
 
 ## 設計書 v1.2 で追加・改訂すべき項目（提案）
 
@@ -26,6 +27,30 @@ Sub-Phase 0.0〜0.6 の実装過程で、基本設計書 v1.1 から意図的に
 3. **`source='share'`**：`ck_be_actor_consistency` を 3 値 (`human`/`auto_chain`/`share`) に拡張する DDL を予約
 4. **削除セマンティクス**：plan の物理削除は `ball_events` が無い場合のみ可能、キャンセル機能は Phase 1 で `status='canceled'` を使う
 5. **shadcn 取り込み**：プロトタイプから流用する場合の `"use client"` の扱い指針
+
+## OAuth ユーザーのメールアドレス変更（#129・未実装 / 方針メモ）
+
+パスワードユーザーのメール変更は本 PR で実装済み。OAuth（Google/Microsoft）ユーザーの
+メール変更は、issue #129 で「良い方針があれば検討したい」とされた探索項目であり、**本 PR では
+未実装**。以下は検討結果と将来方針。
+
+- **ユースケース**（issue 記載）：フリー Gmail → Google Workspace への切替でメールが変わっても、
+  TRAKON アカウントは同一のまま使い続けたい。
+- **難所**：OAuth のメールは**プロバイダが正**であり、`updateUser({ email })` では変えられない。
+  さらに Gmail → Workspace は**別の Google アカウント**（`identities[].id` が別物）になるため、
+  実体は「別 OAuth アイデンティティを既存 TRAKON ユーザーへ**再リンク / 移行**する」問題。
+  現行 `syncUser` は新しい `auth_user_id` を**新規ユーザー**として作るため、そのままでは別アカウント化する。
+- **想定アプローチ（いずれも Phase 1+）**：
+  1. **アカウント連携（推奨）**：ログイン中に「別の Google/Microsoft を連携」させ、
+     `oauth_identities` に 2 つ目の provider identity を追加。ログインは複数 identity → 同一
+     `users.id` に解決。`primaryAuthMethod` は据え置き。UI とセキュリティ（乗っ取り防止の再認証）設計が要る。
+  2. **メール到達性ベースの移行**：新メールに確認メール（Resend）を送り、確定後に
+     `users.email` と `oauth_identities.email`、必要なら `auth_user_id` を張り替える。実装は重い。
+  3. **プロバイダ側メール変更の片方向同期**：同一 Google アカウントのプライマリメールだけが変わる
+     ケースに限り、§5.3.9.5 の Webhook 同期で `users.email` / `oauth_identities.email` を追随
+     （別アカウント移行は対象外）。本 PR の `reconcileEmailIfChanged` は JWT email が変われば
+     provider を問わず `users.email` を追随するため、この片方向同期の一部は既に満たしている。
+- **結論**：安全な UX を伴う「アカウント連携」を第一候補として別 issue 化する。
 
 ## 各サブフェーズで生まれた追加成果物
 

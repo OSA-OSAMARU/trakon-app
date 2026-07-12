@@ -92,7 +92,12 @@ export async function syncUser(authUserId: string, jwtEmail: string): Promise<Sy
   const existing = await prisma.user.findUnique({ where: { authUserId } });
   // 退会済み (deletedAt) は未存在として扱い、ready を返さない (締め出し)。
   if (existing && !existing.deletedAt) {
-    return { status: 'ready', user: toDTO(existing) };
+    // メールアドレス変更 (#129) の同期。パスワードユーザーが Supabase 組み込みの
+    // email 変更フロー (updateUser({ email }) → 新旧両アドレス確認) を完了すると
+    // auth.users.email が変わり JWT の email クレームも新メールになる。public.users.email は
+    // ここで追随させる (webhook を使わず、次回 sync でリコンサイルする)。
+    const reconciled = await reconcileEmailIfChanged(existing, jwtEmail);
+    return { status: 'ready', user: toDTO(reconciled) };
   }
 
   const supabase = getSupabaseAdmin();
@@ -155,6 +160,47 @@ export async function syncUser(authUserId: string, jwtEmail: string): Promise<Sy
   });
 
   return { status: 'ready', user: toDTO(created) };
+}
+
+type UserRow = NonNullable<Awaited<ReturnType<typeof prisma.user.findUnique>>>;
+
+/**
+ * JWT (= auth.users) の email が public.users.email と食い違う場合に追随させる (#129)。
+ * メールアドレス変更フロー (Supabase 組み込み) 完了後の同期点。変更が無ければ何もしない。
+ *
+ * email は @unique。理論上 auth.users 側でも一意なので衝突しないが、万一の一意制約違反
+ * (P2002) では sync 自体を落とさず旧行のまま返す (ログインを止めない best-effort 同期)。
+ */
+async function reconcileEmailIfChanged(user: UserRow, jwtEmail: string): Promise<UserRow> {
+  if (!jwtEmail || user.email.toLowerCase() === jwtEmail.toLowerCase()) {
+    return user;
+  }
+  const previousEmail = user.email;
+  try {
+    const [updated] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: { email: jwtEmail },
+      }),
+      prisma.auditLog.create({
+        data: {
+          actorUserId: user.id,
+          action: 'email_changed',
+          resourceType: 'user',
+          resourceId: user.id,
+          result: 'success',
+          extra: { previousEmail },
+        },
+      }),
+    ]);
+    return updated;
+  } catch (err) {
+    if ((err as { code?: string }).code === 'P2002') {
+      console.error('[syncUser] email reconcile skipped (unique conflict):', jwtEmail);
+      return user;
+    }
+    throw err;
+  }
 }
 
 /**

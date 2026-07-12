@@ -30,7 +30,7 @@ const AUTH_METHOD_LABEL: Record<CurrentUser['primaryAuthMethod'], string> = {
   microsoft: 'Microsoft',
 };
 
-type Mode = 'view' | 'profile' | 'password' | 'withdraw';
+type Mode = 'view' | 'profile' | 'email' | 'password' | 'withdraw';
 
 /**
  * プロフィール / 認証情報モーダル (プロトタイプ ProfileModal 準拠)。
@@ -62,11 +62,13 @@ export function ProfileModal({
           <DialogDescription>
             {mode === 'password'
               ? 'パスワードを変更します。'
-              : mode === 'profile'
-                ? 'お名前と表示名を変更します。'
-                : mode === 'withdraw'
-                  ? 'アカウントを退会します。この操作は取り消せません。'
-                  : 'プロフィール情報を確認・編集できます。'}
+              : mode === 'email'
+                ? 'メールアドレスを変更します。確認メールで変更を確定します。'
+                : mode === 'profile'
+                  ? 'お名前と表示名を変更します。'
+                  : mode === 'withdraw'
+                    ? 'アカウントを退会します。この操作は取り消せません。'
+                    : 'プロフィール情報を確認・編集できます。'}
           </DialogDescription>
         </DialogHeader>
 
@@ -74,6 +76,7 @@ export function ProfileModal({
           <ViewMode
             user={user}
             onEdit={() => setMode('profile')}
+            onChangeEmail={() => setMode('email')}
             onChangePassword={() => setMode('password')}
             onWithdraw={() => setMode('withdraw')}
             onSignOut={onSignOut}
@@ -81,6 +84,7 @@ export function ProfileModal({
           />
         )}
         {mode === 'profile' && <ProfileForm user={user} onDone={() => setMode('view')} />}
+        {mode === 'email' && <EmailForm user={user} onDone={() => setMode('view')} />}
         {mode === 'password' && <PasswordForm onDone={() => setMode('view')} />}
         {mode === 'withdraw' && <WithdrawForm onCancel={() => setMode('view')} />}
       </DialogContent>
@@ -91,6 +95,7 @@ export function ProfileModal({
 function ViewMode({
   user,
   onEdit,
+  onChangeEmail,
   onChangePassword,
   onWithdraw,
   onSignOut,
@@ -98,6 +103,7 @@ function ViewMode({
 }: {
   user: CurrentUser;
   onEdit: () => void;
+  onChangeEmail: () => void;
   onChangePassword: () => void;
   onWithdraw: () => void;
   onSignOut: () => void;
@@ -129,6 +135,11 @@ function ViewMode({
         <Button variant="outline" size="sm" onClick={onEdit}>
           プロフィールを編集
         </Button>
+        {user.primaryAuthMethod === 'password' && (
+          <Button variant="outline" size="sm" onClick={onChangeEmail}>
+            メールアドレスを変更
+          </Button>
+        )}
         {user.primaryAuthMethod === 'password' && (
           <Button variant="outline" size="sm" onClick={onChangePassword}>
             パスワードを変更
@@ -198,6 +209,83 @@ function ProfileForm({ user, onDone }: { user: CurrentUser; onDone: () => void }
         <Button type="submit" disabled={mut.isPending}>
           {mut.isPending && <Loader2 className="size-4 animate-spin" />}
           保存
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+const emailSchema = (currentEmail: string) =>
+  z.object({
+    newEmail: z
+      .string()
+      .trim()
+      .min(1, 'メールアドレスは必須')
+      .email('メールアドレスの形式が正しくありません')
+      .refine((v) => v.toLowerCase() !== currentEmail.toLowerCase(), {
+        message: '現在のメールアドレスと同じです',
+      }),
+  });
+type EmailValues = { newEmail: string };
+
+/**
+ * メールアドレス変更フォーム (パスワード認証ユーザーのみ, #129)。
+ *
+ * Supabase 組み込みの email 変更フローを利用する。`updateUser({ email })` を呼ぶと
+ * `double_confirm_changes = true` により新旧両アドレスへ確認メール (Resend SMTP 経由) が届く。
+ * ユーザーが両方のリンクを確定すると auth.users.email が変わり、次回 `/auth/me/sync` で
+ * public.users.email が追随する (server: reconcileEmailIfChanged)。確認リンクは
+ * `emailRedirectTo` (= /auth/callback) に着地し、そこで sync が走る。
+ */
+function EmailForm({ user, onDone }: { user: CurrentUser; onDone: () => void }) {
+  const form = useForm<EmailValues>({
+    resolver: zodResolver(emailSchema(user.email)),
+    defaultValues: { newEmail: '' },
+  });
+
+  const mut = useMutation({
+    mutationFn: async (v: EmailValues) => {
+      const { error } = await supabase.auth.updateUser(
+        { email: v.newEmail.trim() },
+        { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(
+        '確認メールを送信しました。現在のアドレスと新しいアドレスの両方に届くリンクから変更を確定してください。',
+      );
+      onDone();
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'メールアドレスの変更に失敗しました'),
+  });
+
+  return (
+    <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-3">
+      <div className="space-y-1.5">
+        <Label>現在のメールアドレス</Label>
+        <p className="text-sm text-muted-foreground">{user.email}</p>
+      </div>
+      <FormField label="新しいメールアドレス" error={form.formState.errors.newEmail?.message}>
+        <Input
+          type="email"
+          autoComplete="email"
+          autoFocus
+          placeholder="new@example.com"
+          {...form.register('newEmail')}
+        />
+      </FormField>
+      <p className="text-xs text-muted-foreground">
+        変更を確定するには、現在のアドレスと新しいアドレスの両方に届く確認メールのリンクを開く必要があります。
+      </p>
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={onDone} disabled={mut.isPending}>
+          キャンセル
+        </Button>
+        <Button type="submit" disabled={mut.isPending}>
+          {mut.isPending && <Loader2 className="size-4 animate-spin" />}
+          確認メールを送信
         </Button>
       </DialogFooter>
     </form>
