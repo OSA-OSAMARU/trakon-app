@@ -5,14 +5,16 @@ import { http, HttpResponse } from 'msw';
 
 // supabase は apiRequest の Authorization 注入で getSession を呼ぶためモックする。
 // 退会成功時の signOut({ scope: 'local' }) も捕捉する。
-const { signOutMock } = vi.hoisted(() => ({
+const { signOutMock, updateUserMock } = vi.hoisted(() => ({
   signOutMock: vi.fn().mockResolvedValue({ error: null }),
+  updateUserMock: vi.fn().mockResolvedValue({ data: { user: {} }, error: null }),
 }));
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
       signOut: signOutMock,
+      updateUser: updateUserMock,
     },
   },
 }));
@@ -48,6 +50,8 @@ const user: CurrentUser = {
 beforeEach(() => {
   toastSuccess.mockReset();
   toastError.mockReset();
+  updateUserMock.mockClear();
+  updateUserMock.mockResolvedValue({ data: { user: {} }, error: null });
 });
 
 describe('ProfileModal', () => {
@@ -188,6 +192,64 @@ describe('ProfileModal', () => {
     expect(body).toEqual({ newPassword: 'abcd1234!' });
   });
 
+  it('メールアドレス変更 → 新メール入力で supabase.updateUser を呼び成功トーストを出す', async () => {
+    const u = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(
+      <ProfileModal user={user} open onClose={() => {}} onSignOut={() => {}} />,
+    );
+
+    await u.click(screen.getByRole('button', { name: 'メールアドレスを変更' }));
+    const input = await screen.findByPlaceholderText('new@example.com');
+    await u.type(input, 'next@example.com');
+    await u.click(screen.getByRole('button', { name: '確認メールを送信' }));
+
+    await waitFor(() => expect(updateUserMock).toHaveBeenCalledTimes(1));
+    expect(updateUserMock).toHaveBeenCalledWith(
+      { email: 'next@example.com' },
+      { emailRedirectTo: expect.stringContaining('/auth/callback') },
+    );
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(expect.stringContaining('確認メールを送信しました')),
+    );
+  });
+
+  it('現在と同じメールアドレスはバリデーションエラーを出し supabase を呼ばない', async () => {
+    const u = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(
+      <ProfileModal user={user} open onClose={() => {}} onSignOut={() => {}} />,
+    );
+
+    await u.click(screen.getByRole('button', { name: 'メールアドレスを変更' }));
+    const input = await screen.findByPlaceholderText('new@example.com');
+    await u.type(input, 'me@example.com');
+    await u.click(screen.getByRole('button', { name: '確認メールを送信' }));
+
+    expect(await screen.findByText('現在のメールアドレスと同じです')).toBeInTheDocument();
+    expect(updateUserMock).not.toHaveBeenCalled();
+  });
+
+  it('supabase.updateUser がエラーを返すとエラートーストを出す', async () => {
+    updateUserMock.mockResolvedValueOnce({
+      data: { user: null },
+      error: new Error('A user with this email address has already been registered'),
+    });
+    const u = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(
+      <ProfileModal user={user} open onClose={() => {}} onSignOut={() => {}} />,
+    );
+
+    await u.click(screen.getByRole('button', { name: 'メールアドレスを変更' }));
+    const input = await screen.findByPlaceholderText('new@example.com');
+    await u.type(input, 'taken@example.com');
+    await u.click(screen.getByRole('button', { name: '確認メールを送信' }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        'A user with this email address has already been registered',
+      ),
+    );
+  });
+
   it('退会する → 理由選択＋「退会」入力で DELETE /auth/me を送り local signOut する', async () => {
     let body: { reason?: string } | null = null;
     server.use(
@@ -243,7 +305,7 @@ describe('ProfileModal', () => {
     expect(signOutMock).not.toHaveBeenCalled();
   });
 
-  it('OAuth ユーザーにはパスワード変更ボタンを出さない', () => {
+  it('OAuth ユーザーにはパスワード変更・メールアドレス変更ボタンを出さない', () => {
     renderWithProviders(
       <ProfileModal
         user={{ ...user, primaryAuthMethod: 'google' }}
@@ -255,6 +317,9 @@ describe('ProfileModal', () => {
     expect(screen.getByText('Google')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'パスワードを変更' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'メールアドレスを変更' }),
     ).not.toBeInTheDocument();
   });
 });
