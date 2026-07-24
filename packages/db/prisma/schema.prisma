@@ -54,25 +54,28 @@ model User {
 // 設計書 §2.4.2
 // -----------------------------------------------------------------------------
 model Project {
-  id             String    @id @default(uuid(7)) @db.Uuid
-  organizationId String?   @map("organization_id") @db.Uuid
-  name           String
-  startDate      DateTime  @map("start_date") @db.Date
-  endDate        DateTime  @map("end_date") @db.Date
+  id                      String    @id @default(uuid(7)) @db.Uuid
+  organizationId          String?   @map("organization_id") @db.Uuid
+  name                    String
+  startDate               DateTime  @map("start_date") @db.Date
+  endDate                 DateTime  @map("end_date") @db.Date
   /// 'active' | 'closed' (CHECK 制約)
-  status         String    @default("active")
-  createdBy      String    @map("created_by") @db.Uuid
-  closedAt       DateTime? @map("closed_at") @db.Timestamptz
-  archivedAt     DateTime? @map("archived_at") @db.Timestamptz
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  status                  String    @default("active")
+  createdBy               String    @map("created_by") @db.Uuid
+  /// 予定作成時の進行責任者(progressManager)の既定値 (#131)。予定ごとに変更可
+  progressManagerMemberId String?   @map("progress_manager_member_id") @db.Uuid
+  closedAt                DateTime? @map("closed_at") @db.Timestamptz
+  archivedAt              DateTime? @map("archived_at") @db.Timestamptz
+  deletedAt               DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  creator     User            @relation("ProjectsCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict, map: "fk_projects_created_by")
-  members     ProjectMember[]
-  items       ProjectItem[]
-  invitations Invitation[]
-  shareLinks  ShareLink[]
+  creator         User            @relation("ProjectsCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict, map: "fk_projects_created_by")
+  progressManager ProjectMember?  @relation("ProjectProgressManager", fields: [progressManagerMemberId], references: [id], onDelete: Restrict, map: "fk_projects_progress_manager_member_id")
+  members         ProjectMember[]
+  items           ProjectItem[]
+  invitations     Invitation[]
+  shareLinks      ShareLink[]
 
   @@index([organizationId], map: "idx_projects_organization_id")
   @@index([createdBy, status], map: "idx_projects_created_by_status")
@@ -102,13 +105,17 @@ model ProjectMember {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_pm_project_id")
-  user              User?        @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_pm_user_id")
-  invitations       Invitation[]
-  plansFrom         Plan[]       @relation("PlanFromMember")
-  plansTo           Plan[]       @relation("PlanToMember")
-  ballEventsAsActor BallEvent[]
-  shareLinksIssued  ShareLink[]
+  project               Project      @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_pm_project_id")
+  user                  User?        @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_pm_user_id")
+  invitations           Invitation[]
+  plansFrom             Plan[]       @relation("PlanFromMember")
+  plansTo               Plan[]       @relation("PlanToMember")
+  plansAsExecutor       Plan[]       @relation("PlanExecutor")
+  plansAsApprover       Plan[]       @relation("PlanApprover")
+  plansAsProgressMgr    Plan[]       @relation("PlanProgressManager")
+  projectsAsProgressMgr Project[]    @relation("ProjectProgressManager")
+  ballEventsAsActor     BallEvent[]
+  shareLinksIssued      ShareLink[]
 
   @@unique([projectId, email], map: "uq_pm_project_email")
   @@index([projectId, sortOrder], map: "idx_pm_project_sort")
@@ -145,35 +152,48 @@ model ProjectItem {
 // 設計書 §2.4.5
 // -----------------------------------------------------------------------------
 model Plan {
-  id              String    @id @default(uuid(7)) @db.Uuid
-  itemId          String    @map("item_id") @db.Uuid
+  id                      String    @id @default(uuid(7)) @db.Uuid
+  itemId                  String    @map("item_id") @db.Uuid
   /// 'toss' (Phase 0 / CHECK 制約)
-  planType        String    @default("toss") @map("plan_type")
-  title           String
+  planType                String    @default("toss") @map("plan_type")
+  title                   String
   /// 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other' (CHECK 制約)
-  category        String
-  scheduledDate   DateTime  @map("scheduled_date") @db.Date
-  dueDate         DateTime? @map("due_date") @db.Date
-  fromMemberId    String?   @map("from_member_id") @db.Uuid
-  toMemberId      String?   @map("to_member_id") @db.Uuid
+  category                String
+  scheduledDate           DateTime  @map("scheduled_date") @db.Date
+  dueDate                 DateTime? @map("due_date") @db.Date
+  /// 実施者 (#131)。作業/確認を行う人。DBは任意だがアプリ層で実質必須
+  executorMemberId        String?   @map("executor_member_id") @db.Uuid
+  /// 承認者 (#131)。任意。未設定なら実施者自身が承認/完了できる
+  approverMemberId        String?   @map("approver_member_id") @db.Uuid
+  /// 進行責任者 (#131)。承認済みの予定を後続へ TOSS できる人
+  progressManagerMemberId String?   @map("progress_manager_member_id") @db.Uuid
+  /// TOSS 実行時の履歴スナップショット (#131 §14)。FROM=TOSS した進行責任者
+  fromMemberId            String?   @map("from_member_id") @db.Uuid
+  /// TOSS 実行時の履歴スナップショット (#131 §14)。TO=後続予定の実施者
+  toMemberId              String?   @map("to_member_id") @db.Uuid
   /// 後続紐付け (UNIQUE, 自己参照 CHECK で禁止)
-  successorPlanId String?   @unique(map: "uq_plans_successor_plan_id") @map("successor_plan_id") @db.Uuid
+  successorPlanId         String?   @unique(map: "uq_plans_successor_plan_id") @map("successor_plan_id") @db.Uuid
   /// 'active' | 'completed' | 'canceled' (CHECK 制約)
-  status          String    @default("active")
-  memo            String?
-  completedAt     DateTime? @map("completed_at") @db.Timestamptz
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  status                  String    @default("active")
+  memo                    String?
+  completedAt             DateTime? @map("completed_at") @db.Timestamptz
+  deletedAt               DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  item        ProjectItem    @relation(fields: [itemId], references: [id], onDelete: Cascade, map: "fk_plans_item_id")
-  fromMember  ProjectMember? @relation("PlanFromMember", fields: [fromMemberId], references: [id], onDelete: Restrict, map: "fk_plans_from_member_id")
-  toMember    ProjectMember? @relation("PlanToMember", fields: [toMemberId], references: [id], onDelete: Restrict, map: "fk_plans_to_member_id")
-  successor   Plan?          @relation("PlanSuccessor", fields: [successorPlanId], references: [id], onDelete: SetNull, map: "fk_plans_successor_plan_id")
-  predecessor Plan?          @relation("PlanSuccessor")
-  ballEvents  BallEvent[]
+  item            ProjectItem    @relation(fields: [itemId], references: [id], onDelete: Cascade, map: "fk_plans_item_id")
+  executor        ProjectMember? @relation("PlanExecutor", fields: [executorMemberId], references: [id], onDelete: Restrict, map: "fk_plans_executor_member_id")
+  approver        ProjectMember? @relation("PlanApprover", fields: [approverMemberId], references: [id], onDelete: Restrict, map: "fk_plans_approver_member_id")
+  progressManager ProjectMember? @relation("PlanProgressManager", fields: [progressManagerMemberId], references: [id], onDelete: Restrict, map: "fk_plans_progress_manager_member_id")
+  fromMember      ProjectMember? @relation("PlanFromMember", fields: [fromMemberId], references: [id], onDelete: Restrict, map: "fk_plans_from_member_id")
+  toMember        ProjectMember? @relation("PlanToMember", fields: [toMemberId], references: [id], onDelete: Restrict, map: "fk_plans_to_member_id")
+  successor       Plan?          @relation("PlanSuccessor", fields: [successorPlanId], references: [id], onDelete: SetNull, map: "fk_plans_successor_plan_id")
+  predecessor     Plan?          @relation("PlanSuccessor")
+  ballEvents      BallEvent[]
 
   @@index([itemId, scheduledDate], map: "idx_plans_item_scheduled")
+  @@index([executorMemberId], map: "idx_plans_executor_member")
+  @@index([progressManagerMemberId], map: "idx_plans_progress_manager_member")
   @@index([fromMemberId], map: "idx_plans_from_member")
   @@index([toMemberId], map: "idx_plans_to_member")
   @@index([category], map: "idx_plans_category")
@@ -188,7 +208,9 @@ model Plan {
 model BallEvent {
   id            String   @id @default(uuid(7)) @db.Uuid
   planId        String   @map("plan_id") @db.Uuid
-  /// 'tossed' | 'completed' | 'toss_undone' (CHECK 制約)
+  /// 'tossed' | 'completed' | 'toss_undone' | 'completion_undone'
+  /// | 'review_requested' | 'approved' | 'sent_back'
+  /// | 'review_request_undone' | 'approval_undone' (CHECK 制約, #131)
   eventType     String   @map("event_type")
   /// 'human' | 'auto_chain' (CHECK 制約 + actor_consistency)
   source        String   @default("human")
