@@ -3,8 +3,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { hashToken } from '../lib/tokens.js';
 import type {
   viewShare as ViewShareType,
-  shareToss as ShareTossType,
-  shareComplete as ShareCompleteType,
+  shareRequestReview as ShareRequestReviewType,
+  shareApprove as ShareApproveType,
+  shareSendBack as ShareSendBackType,
 } from './shareAccess.js';
 
 // =============================================================================
@@ -326,11 +327,12 @@ function seedShareLink(over: Partial<MockShareLink> = {}): MockShareLink {
 // =============================================================================
 
 let viewShare: typeof ViewShareType;
-let shareToss: typeof ShareTossType;
-let shareComplete: typeof ShareCompleteType;
+let shareRequestReview: typeof ShareRequestReviewType;
+let shareApprove: typeof ShareApproveType;
+let shareSendBack: typeof ShareSendBackType;
 
 beforeAll(async () => {
-  ({ viewShare, shareToss, shareComplete } = await import('./shareAccess.js'));
+  ({ viewShare, shareRequestReview, shareApprove, shareSendBack } = await import('./shareAccess.js'));
 });
 
 afterEach(() => {
@@ -479,26 +481,132 @@ describe('viewShare', () => {
   });
 });
 
-describe('shareToss', () => {
-  function seedTossable() {
+// review_requested イベントを積んで「確認待ち」状態を作る。
+function pushEvent(planId: string, eventType: string) {
+  ballEventStore.push({
+    id: `be-${eventType}-${planId}`,
+    planId,
+    eventType,
+    source: 'human',
+    actorMemberId: null,
+    actorUserId: null,
+    actorMember: null,
+    occurredAt: new Date('2026-06-05T00:00:00Z'),
+    note: null,
+  });
+}
+
+describe('shareRequestReview', () => {
+  it('承認者あり実施中 → review_requested イベント + 監査 share_request_review', async () => {
     seedProject();
     seedItem({ id: 'item-a', name: 'A' });
-    return seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'active' });
-  }
-
-  it('active かつ未 TOSS の plan に tossed イベントを作り、監査ログを記録する', async () => {
-    seedTossable();
+    const exec = makeMember({ id: 'ex' });
+    const appr = makeMember({ id: 'ap' });
+    seedPlan({
+      id: 'plan-1',
+      itemId: 'item-a',
+      status: 'active',
+      executorMemberId: exec.id,
+      executor: exec,
+      approverMemberId: appr.id,
+      approver: appr,
+    });
     const link = seedShareLink({ scopeType: 'project' });
 
-    const res = await shareToss({ rawToken: RAW_TOKEN, planId: 'plan-1', ip: '9.9.9.9' });
+    const res = await shareRequestReview({ rawToken: RAW_TOKEN, planId: 'plan-1', ip: '9.9.9.9' });
 
-    expect(res.plan.id).toBe('plan-1');
-    // tossed イベントが作られている (source=auto_chain, actor=null)
-    const tossed = ballEventStore.filter((e) => e.planId === 'plan-1' && e.eventType === 'tossed');
-    expect(tossed).toHaveLength(1);
-    expect(tossed[0]).toMatchObject({ source: 'auto_chain', actorMemberId: null, actorUserId: null });
-    expect(tossed[0]!.note).toContain(link.id);
-    expect(auditStore.some((a) => a.action === 'share_toss' && a.resourceId === 'plan-1')).toBe(true);
+    expect(res.plan.ballState).toBe('review_pending');
+    const ev = ballEventStore.filter((e) => e.planId === 'plan-1' && e.eventType === 'review_requested');
+    expect(ev).toHaveLength(1);
+    expect(ev[0]).toMatchObject({ source: 'auto_chain', actorMemberId: null, actorUserId: null });
+    expect(ev[0]!.note).toContain(link.id);
+    expect(auditStore.some((a) => a.action === 'share_request_review' && a.resourceId === 'plan-1')).toBe(true);
+  });
+
+  it('承認者なし → 422 NO_APPROVER', async () => {
+    seedProject();
+    seedItem({ id: 'item-a', name: 'A' });
+    const exec = makeMember({ id: 'ex' });
+    seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'active', executorMemberId: exec.id, executor: exec });
+    seedShareLink({ scopeType: 'project' });
+    await expect(shareRequestReview({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
+      code: 'NO_APPROVER',
+      status: 422,
+    });
+  });
+});
+
+describe('shareApprove', () => {
+  it('承認者なし実施中 → approved イベント。後続なしで completed、監査 share_approve', async () => {
+    seedProject();
+    seedItem({ id: 'item-a', name: 'A' });
+    const exec = makeMember({ id: 'ex' });
+    seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'active', executorMemberId: exec.id, executor: exec });
+    seedShareLink({ scopeType: 'project' });
+
+    const res = await shareApprove({ rawToken: RAW_TOKEN, planId: 'plan-1', userAgent: 'ua' });
+
+    expect(res.plan.ballState).toBe('approved');
+    expect(res.plan.status).toBe('completed'); // 後続なし = 承認で完了
+    expect(planStore.find((p) => p.id === 'plan-1')?.status).toBe('completed');
+    const ev = ballEventStore.filter((e) => e.planId === 'plan-1' && e.eventType === 'approved');
+    expect(ev[0]).toMatchObject({ source: 'auto_chain', actorMemberId: null, actorUserId: null });
+    expect(auditStore.some((a) => a.action === 'share_approve' && a.resourceId === 'plan-1')).toBe(true);
+  });
+
+  it('承認者あり確認待ち → approved (後続ありは active のまま)', async () => {
+    seedProject();
+    seedItem({ id: 'item-a', name: 'A' });
+    const exec = makeMember({ id: 'ex' });
+    const appr = makeMember({ id: 'ap' });
+    const pm = makeMember({ id: 'pm' });
+    seedPlan({
+      id: 'succ',
+      itemId: 'item-a',
+      status: 'active',
+      executorMemberId: exec.id,
+      executor: exec,
+    });
+    seedPlan({
+      id: 'plan-1',
+      itemId: 'item-a',
+      status: 'active',
+      executorMemberId: exec.id,
+      executor: exec,
+      approverMemberId: appr.id,
+      approver: appr,
+      progressManagerMemberId: pm.id,
+      progressManager: pm,
+      successorPlanId: 'succ',
+    });
+    pushEvent('plan-1', 'review_requested'); // 確認待ちにする
+    seedShareLink({ scopeType: 'project' });
+
+    const res = await shareApprove({ rawToken: RAW_TOKEN, planId: 'plan-1' });
+
+    expect(res.plan.ballState).toBe('approved');
+    expect(res.plan.status).toBe('active'); // 後続あり = TOSS 待ち
+  });
+
+  it('承認者あり実施中(確認依頼前)で承認 → 409 INVALID_STATE', async () => {
+    seedProject();
+    seedItem({ id: 'item-a', name: 'A' });
+    const exec = makeMember({ id: 'ex' });
+    const appr = makeMember({ id: 'ap' });
+    seedPlan({
+      id: 'plan-1',
+      itemId: 'item-a',
+      status: 'active',
+      executorMemberId: exec.id,
+      executor: exec,
+      approverMemberId: appr.id,
+      approver: appr,
+    });
+    seedShareLink({ scopeType: 'project' });
+    await expect(shareApprove({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+      status: 409,
+    });
   });
 
   it('plan が active でない → 422 PLAN_NOT_ACTIVE', async () => {
@@ -506,38 +614,19 @@ describe('shareToss', () => {
     seedItem({ id: 'item-a', name: 'A' });
     seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'completed' });
     seedShareLink({ scopeType: 'project' });
-    await expect(shareToss({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
+    await expect(shareApprove({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
       code: 'PLAN_NOT_ACTIVE',
       status: 422,
     });
   });
 
-  it('既に tossed 済み → 409 ALREADY_TOSSED', async () => {
-    seedTossable();
-    ballEventStore.push({
-      id: 'be-pre',
-      planId: 'plan-1',
-      eventType: 'tossed',
-      source: 'human',
-      actorMemberId: null,
-      actorUserId: null,
-      actorMember: null,
-      occurredAt: new Date('2026-06-02T00:00:00Z'),
-      note: null,
-    });
-    seedShareLink({ scopeType: 'project' });
-    await expect(shareToss({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
-      code: 'ALREADY_TOSSED',
-      status: 409,
-    });
-  });
-
+  // scope 検証 (runShareAction 共通)
   it('scope 外 plan (別 project) → 404', async () => {
     seedProject();
     seedItem({ id: 'item-a', name: 'A', projectId: 'other-proj' });
     seedPlan({ id: 'plan-1', itemId: 'item-a' });
     seedShareLink({ scopeType: 'project', projectId: 'proj-1' });
-    await expect(shareToss({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
+    await expect(shareApprove({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
       code: 'SHARE_NOT_FOUND_OR_EXPIRED',
       status: 404,
     });
@@ -549,106 +638,57 @@ describe('shareToss', () => {
     seedItem({ id: 'item-b', name: 'B' });
     seedPlan({ id: 'plan-1', itemId: 'item-b' });
     seedShareLink({ scopeType: 'item', scopeTargetId: 'item-a' });
-    await expect(shareToss({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
+    await expect(shareApprove({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
       code: 'SHARE_NOT_FOUND_OR_EXPIRED',
       status: 404,
     });
   });
 
-  it('plan scope で別 plan → 404', async () => {
-    seedProject();
-    seedItem({ id: 'item-a', name: 'A' });
-    seedPlan({ id: 'plan-1', itemId: 'item-a' });
-    seedPlan({ id: 'plan-2', itemId: 'item-a' });
-    seedShareLink({ scopeType: 'plan', scopeTargetId: 'plan-2' });
-    await expect(shareToss({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
-      code: 'SHARE_NOT_FOUND_OR_EXPIRED',
-      status: 404,
-    });
-  });
-
-  it('存在しない plan → 404 (assertPlanInShareScope)', async () => {
+  it('存在しない plan → 404', async () => {
     seedProject();
     seedItem({ id: 'item-a', name: 'A' });
     seedShareLink({ scopeType: 'project' });
-    await expect(shareToss({ rawToken: RAW_TOKEN, planId: 'ghost' })).rejects.toMatchObject({
+    await expect(shareApprove({ rawToken: RAW_TOKEN, planId: 'ghost' })).rejects.toMatchObject({
       code: 'SHARE_NOT_FOUND_OR_EXPIRED',
       status: 404,
     });
   });
 });
 
-describe('shareComplete', () => {
-  it('plan を完了し completed イベント・status 更新・監査ログを記録する (successor なし)', async () => {
+describe('shareSendBack', () => {
+  it('確認待ち → sent_back イベント + 監査 share_send_back', async () => {
     seedProject();
     seedItem({ id: 'item-a', name: 'A' });
-    seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'active' });
-    seedShareLink({ scopeType: 'project' });
-
-    const res = await shareComplete({ rawToken: RAW_TOKEN, planId: 'plan-1', userAgent: 'ua' });
-
-    expect(res.plan.id).toBe('plan-1');
-    expect(res.plan.status).toBe('completed');
-    expect(res.autoTossed).toBeNull();
-    expect(planStore.find((p) => p.id === 'plan-1')?.status).toBe('completed');
-    expect(ballEventStore.some((e) => e.planId === 'plan-1' && e.eventType === 'completed')).toBe(true);
-    expect(auditStore.some((a) => a.action === 'share_complete' && a.resourceId === 'plan-1')).toBe(true);
-  });
-
-  it('後続があっても自動 TOSS しない (自動連鎖廃止 #117 / #131)', async () => {
-    seedProject();
-    seedItem({ id: 'item-a', name: 'A' });
-    const exec = makeMember({ id: 'mf' });
-    // successor: 実施者あり・イベント無し → 実施中
+    const exec = makeMember({ id: 'ex' });
+    const appr = makeMember({ id: 'ap' });
     seedPlan({
-      id: 'succ',
+      id: 'plan-1',
       itemId: 'item-a',
       status: 'active',
       executorMemberId: exec.id,
       executor: exec,
+      approverMemberId: appr.id,
+      approver: appr,
     });
-    seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'active', successorPlanId: 'succ' });
+    pushEvent('plan-1', 'review_requested');
     seedShareLink({ scopeType: 'project' });
 
-    const res = await shareComplete({ rawToken: RAW_TOKEN, planId: 'plan-1' });
+    const res = await shareSendBack({ rawToken: RAW_TOKEN, planId: 'plan-1' });
 
-    expect(res.autoTossed).toBeNull();
-    // successor には TOSS イベントが作られない
-    expect(ballEventStore.some((e) => e.planId === 'succ' && e.eventType === 'tossed')).toBe(false);
+    expect(res.plan.ballState).toBe('sent_back');
+    expect(ballEventStore.some((e) => e.planId === 'plan-1' && e.eventType === 'sent_back')).toBe(true);
+    expect(auditStore.some((a) => a.action === 'share_send_back' && a.resourceId === 'plan-1')).toBe(true);
   });
 
-  it('successor が completed の場合は自動 TOSS しない', async () => {
+  it('確認待ちでない(実施中)で差し戻し → 409 INVALID_STATE', async () => {
     seedProject();
     seedItem({ id: 'item-a', name: 'A' });
-    seedPlan({ id: 'succ', itemId: 'item-a', status: 'completed' });
-    seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'active', successorPlanId: 'succ' });
+    const exec = makeMember({ id: 'ex' });
+    seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'active', executorMemberId: exec.id, executor: exec });
     seedShareLink({ scopeType: 'project' });
-
-    const res = await shareComplete({ rawToken: RAW_TOKEN, planId: 'plan-1' });
-
-    expect(res.autoTossed).toBeNull();
-    expect(ballEventStore.some((e) => e.planId === 'succ' && e.eventType === 'tossed')).toBe(false);
-  });
-
-  it('plan が active でない → 422 PLAN_NOT_ACTIVE', async () => {
-    seedProject();
-    seedItem({ id: 'item-a', name: 'A' });
-    seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'completed' });
-    seedShareLink({ scopeType: 'project' });
-    await expect(shareComplete({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
-      code: 'PLAN_NOT_ACTIVE',
-      status: 422,
-    });
-  });
-
-  it('scope 外 plan → 404', async () => {
-    seedProject();
-    seedItem({ id: 'item-a', name: 'A', projectId: 'other-proj' });
-    seedPlan({ id: 'plan-1', itemId: 'item-a' });
-    seedShareLink({ scopeType: 'project', projectId: 'proj-1' });
-    await expect(shareComplete({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
-      code: 'SHARE_NOT_FOUND_OR_EXPIRED',
-      status: 404,
+    await expect(shareSendBack({ rawToken: RAW_TOKEN, planId: 'plan-1' })).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+      status: 409,
     });
   });
 });

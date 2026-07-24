@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -6,7 +6,9 @@ import { AlertCircle, Lock } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { Plan } from '@/features/plans/api';
 import { ShareSchedule } from './ShareSchedule';
+import { ShareActionModal } from './ShareActionModal';
 import { shareAccessApi, type ShareView } from './api';
 
 /**
@@ -38,6 +40,7 @@ export function SharePage() {
 }
 
 function Inner({ token }: { token: string }) {
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const viewQuery = useQuery({
     queryKey: ['share', token] as const,
     queryFn: () => shareAccessApi.view(token),
@@ -51,10 +54,26 @@ function Inner({ token }: { token: string }) {
     );
   }
   const data = viewQuery.data!;
+  // 最新データ (invalidate 後の再取得) から選択中の予定を解決する。
+  const selectedPlan = selectedPlanId
+    ? (data.plans.find((p) => p.id === selectedPlanId) ?? null)
+    : null;
   return (
     <div className="flex h-screen flex-col">
       <Header view={data} />
-      <ShareSchedule project={data.project} items={data.items} plans={data.plans} />
+      <ShareSchedule
+        project={data.project}
+        items={data.items}
+        plans={data.plans}
+        onSelectPlan={(plan: Plan) => setSelectedPlanId(plan.id)}
+      />
+      {selectedPlan && (
+        <ShareActionModal
+          token={token}
+          plan={selectedPlan}
+          onClose={() => setSelectedPlanId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -65,7 +84,7 @@ function Header({ view }: { view: ShareView }) {
       <div className="space-y-1">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Lock className="size-3" />
-          共有リンク (閲覧専用)
+          共有リンク (確認・承認)
         </div>
         <h1 className="text-xl font-semibold tracking-tight">{view.project.name}</h1>
         <p className="text-xs text-muted-foreground">

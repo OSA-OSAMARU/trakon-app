@@ -58,9 +58,26 @@ export const shareLinksApi = {
 };
 
 export const shareAccessApi = {
-  // 共有画面は閲覧専用 (#59)。操作系 (toss/complete) は FE からは呼び出さない。
   view: (token: string) =>
     apiRequest<ShareView>(`/share/${encodeURIComponent(token)}`),
+
+  // #131: 非会員(クライアント)の操作。確認依頼 / 承認 / 差し戻し。
+  // 進行責任者の TOSS(次工程へ進める操作)は共有リンクからは提供しない。
+  requestReview: (token: string, planId: string) =>
+    apiRequest<{ plan: Plan }>(
+      `/share/${encodeURIComponent(token)}/plans/${planId}/request-review`,
+      { method: 'POST', body: {} },
+    ),
+  approve: (token: string, planId: string) =>
+    apiRequest<{ plan: Plan }>(`/share/${encodeURIComponent(token)}/plans/${planId}/approve`, {
+      method: 'POST',
+      body: {},
+    }),
+  sendBack: (token: string, planId: string) =>
+    apiRequest<{ plan: Plan }>(`/share/${encodeURIComponent(token)}/plans/${planId}/send-back`, {
+      method: 'POST',
+      body: {},
+    }),
 };
 
 export const shareLinksQueryKey = {
