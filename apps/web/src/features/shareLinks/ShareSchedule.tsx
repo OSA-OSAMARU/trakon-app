@@ -29,19 +29,21 @@ const DATE_AXIS_WIDTH = 76;
 type ShareItem = { id: string; name: string };
 
 /**
- * 共有リンク (非会員) 向けの「閲覧専用」スケジュールカレンダー (#59)。
- * ItemSchedulePage の ScheduleBoard と同等のレイアウトを描画するが、
- * ドラッグ移動 / TOSS / 完了 / 作成といった操作ハンドラを一切持たず、
- * 操作不能であることをコンポーネント構造として保証する。
+ * 共有リンク (非会員) 向けスケジュールカレンダー。
+ * ItemSchedulePage の ScheduleBoard と同等のレイアウトを描画する。
+ * ドラッグ移動 / 作成はできない。#131 でクライアントの確認/承認/差し戻し操作を
+ * 追加したため、ボールをクリックすると操作モーダル (onSelectPlan) が開く。
  */
 export function ShareSchedule({
   project,
   items,
   plans,
+  onSelectPlan,
 }: {
   project: { startDate: string; endDate: string };
   items: ShareItem[];
   plans: Plan[];
+  onSelectPlan?: (plan: Plan) => void;
 }) {
   const [rowHeight, setRowHeight] = useState(ROW_HEIGHT_DEFAULT);
 
@@ -73,7 +75,13 @@ export function ShareSchedule({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <ScheduleBoard days={days} items={items} plansByItem={plansByItem} rowHeight={rowHeight} />
+      <ScheduleBoard
+        days={days}
+        items={items}
+        plansByItem={plansByItem}
+        rowHeight={rowHeight}
+        onSelectPlan={onSelectPlan}
+      />
       <ZoomControl rowHeight={rowHeight} onChange={setRowHeight} />
     </div>
   );
@@ -88,11 +96,13 @@ function ScheduleBoard({
   items,
   plansByItem,
   rowHeight,
+  onSelectPlan,
 }: {
   days: Date[];
   items: ShareItem[];
   plansByItem: Map<string, Plan[]>;
   rowHeight: number;
+  onSelectPlan?: (plan: Plan) => void;
 }) {
   const today = new Date();
   const totalHeight = days.length * rowHeight;
@@ -238,6 +248,7 @@ function ScheduleBoard({
                     laneWidth={laneWidth}
                     lane={laneOf.get(plan.id) ?? 0}
                     today={today}
+                    onSelect={onSelectPlan}
                   />
                 ))}
               </div>
@@ -340,6 +351,7 @@ function BallChip({
   laneWidth,
   lane,
   today,
+  onSelect,
 }: {
   plan: Plan;
   days: Date[];
@@ -347,6 +359,7 @@ function BallChip({
   laneWidth: number;
   lane: number;
   today: Date;
+  onSelect?: (plan: Plan) => void;
 }) {
   const { start, end } = planRange(plan);
   const startIdx = dayIndex(days, start);
@@ -369,12 +382,14 @@ function BallChip({
         ? 'border-slate-300 bg-slate-100 text-slate-600'
         : cn(style.bg, style.border, style.text);
 
+  const clickable = !!onSelect;
   return (
     <div
       className={cn(
         'absolute overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm',
         cardClass,
         active && !completed && 'ring-2 ring-primary/40',
+        clickable && 'cursor-pointer hover:brightness-95',
       )}
       style={{
         top,
@@ -382,6 +397,19 @@ function BallChip({
         left: lane * laneWidth + 6,
         width: laneWidth - 12,
       }}
+      {...(clickable
+        ? {
+            role: 'button' as const,
+            tabIndex: 0,
+            onClick: () => onSelect(plan),
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(plan);
+              }
+            },
+          }
+        : {})}
     >
       <div className="flex items-center justify-between gap-1">
         <span className="line-clamp-1 font-medium">{plan.title}</span>
@@ -402,16 +430,11 @@ function BallChip({
         <div className="mt-1 border-t border-current/10 pt-1 text-[10px] leading-tight">
           <div className="flex items-center gap-1">
             <span className="opacity-60">実施者</span>
-            <span className="line-clamp-1 font-medium">{plan.fromMember?.name ?? '—'}</span>
+            <span className="line-clamp-1 font-medium">{plan.executor?.name ?? '—'}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="opacity-60">確認者</span>
-            <span className="line-clamp-1 font-medium">{plan.toMember?.name ?? '—'}</span>
-            {plan.ballHolder && (
-              <Badge variant="secondary" className="ml-auto px-1 py-0 text-[9px]">
-                {plan.ballHolder.name}
-              </Badge>
-            )}
+            <span className="opacity-60">保持者</span>
+            <span className="line-clamp-1 font-medium">{plan.ballHolder?.name ?? '—'}</span>
           </div>
         </div>
       )}

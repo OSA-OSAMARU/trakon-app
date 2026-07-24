@@ -58,12 +58,12 @@ afterEach(() => {
 });
 
 describe('SharePage', () => {
-  it('共有ビューを取得してヘッダ (プロジェクト名/scope/閲覧専用) を描画する', async () => {
+  it('共有ビューを取得してヘッダ (プロジェクト名/scope/確認・承認) を描画する', async () => {
     server.use(http.get('*/api/v1/share/:token', () => HttpResponse.json({ data: view })));
     renderWithProviders(<SharePage />);
 
     expect(await screen.findByText('共有プロジェクト')).toBeInTheDocument();
-    expect(screen.getByText('共有リンク (閲覧専用)')).toBeInTheDocument();
+    expect(screen.getByText('共有リンク (確認・承認)')).toBeInTheDocument();
     expect(screen.getByText('scope: project')).toBeInTheDocument();
   });
 

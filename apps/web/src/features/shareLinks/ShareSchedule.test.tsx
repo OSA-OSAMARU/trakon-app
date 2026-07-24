@@ -129,15 +129,15 @@ describe('ShareSchedule (閲覧専用)', () => {
     expect(screen.getByText('田中 一郎')).toBeInTheDocument();
   });
 
-  it('normal tier (長期間) のボールは実施者 / 確認者 / 保持者バッジを表示する', () => {
+  it('normal tier (長期間) のボールは実施者 / 保持者を表示する', () => {
     // rowHeight=40, 4日span → height=157 ≥ 120 → normal tier。
+    // #131: FROM/TO は TOSS 履歴のため、カード表示は 実施者(executor) + 保持者(ballHolder)。
     const p = plan({
       id: 'p1',
       title: '長期タスク',
       scheduledDate: '2026-06-10',
       dueDate: '2026-06-13',
-      fromMember: memberRef({ name: '実施 太郎' }),
-      toMember: memberRef({ id: 'm2', name: '確認 花子' }),
+      executor: memberRef({ name: '実施 太郎' }),
       ballHolder: memberRef({ id: 'm2', name: '確認 花子' }),
       ballState: 'in_progress',
     });
@@ -145,9 +145,9 @@ describe('ShareSchedule (閲覧専用)', () => {
 
     expect(screen.getByText('長期タスク')).toBeInTheDocument();
     expect(screen.getByText('実施者')).toBeInTheDocument();
-    expect(screen.getByText('確認者')).toBeInTheDocument();
+    expect(screen.getByText('保持者')).toBeInTheDocument();
     expect(screen.getByText('実施 太郎')).toBeInTheDocument();
-    // 確認者名 / 保持者バッジの両方で出るため複数。
+    // 保持者名 (カード内 + 列ヘッダーのボール保持) で複数出る。
     expect(screen.getAllByText('確認 花子').length).toBeGreaterThanOrEqual(1);
     // カテゴリラベル (normal/compact tier で表示)。
     expect(screen.getByText('デザイン')).toBeInTheDocument();

@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from '@trakon/db';
+import { deriveBallHolder, type BallEventType, type PlanState } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import { toPlanDTO, type PlanDTO } from './plans.js';
@@ -148,17 +149,64 @@ async function loadPlanWithIncludes(tx: Prisma.TransactionClient, planId: string
   return row;
 }
 
-/**
- * 非会員 URL 経由で TOSS を発火。
- * Phase 0: actor=null (system_share)。Ball Holder 認可は適用せず scope のみで判定。
- * 設計書 §5.6: クライアントロール相当の操作を許可。
- */
-export async function shareToss(input: {
+// -----------------------------------------------------------------------------
+// 非会員 URL 経由のボール操作 (#131)
+//   クライアント(非会員)に「確認依頼 / 承認 / 差し戻し」を許可する。
+//   進行責任者の TOSS(次工程へ進める操作)は共有リンクからは行わない。
+//   認可: scope 内かつ状態機械が許す限り可 (保持者の種別は問わない)。
+//   actor は匿名のため source='auto_chain'(system actor, actor 両方 NULL)で記録し、
+//   誰が操作したかは audit_logs.share_link_id で辿る (設計書 §5.6)。
+// -----------------------------------------------------------------------------
+
+type ShareStatePlan = {
+  status: string;
+  executorMemberId: string | null;
+  approverMemberId: string | null;
+  progressManagerMemberId: string | null;
+  toMemberId: string | null;
+  ballEvents: { eventType: string; source: string; occurredAt: Date }[];
+};
+
+function shareBallState(plan: ShareStatePlan): PlanState {
+  const latest = plan.ballEvents[0]; // occurredAt DESC
+  return deriveBallHolder(
+    {
+      executorMemberId: plan.executorMemberId,
+      approverMemberId: plan.approverMemberId,
+      progressManagerMemberId: plan.progressManagerMemberId,
+      toMemberId: plan.toMemberId,
+      status: plan.status as 'active' | 'completed' | 'canceled',
+    },
+    latest
+      ? {
+          eventType: latest.eventType as BallEventType,
+          source: latest.source as 'human' | 'auto_chain',
+          occurredAt: latest.occurredAt,
+        }
+      : null,
+  ).state;
+}
+
+type ShareActionInput = {
   rawToken: string;
   planId: string;
   ip?: string;
   userAgent?: string;
-}): Promise<{ plan: PlanDTO }> {
+};
+
+/**
+ * 共有操作の共通スキャフォールド。scope 検証 → tx で plan ロード(active 必須) →
+ * apply(状態遷移: イベント作成 + status 更新) → 監査ログ → 再ロードして DTO 化。
+ */
+async function runShareAction(
+  input: ShareActionInput,
+  auditAction: 'share_request_review' | 'share_approve' | 'share_send_back',
+  apply: (
+    tx: Prisma.TransactionClient,
+    plan: Awaited<ReturnType<typeof loadPlanWithIncludes>>,
+    shareId: string,
+  ) => Promise<void>,
+): Promise<{ plan: PlanDTO }> {
   const share = await findActiveShareLinkByRawToken(input.rawToken);
   const { itemId } = await assertPlanInShareScope({
     shareId: share.id,
@@ -170,30 +218,14 @@ export async function shareToss(input: {
 
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, itemId);
-
     if (plan.status !== 'active') {
       throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not active.');
     }
-    if (plan.ballEvents.some((e) => e.eventType === 'tossed')) {
-      throw new ApiException('ALREADY_TOSSED', 409, 'Ball has already been tossed.');
-    }
-
-    // 非会員アクセスは system actor 扱いで auto_chain と同じスキーマで記録
-    // (ck_be_actor_consistency: source='auto_chain' なら actor 両方 NULL)
-    await tx.ballEvent.create({
-      data: {
-        planId: plan.id,
-        eventType: 'tossed',
-        source: 'auto_chain',
-        actorMemberId: null,
-        actorUserId: null,
-        note: `via share_link:${share.id}`,
-      },
-    });
+    await apply(tx, plan, share.id);
     await tx.auditLog.create({
       data: {
         shareLinkId: share.id,
-        action: 'share_toss',
+        action: auditAction,
         resourceType: 'plan',
         resourceId: plan.id,
         result: 'success',
@@ -201,72 +233,81 @@ export async function shareToss(input: {
         userAgent: input.userAgent ?? null,
       },
     });
-    return await loadPlanWithIncludes(tx, plan.id, itemId);
+    return loadPlanWithIncludes(tx, plan.id, itemId);
   });
 
   return { plan: toPlanDTO(result, []) };
 }
 
-/**
- * 非会員 URL 経由で完了を発火。successor 自動連鎖も同一トランザクションで処理。
- */
-export async function shareComplete(input: {
-  rawToken: string;
-  planId: string;
-  ip?: string;
-  userAgent?: string;
-}): Promise<{ plan: PlanDTO; autoTossed: PlanDTO | null }> {
-  const share = await findActiveShareLinkByRawToken(input.rawToken);
-  const { itemId } = await assertPlanInShareScope({
-    shareId: share.id,
-    shareScopeType: share.scopeType,
-    shareScopeTargetId: share.scopeTargetId,
-    shareProjectId: share.projectId,
-    planId: input.planId,
+function createShareEvent(
+  tx: Prisma.TransactionClient,
+  planId: string,
+  eventType: string,
+  shareId: string,
+): Promise<unknown> {
+  // ck_be_actor_consistency: source='auto_chain' なら actor 両方 NULL
+  return tx.ballEvent.create({
+    data: {
+      planId,
+      eventType,
+      source: 'auto_chain',
+      actorMemberId: null,
+      actorUserId: null,
+      note: `via share_link:${shareId}`,
+    },
   });
+}
 
-  const result = await prisma.$transaction(async (tx) => {
-    const plan = await loadPlanWithIncludes(tx, input.planId, itemId);
-    if (plan.status !== 'active') {
-      throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not active.');
+/** 確認依頼 (実施中/差し戻し → 確認待ち)。承認者・実施者が設定済みで承認者ありのみ。 */
+export function shareRequestReview(input: ShareActionInput): Promise<{ plan: PlanDTO }> {
+  return runShareAction(input, 'share_request_review', async (tx, plan, shareId) => {
+    const state = shareBallState(plan);
+    if (state !== 'in_progress' && state !== 'sent_back') {
+      throw new ApiException('INVALID_STATE', 409, '確認依頼は実施中の予定にのみ行えます。');
     }
-
-    await tx.ballEvent.create({
-      data: {
-        planId: plan.id,
-        eventType: 'completed',
-        source: 'auto_chain',
-        actorMemberId: null,
-        actorUserId: null,
-        note: `via share_link:${share.id}`,
-      },
-    });
-    await tx.plan.update({
-      where: { id: plan.id },
-      data: { status: 'completed', completedAt: new Date() },
-    });
-    await tx.auditLog.create({
-      data: {
-        shareLinkId: share.id,
-        action: 'share_complete',
-        resourceType: 'plan',
-        resourceId: plan.id,
-        result: 'success',
-        ip: input.ip ?? null,
-        userAgent: input.userAgent ?? null,
-      },
-    });
-
-    // 完了時の自動連鎖 TOSS は廃止済み (#117)。後続は未 TOSS のまま残す。
-    // NOTE(#131): 共有リンク (非会員=クライアント) 操作の新 3 ロール対応は別 issue。
-    // 現状は Phase 0 の簡易挙動 (tossed/completed イベントのみ) を維持する。
-    return {
-      completed: await loadPlanWithIncludes(tx, plan.id, itemId),
-    };
+    if (!plan.executorMemberId) {
+      throw new ApiException('INCOMPLETE_PLAN', 422, '実施者が設定されていません。');
+    }
+    if (!plan.approverMemberId) {
+      throw new ApiException('NO_APPROVER', 422, '承認者が設定されていません。');
+    }
+    await createShareEvent(tx, plan.id, 'review_requested', shareId);
   });
+}
 
-  return {
-    plan: toPlanDTO(result.completed, []),
-    autoTossed: null,
-  };
+/** 承認 (確認待ち→承認済み。承認者なしなら実施中→承認済み)。後続なしは承認=完了。 */
+export function shareApprove(input: ShareActionInput): Promise<{ plan: PlanDTO }> {
+  return runShareAction(input, 'share_approve', async (tx, plan, shareId) => {
+    const state = shareBallState(plan);
+    if (plan.approverMemberId) {
+      if (state !== 'review_pending') {
+        throw new ApiException('INVALID_STATE', 409, '確認待ちの予定のみ承認できます。');
+      }
+    } else {
+      if (state !== 'in_progress' && state !== 'sent_back') {
+        throw new ApiException('INVALID_STATE', 409, '実施中の予定のみ承認できます。');
+      }
+      if (!plan.executorMemberId) {
+        throw new ApiException('INCOMPLETE_PLAN', 422, '実施者が設定されていません。');
+      }
+    }
+    await createShareEvent(tx, plan.id, 'approved', shareId);
+    // 後続が無ければ承認で完了 (TOSS 先が無い)。TOSS 自体はクライアント不可。
+    if (!plan.successorPlanId) {
+      await tx.plan.update({
+        where: { id: plan.id },
+        data: { status: 'completed', completedAt: new Date() },
+      });
+    }
+  });
+}
+
+/** 差し戻し (確認待ち → 差し戻し。実施側へ戻す)。 */
+export function shareSendBack(input: ShareActionInput): Promise<{ plan: PlanDTO }> {
+  return runShareAction(input, 'share_send_back', async (tx, plan, shareId) => {
+    if (shareBallState(plan) !== 'review_pending') {
+      throw new ApiException('INVALID_STATE', 409, '確認待ちの予定のみ差し戻せます。');
+    }
+    await createShareEvent(tx, plan.id, 'sent_back', shareId);
+  });
 }
