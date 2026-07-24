@@ -39,7 +39,11 @@ type MockPlan = {
   title: string;
   category: string;
   status: string;
-  fromMemberId: string | null;
+  // 役割 (#131)
+  executorMemberId: string | null;
+  approverMemberId: string | null;
+  progressManagerMemberId: string | null;
+  // TOSS 履歴スナップショット
   toMemberId: string | null;
   scheduledDate: Date | null;
   dueDate: Date | null;
@@ -85,7 +89,9 @@ const plan = (over: Partial<MockPlan> & { id: string; itemId: string }): MockPla
   title: `plan-${over.id}`,
   category: 'design',
   status: 'active',
-  fromMemberId: null,
+  executorMemberId: null,
+  approverMemberId: null,
+  progressManagerMemberId: null,
   toMemberId: null,
   scheduledDate: new Date('2026-06-20T00:00:00Z'),
   dueDate: null,
@@ -161,51 +167,51 @@ describe('getDashboard', () => {
     expect(res.summary).toEqual({ todayTaskCount: 0, overdueCount: 0 });
   });
 
-  it('ball 状態 (ready / tossed) を導出し、completed と holder=null は除外する', async () => {
+  it('ball 状態 (in_progress / tossed) を導出し、completed と holder=null は除外する', async () => {
     projectStore = [
       project({
         id: 'p-1',
         members: [
-          member({ id: 'm-from', name: 'From太郎', memberType: 'client' }),
+          member({ id: 'm-exec', name: 'Exec太郎', memberType: 'client' }),
           member({ id: 'm-to', name: 'To花子', memberType: 'production' }),
         ],
         items: [{ id: 'it-1', name: '制作物1' }],
       }),
     ];
     planStore = [
-      // ready: イベント未発生 → from が holder
+      // in_progress: イベント未発生 → 実施者が holder
       plan({
-        id: 'pl-ready',
+        id: 'pl-inprogress',
         itemId: 'it-1',
-        fromMemberId: 'm-from',
+        executorMemberId: 'm-exec',
         toMemberId: 'm-to',
         category: 'coding',
       }),
-      // tossed: 最新 tossed → to が holder
+      // tossed: 最新 tossed → toMember が holder
       plan({
         id: 'pl-tossed',
         itemId: 'it-1',
-        fromMemberId: 'm-from',
+        executorMemberId: 'm-exec',
         toMemberId: 'm-to',
         ballEvents: [
           { eventType: 'tossed', source: 'human', occurredAt: new Date('2026-06-19T01:00:00Z') },
         ],
       }),
-      // completed: 最新 completed → 除外される
+      // completed: 最新 completed (レガシー) → 除外される
       plan({
         id: 'pl-completed',
         itemId: 'it-1',
-        fromMemberId: 'm-from',
+        executorMemberId: 'm-exec',
         toMemberId: 'm-to',
         ballEvents: [
           { eventType: 'completed', source: 'human', occurredAt: new Date('2026-06-19T02:00:00Z') },
         ],
       }),
-      // holder=null: from も to も null → 除外される (ready だが memberId が null)
+      // holder=null: 実施者も toMember も null → 除外される (in_progress だが memberId が null)
       plan({
         id: 'pl-nullholder',
         itemId: 'it-1',
-        fromMemberId: null,
+        executorMemberId: null,
         toMemberId: null,
       }),
     ];
@@ -215,18 +221,18 @@ describe('getDashboard', () => {
       query: { today: '2026-06-21' },
     });
 
-    // ready は m-from、tossed は m-to に振り分けられ、completed と null は消える。
+    // in_progress は m-exec、tossed は m-to に振り分けられ、completed と null は消える。
     expect(res.summary.todayTaskCount).toBe(2);
     expect(res.projects).toHaveLength(1);
     const sections = res.projects[0]!.memberSections;
-    // タスクを持つ member のみ。members 配列順 (m-from, m-to) を維持。
-    expect(sections.map((s) => s.member.id)).toEqual(['m-from', 'm-to']);
+    // タスクを持つ member のみ。members 配列順 (m-exec, m-to) を維持。
+    expect(sections.map((s) => s.member.id)).toEqual(['m-exec', 'm-to']);
 
-    const fromSection = sections.find((s) => s.member.id === 'm-from')!;
-    expect(fromSection.tasks).toHaveLength(1);
-    expect(fromSection.tasks[0]).toMatchObject({
-      planId: 'pl-ready',
-      ballState: 'ready',
+    const execSection = sections.find((s) => s.member.id === 'm-exec')!;
+    expect(execSection.tasks).toHaveLength(1);
+    expect(execSection.tasks[0]).toMatchObject({
+      planId: 'pl-inprogress',
+      ballState: 'in_progress',
       itemName: '制作物1',
       itemId: 'it-1',
       projectId: 'p-1',
@@ -234,30 +240,30 @@ describe('getDashboard', () => {
       scheduledDate: '2026-06-20',
       isOverdue: false,
     });
-    expect(fromSection.member).toMatchObject({ name: 'From太郎', memberType: 'client' });
+    expect(execSection.member).toMatchObject({ name: 'Exec太郎', memberType: 'client' });
 
     const toSection = sections.find((s) => s.member.id === 'm-to')!;
     expect(toSection.tasks[0]).toMatchObject({ planId: 'pl-tossed', ballState: 'tossed' });
   });
 
-  it('pickLatestBallEvent: 最新イベントで状態が決まる (toss_undone → ready)', async () => {
+  it('pickLatestBallEvent: 最新イベントで状態が決まる (approved → 進行責任者)', async () => {
     projectStore = [
       project({
         id: 'p-1',
-        members: [member({ id: 'm-from' }), member({ id: 'm-to' })],
+        members: [member({ id: 'm-exec' }), member({ id: 'm-pm' })],
         items: [{ id: 'it-1', name: 'I' }],
       }),
     ];
     planStore = [
       plan({
-        id: 'pl-undone',
+        id: 'pl-approved',
         itemId: 'it-1',
-        fromMemberId: 'm-from',
-        toMemberId: 'm-to',
-        // 順序を入れ替えても occurredAt で最新 (toss_undone) が選ばれる。
+        executorMemberId: 'm-exec',
+        progressManagerMemberId: 'm-pm',
+        // 順序を入れ替えても occurredAt で最新 (approved) が選ばれる。
         ballEvents: [
-          { eventType: 'toss_undone', source: 'human', occurredAt: new Date('2026-06-19T05:00:00Z') },
-          { eventType: 'tossed', source: 'human', occurredAt: new Date('2026-06-19T03:00:00Z') },
+          { eventType: 'approved', source: 'human', occurredAt: new Date('2026-06-19T05:00:00Z') },
+          { eventType: 'review_requested', source: 'human', occurredAt: new Date('2026-06-19T03:00:00Z') },
         ],
       }),
     ];
@@ -268,9 +274,9 @@ describe('getDashboard', () => {
     });
 
     const section = res.projects[0]!.memberSections[0]!;
-    // toss_undone が最新 → from に戻り ready
-    expect(section.member.id).toBe('m-from');
-    expect(section.tasks[0]!.ballState).toBe('ready');
+    // approved が最新 → 進行責任者にボール
+    expect(section.member.id).toBe('m-pm');
+    expect(section.tasks[0]!.ballState).toBe('approved');
   });
 
   it('dueDate < today の予定を overdue として数える', async () => {
@@ -286,21 +292,21 @@ describe('getDashboard', () => {
       plan({
         id: 'pl-overdue',
         itemId: 'it-1',
-        fromMemberId: 'm-1',
+        executorMemberId: 'm-1',
         dueDate: new Date('2026-06-20T00:00:00Z'),
       }),
       // not overdue: dueDate == today
       plan({
         id: 'pl-due-today',
         itemId: 'it-1',
-        fromMemberId: 'm-1',
+        executorMemberId: 'm-1',
         dueDate: new Date('2026-06-21T00:00:00Z'),
       }),
       // dueDate なし → overdue でない
       plan({
         id: 'pl-no-due',
         itemId: 'it-1',
-        fromMemberId: 'm-1',
+        executorMemberId: 'm-1',
         dueDate: null,
       }),
     ];
@@ -356,9 +362,9 @@ describe('getDashboard', () => {
       }),
     ];
     planStore = [
-      plan({ id: 'pl-1', itemId: 'it-1', fromMemberId: 'm-1' }),
+      plan({ id: 'pl-1', itemId: 'it-1', executorMemberId: 'm-1' }),
       // 存在しない item を参照する plan は itemMap に無いためスキップされる。
-      plan({ id: 'pl-orphan', itemId: 'it-missing', fromMemberId: 'm-1' }),
+      plan({ id: 'pl-orphan', itemId: 'it-missing', executorMemberId: 'm-1' }),
     ];
 
     const res = await getDashboard({

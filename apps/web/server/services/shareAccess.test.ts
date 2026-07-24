@@ -38,6 +38,12 @@ type MockPlan = {
   category: string;
   scheduledDate: Date;
   dueDate: Date | null;
+  executorMemberId: string | null;
+  approverMemberId: string | null;
+  progressManagerMemberId: string | null;
+  executor: MockMember | null;
+  approver: MockMember | null;
+  progressManager: MockMember | null;
   fromMemberId: string | null;
   toMemberId: string | null;
   fromMember: MockMember | null;
@@ -273,6 +279,12 @@ function seedPlan(over: Partial<MockPlan> = {}): MockPlan {
     category: 'design',
     scheduledDate: new Date('2026-06-10T00:00:00Z'),
     dueDate: null,
+    executorMemberId: null,
+    approverMemberId: null,
+    progressManagerMemberId: null,
+    executor: null,
+    approver: null,
+    progressManager: null,
     fromMemberId: null,
     toMemberId: null,
     fromMember: null,
@@ -360,7 +372,7 @@ describe('viewShare', () => {
     // items は sortOrder 昇順
     expect(res.items.map((i) => i.id)).toEqual(['item-b', 'item-a']);
     expect(res.plans).toHaveLength(1);
-    expect(res.plans[0]).toMatchObject({ id: 'plan-a', ballState: 'ready' });
+    expect(res.plans[0]).toMatchObject({ id: 'plan-a', ballState: 'in_progress' });
 
     // last_accessed_at 更新 + 監査ログ
     expect(prismaMock.shareLink.update).toHaveBeenCalledWith(
@@ -583,31 +595,26 @@ describe('shareComplete', () => {
     expect(auditStore.some((a) => a.action === 'share_complete' && a.resourceId === 'plan-1')).toBe(true);
   });
 
-  it('successor が active かつ ready の場合、自動 TOSS される', async () => {
+  it('後続があっても自動 TOSS しない (自動連鎖廃止 #117 / #131)', async () => {
     seedProject();
     seedItem({ id: 'item-a', name: 'A' });
-    const from = makeMember({ id: 'mf' });
-    const to = makeMember({ id: 'mt' });
-    // successor: from/to あり・イベント無し → ready
+    const exec = makeMember({ id: 'mf' });
+    // successor: 実施者あり・イベント無し → 実施中
     seedPlan({
       id: 'succ',
       itemId: 'item-a',
       status: 'active',
-      fromMemberId: from.id,
-      toMemberId: to.id,
-      fromMember: from,
-      toMember: to,
+      executorMemberId: exec.id,
+      executor: exec,
     });
     seedPlan({ id: 'plan-1', itemId: 'item-a', status: 'active', successorPlanId: 'succ' });
     seedShareLink({ scopeType: 'project' });
 
     const res = await shareComplete({ rawToken: RAW_TOKEN, planId: 'plan-1' });
 
-    expect(res.autoTossed?.id).toBe('succ');
-    // successor に auto_chain の tossed が作られている
-    expect(
-      ballEventStore.some((e) => e.planId === 'succ' && e.eventType === 'tossed' && e.source === 'auto_chain'),
-    ).toBe(true);
+    expect(res.autoTossed).toBeNull();
+    // successor には TOSS イベントが作られない
+    expect(ballEventStore.some((e) => e.planId === 'succ' && e.eventType === 'tossed')).toBe(false);
   });
 
   it('successor が completed の場合は自動 TOSS しない', async () => {

@@ -1,7 +1,7 @@
 import { prisma, type Prisma } from '@trakon/db';
+import { deriveBallHolder, type BallEventType, type BallHolderResult, type PlanState } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
-import type { TossBody } from '../schemas/plans.js';
 import { toPlanDTO, type PlanDTO } from './plans.js';
 
 export type TossResult = {
@@ -15,6 +15,9 @@ export type CompleteResult = {
 };
 
 const PLAN_INCLUDE = {
+  executor: true,
+  approver: true,
+  progressManager: true,
   fromMember: true,
   toMember: true,
   ballEvents: {
@@ -24,6 +27,17 @@ const PLAN_INCLUDE = {
 } as const;
 
 type PlanWithIncludes = Prisma.PlanGetPayload<{ include: typeof PLAN_INCLUDE }>;
+
+type AuditAction =
+  | 'toss'
+  | 'complete'
+  | 'untoss'
+  | 'undo_complete'
+  | 'request_review'
+  | 'undo_request_review'
+  | 'approve'
+  | 'undo_approve'
+  | 'send_back';
 
 async function loadPlanWithIncludes(
   tx: Prisma.TransactionClient,
@@ -38,27 +52,39 @@ async function loadPlanWithIncludes(
   return row;
 }
 
-/**
- * 最新イベント 1 件で現在の ball state を判定する。
- * toss_undone (差し戻し) は直前の tossed を打ち消し ready に、
- * completion_undone (完了の差し戻し) は直前の completed を打ち消し tossed に戻す。
- * ball_events は occurredAt DESC で取得しているので [0] が最新。
- */
-function currentBallState(plan: PlanWithIncludes): 'ready' | 'tossed' | 'completed' {
-  const latest = plan.ballEvents[0];
-  if (!latest || latest.eventType === 'toss_undone') return 'ready';
-  if (latest.eventType === 'tossed' || latest.eventType === 'completion_undone') return 'tossed';
-  return 'completed';
+/** plan + 最新イベントから Ball Holder / state を導出する (deriveBallHolder に委譲)。 */
+function deriveFor(plan: PlanWithIncludes): BallHolderResult {
+  const latest = plan.ballEvents[0]; // occurredAt DESC
+  return deriveBallHolder(
+    {
+      executorMemberId: plan.executorMemberId,
+      approverMemberId: plan.approverMemberId,
+      progressManagerMemberId: plan.progressManagerMemberId,
+      toMemberId: plan.toMemberId,
+      status: plan.status as 'active' | 'completed' | 'canceled',
+    },
+    latest
+      ? {
+          eventType: latest.eventType as BallEventType,
+          source: latest.source as 'human' | 'auto_chain',
+          occurredAt: latest.occurredAt,
+        }
+      : null,
+  );
+}
+
+function currentBallState(plan: PlanWithIncludes): PlanState {
+  return deriveFor(plan).state;
 }
 
 function ballHolderMemberId(plan: PlanWithIncludes): string | null {
-  return currentBallState(plan) === 'ready' ? plan.fromMemberId : plan.toMemberId;
+  return deriveFor(plan).memberId;
 }
 
 async function recordAudit(input: {
   tx: Prisma.TransactionClient;
   actorUserId: string;
-  action: 'toss' | 'complete' | 'auto_toss' | 'untoss' | 'undo_complete';
+  action: AuditAction;
   planId: string;
 }): Promise<void> {
   await input.tx.auditLog.create({
@@ -72,102 +98,105 @@ async function recordAudit(input: {
   });
 }
 
-// -----------------------------------------------------------------------------
-// TOSS
-// -----------------------------------------------------------------------------
-export async function tossPlan(input: {
-  itemId: string;
-  projectId: string;
+function assertActive(plan: PlanWithIncludes): void {
+  if (plan.status !== 'active') {
+    throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not active.');
+  }
+}
+
+/** 現在の Ball Holder または director でなければ 403。 */
+function assertHolderOrDirector(plan: PlanWithIncludes, currentMemberId: string, isDirector: boolean): void {
+  if (!isDirector && ballHolderMemberId(plan) !== currentMemberId) {
+    throw new ApiException('FORBIDDEN', 403, 'Only the ball holder or director can perform this action.');
+  }
+}
+
+async function createEvent(input: {
+  tx: Prisma.TransactionClient;
   planId: string;
-  body: TossBody;
-  currentUserId: string;
+  eventType: string;
   currentMemberId: string;
-  isDirector: boolean;
-}): Promise<TossResult> {
-  const result = await prisma.$transaction(async (tx) => {
-    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
-
-    if (plan.status !== 'active') {
-      throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not active.');
-    }
-    if (currentBallState(plan) !== 'ready') {
-      throw new ApiException('ALREADY_TOSSED', 409, 'Ball has already been tossed.');
-    }
-    // 実施者(FROM)/確認者(TO) 未設定の予定は TOSS できない (#55)
-    if (!plan.fromMemberId || !plan.toMemberId) {
-      throw new ApiException(
-        'INCOMPLETE_PLAN',
-        422,
-        '実施者(FROM)と確認者(TO)を設定してください。',
-      );
-    }
-
-    // 認可: 現在の Ball Holder (= fromMember) または ディレクター
-    const holder = ballHolderMemberId(plan);
-    if (!input.isDirector && holder !== input.currentMemberId) {
-      throw new ApiException('FORBIDDEN', 403, 'Only the ball holder or director can toss.');
-    }
-
-    // 任意で TOSS 先を変更
-    if (input.body.toMemberId && input.body.toMemberId !== plan.toMemberId) {
-      const validMember = await tx.projectMember.findFirst({
-        where: {
-          id: input.body.toMemberId,
-          projectId: input.projectId,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      if (!validMember) {
-        throw new ApiException(
-          'INVALID_TO_MEMBER',
-          422,
-          'toMemberId does not belong to this project.',
-        );
-      }
-      if (validMember.id === plan.fromMemberId) {
-        throw new ApiException(
-          'INVALID_TO_MEMBER',
-          422,
-          'TOSS target must differ from the current ball holder.',
-        );
-      }
-      await tx.plan.update({
-        where: { id: plan.id },
-        data: { toMemberId: validMember.id },
-      });
-    }
-
-    await tx.ballEvent.create({
-      data: {
-        planId: plan.id,
-        eventType: 'tossed',
-        source: 'human',
-        actorMemberId: input.currentMemberId,
-        actorUserId: input.currentUserId,
-      },
-    });
-
-    await recordAudit({
-      tx,
+  currentUserId: string;
+  note?: string | null;
+}): Promise<void> {
+  await input.tx.ballEvent.create({
+    data: {
+      planId: input.planId,
+      eventType: input.eventType,
+      source: 'human',
+      actorMemberId: input.currentMemberId,
       actorUserId: input.currentUserId,
-      action: 'toss',
-      planId: plan.id,
-    });
-
-    const refreshed = await loadPlanWithIncludes(tx, plan.id, input.itemId);
-    return refreshed;
+      note: input.note ?? null,
+    },
   });
-
-  return { plan: toPlanDTO(result, []), autoTossed: null };
 }
 
 // -----------------------------------------------------------------------------
-// Complete (with auto-chain TOSS)
+// 確認依頼 (実施中/差し戻し → 確認待ち)
 // -----------------------------------------------------------------------------
-export async function completePlan(input: {
+export async function requestReviewPlan(input: {
   itemId: string;
-  projectId: string;
+  planId: string;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<{ plan: PlanDTO }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+    assertActive(plan);
+    const state = currentBallState(plan);
+    if (state !== 'in_progress' && state !== 'sent_back') {
+      throw new ApiException('INVALID_STATE', 409, '確認依頼は実施中の予定にのみ行えます。');
+    }
+    if (!plan.executorMemberId) {
+      throw new ApiException('INCOMPLETE_PLAN', 422, '実施者を設定してください。');
+    }
+    if (!plan.approverMemberId) {
+      throw new ApiException('NO_APPROVER', 422, '承認者が設定されていません。承認者なしの予定は直接承認してください。');
+    }
+    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+
+    await createEvent({ tx, planId: plan.id, eventType: 'review_requested', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    await recordAudit({ tx, actorUserId: input.currentUserId, action: 'request_review', planId: plan.id });
+    return loadPlanWithIncludes(tx, plan.id, input.itemId);
+  });
+  return { plan: toPlanDTO(result) };
+}
+
+// -----------------------------------------------------------------------------
+// 確認依頼の取り消し (確認待ち → 実施中)
+// -----------------------------------------------------------------------------
+export async function undoRequestReviewPlan(input: {
+  itemId: string;
+  planId: string;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<{ plan: PlanDTO }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+    assertActive(plan);
+    if (currentBallState(plan) !== 'review_pending') {
+      throw new ApiException('INVALID_STATE', 409, '確認待ちの予定のみ確認依頼を取り消せます。');
+    }
+    // 実施者・承認者・director が取り消せる (誤操作の救済)。
+    const involved = [plan.executorMemberId, plan.approverMemberId];
+    if (!input.isDirector && !involved.includes(input.currentMemberId)) {
+      throw new ApiException('FORBIDDEN', 403, 'Only the executor, approver, or director can undo a review request.');
+    }
+    await createEvent({ tx, planId: plan.id, eventType: 'review_request_undone', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    await recordAudit({ tx, actorUserId: input.currentUserId, action: 'undo_request_review', planId: plan.id });
+    return loadPlanWithIncludes(tx, plan.id, input.itemId);
+  });
+  return { plan: toPlanDTO(result) };
+}
+
+// -----------------------------------------------------------------------------
+// 承認 (確認待ち → 承認済み。承認者なしなら 実施中 → 承認済み)
+//   後続が無い予定は「承認=完了扱い」で status=completed にする (#131 §6)。
+// -----------------------------------------------------------------------------
+export async function approvePlan(input: {
+  itemId: string;
   planId: string;
   currentUserId: string;
   currentMemberId: string;
@@ -175,57 +204,161 @@ export async function completePlan(input: {
 }): Promise<CompleteResult> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
-
-    if (plan.status !== 'active') {
-      throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not active.');
+    assertActive(plan);
+    const state = currentBallState(plan);
+    if (plan.approverMemberId) {
+      if (state !== 'review_pending') {
+        throw new ApiException('INVALID_STATE', 409, '確認待ちの予定のみ承認できます。');
+      }
+    } else {
+      if (state !== 'in_progress' && state !== 'sent_back') {
+        throw new ApiException('INVALID_STATE', 409, '実施中の予定のみ承認できます。');
+      }
+      if (!plan.executorMemberId) {
+        throw new ApiException('INCOMPLETE_PLAN', 422, '実施者を設定してください。');
+      }
     }
-    // 認可: 現在の Ball Holder か ディレクター
-    const holder = ballHolderMemberId(plan);
-    if (!input.isDirector && holder !== input.currentMemberId) {
-      throw new ApiException(
-        'FORBIDDEN',
-        403,
-        'Only the ball holder or director can complete.',
-      );
+    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+
+    await createEvent({ tx, planId: plan.id, eventType: 'approved', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    // 後続が無い予定は承認で完了 (TOSS 先が無い)。
+    if (!plan.successorPlanId) {
+      await tx.plan.update({
+        where: { id: plan.id },
+        data: { status: 'completed', completedAt: new Date() },
+      });
     }
-
-    await tx.ballEvent.create({
-      data: {
-        planId: plan.id,
-        eventType: 'completed',
-        source: 'human',
-        actorMemberId: input.currentMemberId,
-        actorUserId: input.currentUserId,
-      },
-    });
-    await tx.plan.update({
-      where: { id: plan.id },
-      data: { status: 'completed', completedAt: new Date() },
-    });
-    await recordAudit({
-      tx,
-      actorUserId: input.currentUserId,
-      action: 'complete',
-      planId: plan.id,
-    });
-
-    // 完了時の自動連鎖 TOSS は廃止 (#117)。
-    // 先行を完了しても後続は未TOSS (実施者=FROM にボール) のままにし、後続の実施者が
-    // 作業後に手動で TOSS する運用とする。これによりケース3 (後続未TOSS→後続の実施者) が
-    // 自然に成立する。autoTossed は後方互換のため常に null を返す。
-
-    const completed = await loadPlanWithIncludes(tx, plan.id, input.itemId);
-    return { completed };
+    await recordAudit({ tx, actorUserId: input.currentUserId, action: 'approve', planId: plan.id });
+    return loadPlanWithIncludes(tx, plan.id, input.itemId);
   });
-
-  return {
-    plan: toPlanDTO(result.completed, []),
-    autoTossed: null,
-  };
+  return { plan: toPlanDTO(result), autoTossed: null };
 }
 
 // -----------------------------------------------------------------------------
-// Undo TOSS (差し戻し)
+// 承認の取り消し (承認済み → 確認待ち / 実施中)。完了扱いだった場合は active に戻す。
+// -----------------------------------------------------------------------------
+export async function undoApprovePlan(input: {
+  itemId: string;
+  planId: string;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<{ plan: PlanDTO }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+    // 承認済み (active) か、承認=完了で completed になった予定が対象。
+    const state = currentBallState(plan);
+    const wasApprovedComplete = plan.status === 'completed' && !plan.successorPlanId;
+    if (state !== 'approved' && !wasApprovedComplete) {
+      throw new ApiException('INVALID_STATE', 409, '承認済みの予定のみ承認を取り消せます。');
+    }
+    // 承認者 or 進行責任者 or director。
+    const involved = [plan.approverMemberId, plan.progressManagerMemberId];
+    if (!input.isDirector && !involved.includes(input.currentMemberId)) {
+      throw new ApiException('FORBIDDEN', 403, 'Only the approver, progress manager, or director can undo an approval.');
+    }
+    await createEvent({ tx, planId: plan.id, eventType: 'approval_undone', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    if (plan.status === 'completed') {
+      await tx.plan.update({ where: { id: plan.id }, data: { status: 'active', completedAt: null } });
+    }
+    await recordAudit({ tx, actorUserId: input.currentUserId, action: 'undo_approve', planId: plan.id });
+    return loadPlanWithIncludes(tx, plan.id, input.itemId);
+  });
+  return { plan: toPlanDTO(result) };
+}
+
+// -----------------------------------------------------------------------------
+// 差し戻し (確認待ち → 差し戻し。承認者が実施側へ戻す。同一カード継続 §13)
+// -----------------------------------------------------------------------------
+export async function sendBackPlan(input: {
+  itemId: string;
+  planId: string;
+  note?: string | null;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<{ plan: PlanDTO }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+    assertActive(plan);
+    if (currentBallState(plan) !== 'review_pending') {
+      throw new ApiException('INVALID_STATE', 409, '確認待ちの予定のみ差し戻せます。');
+    }
+    // 承認者 (= 現ホルダー) または director。
+    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+    await createEvent({
+      tx,
+      planId: plan.id,
+      eventType: 'sent_back',
+      currentMemberId: input.currentMemberId,
+      currentUserId: input.currentUserId,
+      note: input.note ?? null,
+    });
+    await recordAudit({ tx, actorUserId: input.currentUserId, action: 'send_back', planId: plan.id });
+    return loadPlanWithIncludes(tx, plan.id, input.itemId);
+  });
+  return { plan: toPlanDTO(result) };
+}
+
+// -----------------------------------------------------------------------------
+// TOSS (承認済み → TOSS済み)。進行責任者が後続予定へボールを渡す。
+//   FROM=進行責任者 / TO=後続予定の実施者 を履歴として書き込む (#131 §14)。
+//   先行予定は status=completed になる (承認=完了扱い、後続あり版)。
+// -----------------------------------------------------------------------------
+export async function tossPlan(input: {
+  itemId: string;
+  projectId: string;
+  planId: string;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<TossResult> {
+  const result = await prisma.$transaction(async (tx) => {
+    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+    assertActive(plan);
+    if (currentBallState(plan) !== 'approved') {
+      throw new ApiException('NOT_APPROVED', 409, '承認済みの予定のみ TOSS できます。');
+    }
+    if (!plan.successorPlanId) {
+      throw new ApiException('NO_SUCCESSOR', 422, '後続予定が無いためTOSSできません。');
+    }
+    if (!plan.progressManagerMemberId) {
+      throw new ApiException('INCOMPLETE_PLAN', 422, '進行責任者を設定してください。');
+    }
+    // 認可: 進行責任者 (= 現ホルダー) または director。
+    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+
+    const successor = await tx.plan.findFirst({
+      where: { id: plan.successorPlanId, deletedAt: null },
+      select: { id: true, executorMemberId: true },
+    });
+    if (!successor) {
+      throw new ApiException('NO_SUCCESSOR', 422, '後続予定が見つかりません。');
+    }
+    if (!successor.executorMemberId) {
+      throw new ApiException('SUCCESSOR_NO_EXECUTOR', 422, '後続予定の実施者を設定してください。');
+    }
+
+    // FROM/TO 履歴スナップショット + 先行完了。
+    await tx.plan.update({
+      where: { id: plan.id },
+      data: {
+        fromMemberId: plan.progressManagerMemberId,
+        toMemberId: successor.executorMemberId,
+        status: 'completed',
+        completedAt: new Date(),
+      },
+    });
+    await createEvent({ tx, planId: plan.id, eventType: 'tossed', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    await recordAudit({ tx, actorUserId: input.currentUserId, action: 'toss', planId: plan.id });
+    return loadPlanWithIncludes(tx, plan.id, input.itemId);
+  });
+  return { plan: toPlanDTO(result), autoTossed: null };
+}
+
+// -----------------------------------------------------------------------------
+// TOSS の取り消し (TOSS済み → 承認済み)。誤TOSSの救済 (#50)。
+//   append-only のため approved を再追記して承認済みへ戻し、FROM/TO 履歴を消す。
 // -----------------------------------------------------------------------------
 export async function undoTossPlan(input: {
   itemId: string;
@@ -236,43 +369,46 @@ export async function undoTossPlan(input: {
 }): Promise<{ plan: PlanDTO }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
-
-    if (plan.status !== 'active') {
-      throw new ApiException('PLAN_NOT_ACTIVE', 422, 'Plan is not active.');
-    }
     if (currentBallState(plan) !== 'tossed') {
       throw new ApiException('NOT_TOSSED', 409, 'Ball is not in a tossed state.');
     }
-
-    // 誤TOSSの救済として、プロジェクトメンバーなら誰でも差し戻し可能 (#50)。
-    // ボール保持者/ディレクター縛りは廃止 (ルートの requireProjectMember で担保)。
-
-    // append-only のため、行削除ではなく toss_undone を追記して ready に戻す
-    await tx.ballEvent.create({
-      data: {
-        planId: plan.id,
-        eventType: 'toss_undone',
-        source: 'human',
-        actorMemberId: input.currentMemberId,
-        actorUserId: input.currentUserId,
-      },
+    // 後続が既に承認/完了へ進んでいる場合は取り消せない。
+    if (plan.successorPlanId) {
+      const successor = await tx.plan.findFirst({
+        where: { id: plan.successorPlanId, deletedAt: null },
+        select: { status: true },
+      });
+      if (successor?.status === 'completed') {
+        throw new ApiException('SUCCESSOR_ALREADY_COMPLETED', 409, '後続予定が完了済みのため TOSS を取り消せません。');
+      }
+    }
+    // 誤TOSSの救済としてプロジェクトメンバーなら誰でも取り消し可能 (#50)。
+    await tx.plan.update({
+      where: { id: plan.id },
+      data: { fromMemberId: null, toMemberId: null, status: 'active', completedAt: null },
     });
-    await recordAudit({
-      tx,
-      actorUserId: input.currentUserId,
-      action: 'untoss',
-      planId: plan.id,
-    });
-
+    await createEvent({ tx, planId: plan.id, eventType: 'approved', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    await recordAudit({ tx, actorUserId: input.currentUserId, action: 'untoss', planId: plan.id });
     return loadPlanWithIncludes(tx, plan.id, input.itemId);
   });
-
-  return { plan: toPlanDTO(result, []) };
+  return { plan: toPlanDTO(result) };
 }
 
 // -----------------------------------------------------------------------------
-// Undo Complete (完了の差し戻し) — #89
+// 後方互換エイリアス。旧 /complete・/complete-undo ルートおよび共有リンクから使う。
+// 新モデルでは「完了」= 承認 (approve) に対応する。
 // -----------------------------------------------------------------------------
+export async function completePlan(input: {
+  itemId: string;
+  projectId: string;
+  planId: string;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<CompleteResult> {
+  return approvePlan(input);
+}
+
 export async function undoCompletePlan(input: {
   itemId: string;
   projectId: string;
@@ -281,63 +417,5 @@ export async function undoCompletePlan(input: {
   currentMemberId: string;
   isDirector: boolean;
 }): Promise<{ plan: PlanDTO }> {
-  const result = await prisma.$transaction(async (tx) => {
-    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
-
-    if (plan.status !== 'completed') {
-      throw new ApiException('PLAN_NOT_COMPLETED', 422, 'Plan is not completed.');
-    }
-
-    // 認可: 完了直前のボール保持者 (= toMember) または ディレクター。
-    // 完了済みプランの holder は toMember (完了者) なので completePlan と対称。
-    const holder = ballHolderMemberId(plan);
-    if (!input.isDirector && holder !== input.currentMemberId) {
-      throw new ApiException(
-        'FORBIDDEN',
-        403,
-        'Only the ball holder or director can undo a completion.',
-      );
-    }
-
-    // 後続が既に完了している場合は、この予定の完了を取り消すと不整合になるためブロックする。
-    // (自動連鎖 TOSS は廃止済みのため巻き戻し処理は不要 — #117)
-    if (plan.successorPlanId) {
-      const successor = await tx.plan.findFirst({
-        where: { id: plan.successorPlanId, itemId: input.itemId, deletedAt: null },
-        select: { status: true },
-      });
-      if (successor?.status === 'completed') {
-        throw new ApiException(
-          'SUCCESSOR_ALREADY_COMPLETED',
-          409,
-          '後続予定が完了済みのため、この予定の完了を取り消せません。',
-        );
-      }
-    }
-
-    // append-only のため、completed 行は削除せず completion_undone を追記して tossed に戻す
-    await tx.ballEvent.create({
-      data: {
-        planId: plan.id,
-        eventType: 'completion_undone',
-        source: 'human',
-        actorMemberId: input.currentMemberId,
-        actorUserId: input.currentUserId,
-      },
-    });
-    await tx.plan.update({
-      where: { id: plan.id },
-      data: { status: 'active', completedAt: null },
-    });
-    await recordAudit({
-      tx,
-      actorUserId: input.currentUserId,
-      action: 'undo_complete',
-      planId: plan.id,
-    });
-
-    return loadPlanWithIncludes(tx, plan.id, input.itemId);
-  });
-
-  return { plan: toPlanDTO(result, []) };
+  return undoApprovePlan(input);
 }

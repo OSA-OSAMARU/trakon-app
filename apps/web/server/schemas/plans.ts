@@ -23,15 +23,13 @@ export const createPlanBodySchema = z
     category: planCategorySchema,
     scheduledDate: isoDate,
     dueDate: isoDate.optional(),
-    // 実施者(FROM)/確認者(TO) は任意。後から設定できる (#55)
-    fromMemberId: uuid.optional(),
-    toMemberId: uuid.optional(),
+    // 役割 (#131)。実施者は実質必須だが後から設定も可のため任意。承認者は任意。
+    // 進行責任者は未指定ならプロジェクト既定値をサーバで解決する。
+    executorMemberId: uuid.optional(),
+    approverMemberId: uuid.optional(),
+    progressManagerMemberId: uuid.optional(),
     successorPlanId: uuid.optional(),
     memo: z.string().max(2000).optional(),
-  })
-  .refine((v) => !v.fromMemberId || !v.toMemberId || v.fromMemberId !== v.toMemberId, {
-    path: ['toMemberId'],
-    message: 'fromMemberId and toMemberId must differ.',
   })
   .refine((v) => !v.dueDate || v.dueDate >= v.scheduledDate, {
     path: ['dueDate'],
@@ -46,8 +44,9 @@ export const updatePlanBodySchema = z
     scheduledDate: isoDate.optional(),
     dueDate: isoDate.nullable().optional(),
     // null を送ると担当者を未設定に戻せる (#114)。undefined は変更なし。
-    fromMemberId: uuid.nullable().optional(),
-    toMemberId: uuid.nullable().optional(),
+    executorMemberId: uuid.nullable().optional(),
+    approverMemberId: uuid.nullable().optional(),
+    progressManagerMemberId: uuid.nullable().optional(),
     // 別制作物への移動 (#52)。同一プロジェクト内の item への付け替え。
     itemId: uuid.optional(),
     successorPlanId: uuid.nullable().optional(),
@@ -59,13 +58,6 @@ export const updatePlanBodySchema = z
       return true;
     },
     { path: ['dueDate'], message: 'dueDate must be on or after scheduledDate.' },
-  )
-  .refine(
-    (v) => {
-      if (v.fromMemberId && v.toMemberId) return v.fromMemberId !== v.toMemberId;
-      return true;
-    },
-    { path: ['toMemberId'], message: 'fromMemberId and toMemberId must differ.' },
   );
 export type UpdatePlanBody = z.infer<typeof updatePlanBodySchema>;
 
@@ -82,7 +74,13 @@ export const listPlansQuerySchema = z.object({
 });
 export type ListPlansQuery = z.infer<typeof listPlansQuerySchema>;
 
-export const tossBodySchema = z.object({
-  toMemberId: uuid.optional(),
-});
+// #131: TOSS 先は後続予定の実施者に固定されるため、TOSS 先の上書きは廃止。
+// 本文は不要だが、既存ルートとの互換のため空オブジェクトを受け付ける。
+export const tossBodySchema = z.object({}).optional();
 export type TossBody = z.infer<typeof tossBodySchema>;
+
+// 差し戻し理由 (#131 §13。履歴として先行/実施側へ引き継ぐ)。
+export const sendBackBodySchema = z
+  .object({ note: z.string().max(2000).optional() })
+  .optional();
+export type SendBackBody = z.infer<typeof sendBackBodySchema>;

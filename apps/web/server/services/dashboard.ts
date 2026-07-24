@@ -1,5 +1,10 @@
 import { prisma } from '@trakon/db';
-import { deriveBallHolder, pickLatestBallEvent } from '@trakon/shared';
+import {
+  deriveBallHolder,
+  pickLatestBallEvent,
+  type BallEventType,
+  type PlanState,
+} from '@trakon/shared';
 
 import type { DashboardQuery } from '../schemas/dashboard.js';
 
@@ -12,7 +17,7 @@ export type DashboardTaskDTO = {
   category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other';
   scheduledDate: string;
   dueDate: string | null;
-  ballState: 'ready' | 'tossed' | 'completed';
+  ballState: PlanState;
   isOverdue: boolean;
 };
 
@@ -125,14 +130,16 @@ export async function getDashboard(input: {
     if (!item) continue;
     const latest = pickLatestBallEvent(
       plan.ballEvents.map((e) => ({
-        eventType: e.eventType as 'tossed' | 'completed',
+        eventType: e.eventType as BallEventType,
         source: e.source as 'human' | 'auto_chain',
         occurredAt: e.occurredAt,
       })),
     );
     const holder = deriveBallHolder(
       {
-        fromMemberId: plan.fromMemberId,
+        executorMemberId: plan.executorMemberId,
+        approverMemberId: plan.approverMemberId,
+        progressManagerMemberId: plan.progressManagerMemberId,
         toMemberId: plan.toMemberId,
         status: plan.status as 'active' | 'completed' | 'canceled',
       },

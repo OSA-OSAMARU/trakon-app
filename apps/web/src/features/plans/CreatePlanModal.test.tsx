@@ -120,8 +120,14 @@ function stubCreate(status = 201, body?: unknown) {
 }
 
 // Radix の Select トリガーには aria-label が無いため DOM 出現順で参照する。
-// create モード: 0=カテゴリ, 1=実施者(FROM), 2=確認者(TO), 3=後続の予定
-const SELECT_INDEX = { category: 0, from: 1, to: 2, successor: 3 } as const;
+// create モード: 0=カテゴリ, 1=実施者, 2=承認者, 3=進行責任者, 4=後続の予定
+const SELECT_INDEX = {
+  category: 0,
+  executor: 1,
+  approver: 2,
+  progressManager: 3,
+  successor: 4,
+} as const;
 
 /** Radix Select: index 指定でトリガーを開いて指定ラベルの option を選択する。 */
 async function selectOption(
@@ -147,24 +153,29 @@ describe('CreatePlanModal (integration)', () => {
     expect(screen.getByRole('button', { name: '追加' })).toBeInTheDocument();
   });
 
-  it('実施者(FROM)と確認者(TO)に同一メンバーを選ぶと検証エラーになり送信されない', async () => {
+  it('実施者と承認者に同一メンバーを選んでも許容され送信される (相違制約なし #131)', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
-    const captured = stubCreate();
+    const captured = stubCreate(201);
     const onClose = vi.fn();
-    renderWithProviders(<CreatePlanModal {...baseProps({ onClose })} />);
+    renderWithProviders(
+      <CreatePlanModal {...baseProps({ onClose, defaultDate: '2026-06-21' })} />,
+    );
 
     await user.type(screen.getByPlaceholderText('例: トップページ構成'), 'テスト予定');
-    // FROM と TO に同じメンバーを選択
-    await selectOption(user, SELECT_INDEX.from, /山田 太郎/);
-    await selectOption(user, SELECT_INDEX.to, /山田 太郎/);
+    // 実施者と承認者に同じメンバーを選択 (1 人が複数役割を兼ねられる)
+    await selectOption(user, SELECT_INDEX.executor, /山田 太郎/);
+    await selectOption(user, SELECT_INDEX.approver, /山田 太郎/);
 
     await user.click(screen.getByRole('button', { name: '追加' }));
 
-    expect(
-      await screen.findByText('実施者(FROM)と確認者(TO)は異なるメンバーを選んでください'),
-    ).toBeInTheDocument();
-    expect(onClose).not.toHaveBeenCalled();
-    expect(captured.body).toBeUndefined();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(captured.body).toEqual({
+      title: 'テスト予定',
+      category: 'other',
+      scheduledDate: '2026-06-21',
+      executorMemberId: MEMBER_FROM,
+      approverMemberId: MEMBER_FROM,
+    });
   });
 
   it('期日が開始日より前だと検証エラーになり送信されない', async () => {
@@ -200,9 +211,10 @@ describe('CreatePlanModal (integration)', () => {
     await user.type(screen.getByPlaceholderText('例: トップページ構成'), '新しい予定');
     // カテゴリを「デザイン」に変更
     await selectOption(user, SELECT_INDEX.category, 'デザイン');
-    // FROM / TO に別々のメンバー
-    await selectOption(user, SELECT_INDEX.from, /山田 太郎/);
-    await selectOption(user, SELECT_INDEX.to, /鈴木 花子/);
+    // 実施者 / 承認者 / 進行責任者を選択
+    await selectOption(user, SELECT_INDEX.executor, /山田 太郎/);
+    await selectOption(user, SELECT_INDEX.approver, /鈴木 花子/);
+    await selectOption(user, SELECT_INDEX.progressManager, /山田 太郎/);
     // 終了日を設定
     const dateInputs = document.querySelectorAll('input[type="date"]');
     const dueInput = dateInputs[1] as HTMLInputElement;
@@ -218,12 +230,13 @@ describe('CreatePlanModal (integration)', () => {
       category: 'design',
       scheduledDate: '2026-06-21',
       dueDate: '2026-06-25',
-      fromMemberId: MEMBER_FROM,
-      toMemberId: MEMBER_TO,
+      executorMemberId: MEMBER_FROM,
+      approverMemberId: MEMBER_TO,
+      progressManagerMemberId: MEMBER_FROM,
     });
   });
 
-  it('正常系: 終了日・FROM/TO 省略でも最小ボディで送信できる', async () => {
+  it('正常系: 終了日・役割 省略でも最小ボディで送信できる', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     const captured = stubCreate(201);
     const onClose = vi.fn();
@@ -289,13 +302,16 @@ describe('CreatePlanModal (integration)', () => {
       category: 'review',
       scheduledDate: '2026-06-21',
       dueDate: '2026-06-22',
+      executor: null,
+      approver: null,
+      progressManager: null,
       fromMember: null,
       toMember: null,
       successorPlanId: null,
       status: 'active',
       memo: 'メモ本文',
       ballHolder: null,
-      ballState: 'ready',
+      ballState: 'in_progress',
       latestEvent: null,
       completedAt: null,
       createdAt: '2026-06-01T00:00:00.000Z',

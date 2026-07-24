@@ -1,19 +1,19 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { deriveBallHolder } from '@trakon/shared';
+import { deriveBallHolder, type BallEventType } from '@trakon/shared';
 import { toast } from 'sonner';
 
 import { ApiClientError } from '@/lib/api';
 import { plansApi, plansQueryKey, type BallActionResult, type Plan } from './api';
 
 /**
- * TOSS / 完了の楽観更新フック。
+ * ボール操作 (#131: 確認依頼/承認/差し戻し/TOSS + 各取り消し) の楽観更新フック。
  * - onMutate で plans 一覧キャッシュを deriveBallHolder で先回り更新
  * - onError でロールバック
  * - onSettled で再フェッチ (BE 真値で正当化)
  *
  * 設計書 §4.7 Ball Holder 楽観更新
  */
-function applyOptimistic(plan: Plan, eventType: 'tossed' | 'completed'): Plan {
+function applyOptimistic(plan: Plan, eventType: BallEventType): Plan {
   const optimisticEvent = {
     eventType,
     source: 'human' as const,
@@ -21,23 +21,28 @@ function applyOptimistic(plan: Plan, eventType: 'tossed' | 'completed'): Plan {
   };
   const holder = deriveBallHolder(
     {
-      fromMemberId: plan.fromMember?.id ?? null,
+      executorMemberId: plan.executor?.id ?? null,
+      approverMemberId: plan.approver?.id ?? null,
+      progressManagerMemberId: plan.progressManager?.id ?? null,
       toMemberId: plan.toMember?.id ?? null,
       status: plan.status,
     },
     optimisticEvent,
   );
-  const newHolder =
-    holder.memberId === plan.fromMember?.id
-      ? plan.fromMember
-      : holder.memberId === plan.toMember?.id
-        ? plan.toMember
-        : null;
+  const candidates = [plan.executor, plan.approver, plan.progressManager, plan.fromMember, plan.toMember];
+  const newHolder = candidates.find((m) => m && m.id === holder.memberId) ?? null;
+
+  // status の楽観更新: TOSS は先行完了、後続なしの承認は完了。
+  let status = plan.status;
+  if (eventType === 'tossed') status = 'completed';
+  else if (eventType === 'approved') status = plan.successorPlanId ? 'active' : 'completed';
+  else if (eventType === 'approval_undone' || eventType === 'toss_undone') status = 'active';
+
   return {
     ...plan,
     ballHolder: newHolder,
     ballState: holder.state,
-    status: eventType === 'completed' ? 'completed' : plan.status,
+    status,
     latestEvent: {
       id: 'optimistic',
       eventType,
@@ -49,40 +54,116 @@ function applyOptimistic(plan: Plan, eventType: 'tossed' | 'completed'): Plan {
   };
 }
 
-export function useTossPlan(input: { projectId: string; itemId: string; planId: string }) {
+type BallActionResponse = BallActionResult | { plan: Plan };
+
+/**
+ * ボール操作の汎用楽観更新フック。
+ * optimisticEvent を渡すと onMutate で一覧キャッシュを先回り更新する。
+ */
+function useBallMutation(
+  input: { projectId: string; itemId: string; planId: string },
+  opts: {
+    action: (projectId: string, itemId: string, planId: string) => Promise<BallActionResponse>;
+    optimisticEvent?: BallEventType;
+    successMsg: string;
+    errorMsg: string;
+  },
+) {
   const qc = useQueryClient();
   const listKey = plansQueryKey.list(input.projectId, input.itemId);
   const detailKey = plansQueryKey.detail(input.projectId, input.itemId, input.planId);
 
-  return useMutation<BallActionResult, ApiClientError, { toMemberId?: string } | undefined, { previousList?: Plan[] }>({
-    mutationFn: (body) => plansApi.toss(input.projectId, input.itemId, input.planId, body),
+  return useMutation<BallActionResponse, ApiClientError, void, { previousList?: Plan[] }>({
+    mutationFn: () => opts.action(input.projectId, input.itemId, input.planId),
     onMutate: async () => {
+      if (!opts.optimisticEvent) return {};
       await qc.cancelQueries({ queryKey: listKey });
       const previousList = qc.getQueryData<Plan[]>(listKey);
       if (previousList) {
         qc.setQueryData<Plan[]>(
           listKey,
           previousList.map((p) =>
-            p.id === input.planId ? applyOptimistic(p, 'tossed') : p,
+            p.id === input.planId ? applyOptimistic(p, opts.optimisticEvent!) : p,
           ),
         );
       }
       return { previousList };
     },
     onError: (err, _vars, context) => {
-      if (context?.previousList) {
-        qc.setQueryData(listKey, context.previousList);
-      }
-      toast.error(err instanceof ApiClientError ? err.message : 'TOSS に失敗しました');
+      if (context?.previousList) qc.setQueryData(listKey, context.previousList);
+      toast.error(err instanceof ApiClientError ? err.message : opts.errorMsg);
     },
     onSuccess: () => {
-      toast.success('TOSS しました');
+      toast.success(opts.successMsg);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: listKey });
       qc.invalidateQueries({ queryKey: detailKey });
       qc.invalidateQueries({ queryKey: plansQueryKey.projectList(input.projectId) });
     },
+  });
+}
+
+export function useRequestReviewPlan(input: { projectId: string; itemId: string; planId: string }) {
+  return useBallMutation(input, {
+    action: plansApi.requestReview,
+    optimisticEvent: 'review_requested',
+    successMsg: '確認を依頼しました',
+    errorMsg: '確認依頼に失敗しました',
+  });
+}
+
+export function useApprovePlan(input: { projectId: string; itemId: string; planId: string }) {
+  return useBallMutation(input, {
+    action: plansApi.approve,
+    optimisticEvent: 'approved',
+    successMsg: '承認しました',
+    errorMsg: '承認に失敗しました',
+  });
+}
+
+export function useSendBackPlan(input: { projectId: string; itemId: string; planId: string }) {
+  return useBallMutation(input, {
+    action: (p, i, pl) => plansApi.sendBack(p, i, pl),
+    optimisticEvent: 'sent_back',
+    successMsg: '差し戻しました',
+    errorMsg: '差し戻しに失敗しました',
+  });
+}
+
+export function useTossPlan(input: { projectId: string; itemId: string; planId: string }) {
+  return useBallMutation(input, {
+    action: plansApi.toss,
+    optimisticEvent: 'tossed',
+    successMsg: 'TOSS しました',
+    errorMsg: 'TOSS に失敗しました',
+  });
+}
+
+export function useUndoRequestReviewPlan(input: { projectId: string; itemId: string; planId: string }) {
+  return useBallMutation(input, {
+    action: plansApi.undoRequestReview,
+    optimisticEvent: 'review_request_undone',
+    successMsg: '確認依頼を取り消しました',
+    errorMsg: '取り消しに失敗しました',
+  });
+}
+
+export function useUndoApprovePlan(input: { projectId: string; itemId: string; planId: string }) {
+  return useBallMutation(input, {
+    action: plansApi.undoApprove,
+    optimisticEvent: 'approval_undone',
+    successMsg: '承認を取り消しました',
+    errorMsg: '取り消しに失敗しました',
+  });
+}
+
+export function useUndoTossPlan(input: { projectId: string; itemId: string; planId: string }) {
+  return useBallMutation(input, {
+    action: plansApi.undoToss,
+    optimisticEvent: 'toss_undone',
+    successMsg: 'TOSS を取り消しました',
+    errorMsg: '取り消しに失敗しました',
   });
 }
 
@@ -109,42 +190,5 @@ export function useSetSuccessor(projectId: string) {
     },
     onError: (err) =>
       toast.error(err instanceof ApiClientError ? err.message : '後続の更新に失敗しました'),
-  });
-}
-
-export function useCompletePlan(input: { projectId: string; itemId: string; planId: string }) {
-  const qc = useQueryClient();
-  const listKey = plansQueryKey.list(input.projectId, input.itemId);
-  const detailKey = plansQueryKey.detail(input.projectId, input.itemId, input.planId);
-
-  return useMutation<BallActionResult, ApiClientError, void, { previousList?: Plan[] }>({
-    mutationFn: () => plansApi.complete(input.projectId, input.itemId, input.planId),
-    onMutate: async () => {
-      await qc.cancelQueries({ queryKey: listKey });
-      const previousList = qc.getQueryData<Plan[]>(listKey);
-      if (previousList) {
-        qc.setQueryData<Plan[]>(
-          listKey,
-          previousList.map((p) =>
-            p.id === input.planId ? applyOptimistic(p, 'completed') : p,
-          ),
-        );
-      }
-      return { previousList };
-    },
-    onError: (err, _vars, context) => {
-      if (context?.previousList) {
-        qc.setQueryData(listKey, context.previousList);
-      }
-      toast.error(err instanceof ApiClientError ? err.message : '完了に失敗しました');
-    },
-    onSuccess: () => {
-      toast.success('完了しました');
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: listKey });
-      qc.invalidateQueries({ queryKey: detailKey });
-      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(input.projectId) });
-    },
   });
 }

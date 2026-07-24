@@ -2,25 +2,31 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createPlanBodySchema,
+  sendBackBodySchema,
   setSuccessorBodySchema,
   tossBodySchema,
   updatePlanBodySchema,
 } from './plans.js';
+
+const EXECUTOR = '11111111-1111-1111-1111-111111111111';
+const APPROVER = '22222222-2222-2222-2222-222222222222';
+const PROGRESS = '33333333-3333-3333-3333-333333333333';
 
 describe('createPlanBodySchema', () => {
   const base = {
     title: 'デザイン依頼',
     category: 'design',
     scheduledDate: '2026-06-01',
-    fromMemberId: '11111111-1111-1111-1111-111111111111',
-    toMemberId: '22222222-2222-2222-2222-222222222222',
+    executorMemberId: EXECUTOR,
+    approverMemberId: APPROVER,
+    progressManagerMemberId: PROGRESS,
   };
 
-  it('accepts a valid body', () => {
+  it('accepts a valid body with all roles', () => {
     expect(createPlanBodySchema.safeParse(base).success).toBe(true);
   });
 
-  it('accepts a body with only title + category + scheduledDate (no from/to)', () => {
+  it('accepts a body with only title + category + scheduledDate (no roles)', () => {
     const r = createPlanBodySchema.safeParse({
       title: 'ワイヤー作成',
       category: 'design',
@@ -29,11 +35,16 @@ describe('createPlanBodySchema', () => {
     expect(r.success).toBe(true);
   });
 
-  it('rejects identical from / to', () => {
+  it('accepts identical executor / approver (roles may overlap)', () => {
     const r = createPlanBodySchema.safeParse({
       ...base,
-      toMemberId: base.fromMemberId,
+      approverMemberId: base.executorMemberId,
     });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects a malformed role uuid', () => {
+    const r = createPlanBodySchema.safeParse({ ...base, executorMemberId: 'not-a-uuid' });
     expect(r.success).toBe(false);
   });
 
@@ -59,9 +70,6 @@ describe('createPlanBodySchema', () => {
 });
 
 describe('updatePlanBodySchema', () => {
-  const fromId = '11111111-1111-1111-1111-111111111111';
-  const toId = '22222222-2222-2222-2222-222222222222';
-
   it('accepts an empty body', () => {
     expect(updatePlanBodySchema.safeParse({}).success).toBe(true);
   });
@@ -70,32 +78,32 @@ describe('updatePlanBodySchema', () => {
     expect(updatePlanBodySchema.safeParse({ memo: null }).success).toBe(true);
   });
 
-  it('accepts fromMemberId / toMemberId update', () => {
+  it('accepts executor / approver / progressManager update', () => {
     expect(
-      updatePlanBodySchema.safeParse({ fromMemberId: fromId, toMemberId: toId }).success,
+      updatePlanBodySchema.safeParse({
+        executorMemberId: EXECUTOR,
+        approverMemberId: APPROVER,
+        progressManagerMemberId: PROGRESS,
+      }).success,
     ).toBe(true);
   });
 
-  it('rejects identical from / to when both provided', () => {
-    expect(
-      updatePlanBodySchema.safeParse({ fromMemberId: fromId, toMemberId: fromId }).success,
-    ).toBe(false);
+  it('accepts updating only one role', () => {
+    expect(updatePlanBodySchema.safeParse({ approverMemberId: APPROVER }).success).toBe(true);
   });
 
-  it('accepts updating only one of from / to', () => {
-    expect(updatePlanBodySchema.safeParse({ toMemberId: toId }).success).toBe(true);
+  it('accepts role = null (clears assignee) (#114)', () => {
+    expect(updatePlanBodySchema.safeParse({ executorMemberId: null }).success).toBe(true);
+    expect(updatePlanBodySchema.safeParse({ approverMemberId: null }).success).toBe(true);
+    expect(updatePlanBodySchema.safeParse({ progressManagerMemberId: null }).success).toBe(true);
   });
 
-  it('accepts fromMemberId / toMemberId = null (clears assignee) (#114)', () => {
-    expect(updatePlanBodySchema.safeParse({ fromMemberId: null }).success).toBe(true);
-    expect(updatePlanBodySchema.safeParse({ toMemberId: null }).success).toBe(true);
-    expect(
-      updatePlanBodySchema.safeParse({ fromMemberId: null, toMemberId: null }).success,
-    ).toBe(true);
+  it('rejects a malformed role uuid', () => {
+    expect(updatePlanBodySchema.safeParse({ executorMemberId: 'not-a-uuid' }).success).toBe(false);
   });
 
   it('accepts successorPlanId set and null (clear)', () => {
-    expect(updatePlanBodySchema.safeParse({ successorPlanId: fromId }).success).toBe(true);
+    expect(updatePlanBodySchema.safeParse({ successorPlanId: EXECUTOR }).success).toBe(true);
     expect(updatePlanBodySchema.safeParse({ successorPlanId: null }).success).toBe(true);
   });
 
@@ -115,7 +123,29 @@ describe('setSuccessorBodySchema', () => {
 });
 
 describe('tossBodySchema', () => {
-  it('accepts empty body (defaults to no member override)', () => {
+  it('accepts empty body (#131: TOSS 先の上書きは廃止)', () => {
     expect(tossBodySchema.safeParse({}).success).toBe(true);
+  });
+
+  it('accepts undefined body', () => {
+    expect(tossBodySchema.safeParse(undefined).success).toBe(true);
+  });
+});
+
+describe('sendBackBodySchema', () => {
+  it('accepts empty body', () => {
+    expect(sendBackBodySchema.safeParse({}).success).toBe(true);
+  });
+
+  it('accepts undefined body', () => {
+    expect(sendBackBodySchema.safeParse(undefined).success).toBe(true);
+  });
+
+  it('accepts a note', () => {
+    expect(sendBackBodySchema.safeParse({ note: '修正してください' }).success).toBe(true);
+  });
+
+  it('rejects a note over 2000 chars', () => {
+    expect(sendBackBodySchema.safeParse({ note: 'a'.repeat(2001) }).success).toBe(false);
   });
 });

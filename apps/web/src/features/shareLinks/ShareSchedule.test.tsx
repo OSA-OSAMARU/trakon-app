@@ -53,13 +53,16 @@ const plan = (over: Partial<Plan> = {}): Plan => ({
   category: 'design',
   scheduledDate: '2026-06-10',
   dueDate: null,
+  executor: memberRef(),
+  approver: memberRef({ id: 'm2', name: '鈴木 花子', memberType: 'client' }),
+  progressManager: memberRef(),
   fromMember: memberRef(),
   toMember: memberRef({ id: 'm2', name: '鈴木 花子', memberType: 'client' }),
   successorPlanId: null,
   status: 'active',
   memo: null,
   ballHolder: memberRef(),
-  ballState: 'ready',
+  ballState: 'in_progress',
   latestEvent: null,
   completedAt: null,
   createdAt: '2026-06-01T00:00:00.000Z',
@@ -136,7 +139,7 @@ describe('ShareSchedule (閲覧専用)', () => {
       fromMember: memberRef({ name: '実施 太郎' }),
       toMember: memberRef({ id: 'm2', name: '確認 花子' }),
       ballHolder: memberRef({ id: 'm2', name: '確認 花子' }),
-      ballState: 'ready',
+      ballState: 'in_progress',
     });
     renderWithProviders(<ShareSchedule project={project} items={[items[0]!]} plans={[p]} />);
 
@@ -180,7 +183,7 @@ describe('ShareSchedule (閲覧専用)', () => {
     const overdue = plan({
       id: 'od',
       title: '期限切れボール',
-      ballState: 'ready',
+      ballState: 'in_progress',
       scheduledDate: '2026-06-02',
       dueDate: '2026-06-02', // 過去 (today=2026-06-21 以降想定) → overdue
     });

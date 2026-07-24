@@ -9,8 +9,8 @@ import { ApiException } from '../../lib/errors.js';
 import {
   createPlanBodySchema,
   listPlansQuerySchema,
+  sendBackBodySchema,
   setSuccessorBodySchema,
-  tossBodySchema,
   updatePlanBodySchema,
 } from '../../schemas/plans.js';
 import {
@@ -23,9 +23,14 @@ import {
   updatePlan,
 } from '../../services/plans.js';
 import {
+  approvePlan,
   completePlan,
+  requestReviewPlan,
+  sendBackPlan,
   tossPlan,
+  undoApprovePlan,
   undoCompletePlan,
+  undoRequestReviewPlan,
   undoTossPlan,
 } from '../../services/ballActions.js';
 
@@ -39,11 +44,16 @@ import {
  *  - GET    /:planId                詳細 (events 含む)
  *  - PATCH  /:planId                更新 (itemId 指定で別制作物へ移動 #52)
  *  - DELETE /:planId                削除 (ball_events なしのみ)
- *  - PATCH  /:planId/successor      後続紐付け
- *  - POST   /:planId/toss           TOSS 実行
- *  - POST   /:planId/toss-undo      TOSS 差し戻し
- *  - POST   /:planId/complete       完了
- *  - POST   /:planId/complete-undo  完了の差し戻し (#89)
+ *  - PATCH  /:planId/successor           後続紐付け
+ *  - POST   /:planId/request-review      確認依頼 (実施中 → 確認待ち) #131
+ *  - POST   /:planId/request-review-undo 確認依頼の取り消し
+ *  - POST   /:planId/approve             承認 (→ 承認済み) #131
+ *  - POST   /:planId/approve-undo        承認の取り消し
+ *  - POST   /:planId/send-back           差し戻し (承認者 → 実施者) #131
+ *  - POST   /:planId/toss                TOSS 実行 (進行責任者 → 後続実施者)
+ *  - POST   /:planId/toss-undo           TOSS の取り消し
+ *  - POST   /:planId/complete            完了 (= approve のエイリアス, 後方互換)
+ *  - POST   /:planId/complete-undo       完了の取り消し (= approve-undo)
  */
 export const plansRoute = new Hono()
   .use('*', requireProjectMember())
@@ -115,17 +125,87 @@ export const plansRoute = new Hono()
     return c.json({ data: plan });
   })
 
+  .post('/:planId/request-review', async (c) => {
+    const project = c.get('project');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const result = await requestReviewPlan({
+      itemId: c.get('itemId'),
+      planId,
+      currentUserId: c.get('currentUserId'),
+      currentMemberId: project.memberId,
+      isDirector: project.isDirector,
+    });
+    return c.json({ data: result });
+  })
+
+  .post('/:planId/request-review-undo', async (c) => {
+    const project = c.get('project');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const result = await undoRequestReviewPlan({
+      itemId: c.get('itemId'),
+      planId,
+      currentUserId: c.get('currentUserId'),
+      currentMemberId: project.memberId,
+      isDirector: project.isDirector,
+    });
+    return c.json({ data: result });
+  })
+
+  .post('/:planId/approve', async (c) => {
+    const project = c.get('project');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const result = await approvePlan({
+      itemId: c.get('itemId'),
+      planId,
+      currentUserId: c.get('currentUserId'),
+      currentMemberId: project.memberId,
+      isDirector: project.isDirector,
+    });
+    return c.json({ data: result });
+  })
+
+  .post('/:planId/approve-undo', async (c) => {
+    const project = c.get('project');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const result = await undoApprovePlan({
+      itemId: c.get('itemId'),
+      planId,
+      currentUserId: c.get('currentUserId'),
+      currentMemberId: project.memberId,
+      isDirector: project.isDirector,
+    });
+    return c.json({ data: result });
+  })
+
+  .post('/:planId/send-back', async (c) => {
+    const project = c.get('project');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const body = sendBackBodySchema.parse(await c.req.json().catch(() => ({})));
+    const result = await sendBackPlan({
+      itemId: c.get('itemId'),
+      planId,
+      note: body?.note ?? null,
+      currentUserId: c.get('currentUserId'),
+      currentMemberId: project.memberId,
+      isDirector: project.isDirector,
+    });
+    return c.json({ data: result });
+  })
+
   .post('/:planId/toss', async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
-    const body = tossBodySchema.parse(await c.req.json().catch(() => ({})));
     const result = await tossPlan({
       itemId,
       projectId: project.projectId,
       planId,
-      body,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
       isDirector: project.isDirector,

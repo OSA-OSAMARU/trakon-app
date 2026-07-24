@@ -1,5 +1,10 @@
 import { prisma, type Prisma } from '@trakon/db';
-import { deriveBallHolder, pickLatestBallEvent } from '@trakon/shared';
+import {
+  deriveBallHolder,
+  pickLatestBallEvent,
+  type BallEventType,
+  type PlanState,
+} from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import type {
@@ -19,7 +24,7 @@ export type MemberRef = {
 
 export type BallEventDTO = {
   id: string;
-  eventType: 'tossed' | 'completed' | 'toss_undone' | 'completion_undone';
+  eventType: BallEventType;
   source: 'human' | 'auto_chain';
   actor: MemberRef | null;
   occurredAt: string;
@@ -34,13 +39,18 @@ export type PlanDTO = {
   category: PlanCategory;
   scheduledDate: string;
   dueDate: string | null;
+  // 役割 (#131)
+  executor: MemberRef | null;
+  approver: MemberRef | null;
+  progressManager: MemberRef | null;
+  // TOSS 履歴スナップショット (#131 §14)
   fromMember: MemberRef | null;
   toMember: MemberRef | null;
   successorPlanId: string | null;
   status: 'active' | 'completed' | 'canceled';
   memo: string | null;
   ballHolder: MemberRef | null;
-  ballState: 'ready' | 'tossed' | 'completed';
+  ballState: PlanState;
   latestEvent: BallEventDTO | null;
   completedAt: string | null;
   createdAt: string;
@@ -71,21 +81,24 @@ function toMemberRef(m: {
   };
 }
 
-type PlanRow = Prisma.PlanGetPayload<{
-  include: {
-    fromMember: true;
-    toMember: true;
-    ballEvents: {
-      include: { actorMember: true };
-      orderBy: { occurredAt: 'desc' };
-    };
-  };
-}>;
+const PLAN_INCLUDE = {
+  executor: true,
+  approver: true,
+  progressManager: true,
+  fromMember: true,
+  toMember: true,
+  ballEvents: {
+    include: { actorMember: true },
+    orderBy: { occurredAt: 'desc' as const },
+  },
+} as const;
+
+type PlanRow = Prisma.PlanGetPayload<{ include: typeof PLAN_INCLUDE }>;
 
 function toEventDTO(ev: PlanRow['ballEvents'][number]): BallEventDTO {
   return {
     id: ev.id,
-    eventType: ev.eventType as 'tossed' | 'completed' | 'toss_undone' | 'completion_undone',
+    eventType: ev.eventType as BallEventType,
     source: ev.source as 'human' | 'auto_chain',
     actor: toMemberRef(ev.actorMember),
     occurredAt: ev.occurredAt.toISOString(),
@@ -93,29 +106,34 @@ function toEventDTO(ev: PlanRow['ballEvents'][number]): BallEventDTO {
   };
 }
 
-export function toPlanDTO(row: PlanRow, members: PlanRow['fromMember'][]): PlanDTO {
+export function toPlanDTO(row: PlanRow, _members: PlanRow['fromMember'][] = []): PlanDTO {
+  const executor = toMemberRef(row.executor);
+  const approver = toMemberRef(row.approver);
+  const progressManager = toMemberRef(row.progressManager);
   const fromMember = toMemberRef(row.fromMember);
   const toMember = toMemberRef(row.toMember);
   const eventsDesc = row.ballEvents; // already DESC
   const latest = pickLatestBallEvent(
     eventsDesc.map((e) => ({
-      eventType: e.eventType as 'tossed' | 'completed' | 'toss_undone',
+      eventType: e.eventType as BallEventType,
       source: e.source as 'human' | 'auto_chain',
       occurredAt: e.occurredAt,
     })),
   );
   const holder = deriveBallHolder(
-    { fromMemberId: row.fromMemberId, toMemberId: row.toMemberId, status: row.status as 'active' | 'completed' | 'canceled' },
+    {
+      executorMemberId: row.executorMemberId,
+      approverMemberId: row.approverMemberId,
+      progressManagerMemberId: row.progressManagerMemberId,
+      toMemberId: row.toMemberId,
+      status: row.status as 'active' | 'completed' | 'canceled',
+    },
     latest,
   );
 
-  let ballHolder: MemberRef | null = null;
-  if (holder.memberId === row.fromMemberId) ballHolder = fromMember;
-  else if (holder.memberId === row.toMemberId) ballHolder = toMember;
-  else if (holder.memberId) {
-    const found = members.find((m) => m?.id === holder.memberId);
-    ballHolder = toMemberRef(found ?? null);
-  }
+  // holder.memberId を各ロール MemberRef に解決
+  const byId: Array<MemberRef | null> = [executor, approver, progressManager, fromMember, toMember];
+  const ballHolder = byId.find((m) => m && m.id === holder.memberId) ?? null;
 
   const latestEventDTO = eventsDesc[0] ? toEventDTO(eventsDesc[0]) : null;
 
@@ -127,6 +145,9 @@ export function toPlanDTO(row: PlanRow, members: PlanRow['fromMember'][]): PlanD
     category: row.category as PlanCategory,
     scheduledDate: toDateString(row.scheduledDate)!,
     dueDate: toDateString(row.dueDate),
+    executor,
+    approver,
+    progressManager,
     fromMember,
     toMember,
     successorPlanId: row.successorPlanId,
@@ -140,15 +161,6 @@ export function toPlanDTO(row: PlanRow, members: PlanRow['fromMember'][]): PlanD
     updatedAt: row.updatedAt.toISOString(),
   };
 }
-
-const PLAN_INCLUDE = {
-  fromMember: true,
-  toMember: true,
-  ballEvents: {
-    include: { actorMember: true },
-    orderBy: { occurredAt: 'desc' as const },
-  },
-} as const;
 
 // -----------------------------------------------------------------------------
 // list / get
@@ -292,17 +304,40 @@ async function assertSuccessorAvailable(input: {
   }
 }
 
+/**
+ * 進行責任者の初期値を解決する (#131)。body 指定 > プロジェクト既定 (project.progressManagerMemberId)。
+ * どちらも無ければ null (アプリ層で TOSS 時に必須チェック)。
+ */
+async function resolveProgressManagerId(input: {
+  projectId: string;
+  bodyValue?: string | null;
+}): Promise<string | null> {
+  if (input.bodyValue !== undefined) return input.bodyValue ?? null;
+  const project = await prisma.project.findUnique({
+    where: { id: input.projectId },
+    select: { progressManagerMemberId: true },
+  });
+  return project?.progressManagerMemberId ?? null;
+}
+
 export async function createPlan(input: {
   itemId: string;
   projectId: string;
   body: CreatePlanBody;
 }): Promise<PlanDTO> {
+  const progressManagerMemberId = await resolveProgressManagerId({
+    projectId: input.projectId,
+    bodyValue: input.body.progressManagerMemberId,
+  });
+
   await assertMembersBelongToProject({
     projectId: input.projectId,
-    // 任意項目のため、指定されたものだけ検証する (#55)
-    memberIds: [input.body.fromMemberId, input.body.toMemberId].filter(
-      (id): id is string => !!id,
-    ),
+    // 任意項目のため、指定されたものだけ検証する (#55 / #131)
+    memberIds: [
+      input.body.executorMemberId,
+      input.body.approverMemberId,
+      progressManagerMemberId,
+    ].filter((id): id is string => !!id),
   });
   if (input.body.successorPlanId) {
     await assertSuccessorAvailable({
@@ -318,8 +353,10 @@ export async function createPlan(input: {
       category: input.body.category,
       scheduledDate: new Date(`${input.body.scheduledDate}T00:00:00Z`),
       dueDate: input.body.dueDate ? new Date(`${input.body.dueDate}T00:00:00Z`) : null,
-      fromMemberId: input.body.fromMemberId ?? null,
-      toMemberId: input.body.toMemberId ?? null,
+      executorMemberId: input.body.executorMemberId ?? null,
+      approverMemberId: input.body.approverMemberId ?? null,
+      progressManagerMemberId,
+      // FROM/TO は TOSS 実行時に履歴として書き込む (#131 §14)。作成時は未設定。
       successorPlanId: input.body.successorPlanId ?? null,
       memo: input.body.memo ?? null,
     },
@@ -348,8 +385,10 @@ export async function duplicatePlan(input: {
       category: source.category,
       scheduledDate: source.scheduledDate,
       dueDate: source.dueDate,
-      fromMemberId: source.fromMemberId,
-      toMemberId: source.toMemberId,
+      // 役割はコピーする。FROM/TO 履歴・後続・ballEvents はコピーしない (新規は未TOSS)。
+      executorMemberId: source.executorMemberId,
+      approverMemberId: source.approverMemberId,
+      progressManagerMemberId: source.progressManagerMemberId,
       memo: source.memo,
     },
     include: PLAN_INCLUDE,
@@ -402,41 +441,48 @@ export async function updatePlan(input: {
     data.dueDate = input.body.dueDate ? new Date(`${input.body.dueDate}T00:00:00Z`) : null;
   if (input.body.memo !== undefined) data.memo = input.body.memo;
 
-  // FROM/TO は TOSS 前 (ball が動いていない) の予定でのみ変更可。
-  // ball state 判定は ballActions.currentBallState と同じセマンティクス:
-  // 最新イベントが無い or toss_undone なら ready。
-  if (input.body.fromMemberId !== undefined || input.body.toMemberId !== undefined) {
-    const latest = existing.ballEvents[0];
-    const isReady = !latest || latest.eventType === 'toss_undone';
-    if (!isReady) {
+  // 役割の編集可否 (#131)。ball の進み具合で制限する。
+  //   実施者/承認者: 実施中・差し戻し のうちのみ変更可 (確認依頼/承認後はロック)。
+  //   進行責任者: TOSS 前ならいつでも変更可 (§9「予定ごとに変更可能」)。
+  const latest = existing.ballEvents[0];
+  const t = latest?.eventType;
+  // 実施中/差し戻し = 最新が無い or review_request_undone / sent_back / toss_undone(レガシー)
+  const rolesEditable =
+    !t || t === 'review_request_undone' || t === 'sent_back' || t === 'toss_undone';
+  // TOSS 済み = tossed / completion_undone(レガシー)
+  const tossed = t === 'tossed' || t === 'completion_undone';
+
+  if (input.body.executorMemberId !== undefined || input.body.approverMemberId !== undefined) {
+    if (!rolesEditable) {
       throw new ApiException(
-        'FROM_TO_LOCKED',
+        'ROLES_LOCKED',
         422,
-        'FROM/TO cannot be changed after the ball has been tossed.',
+        '確認依頼・承認後は実施者/承認者を変更できません。',
       );
     }
-    // undefined は変更なし (既存値を維持)、null は未設定へクリア (#114)
-    const nextFrom =
-      input.body.fromMemberId !== undefined ? input.body.fromMemberId : existing.fromMemberId;
-    const nextTo =
-      input.body.toMemberId !== undefined ? input.body.toMemberId : existing.toMemberId;
-    if (nextFrom && nextTo && nextFrom === nextTo) {
+    const changed = [input.body.executorMemberId, input.body.approverMemberId].filter(
+      (id): id is string => !!id,
+    );
+    await assertMembersBelongToProject({ projectId: input.projectId, memberIds: changed });
+    if (input.body.executorMemberId !== undefined) data.executorMemberId = input.body.executorMemberId;
+    if (input.body.approverMemberId !== undefined) data.approverMemberId = input.body.approverMemberId;
+  }
+
+  if (input.body.progressManagerMemberId !== undefined) {
+    if (tossed) {
       throw new ApiException(
-        'INVALID_MEMBER',
+        'ROLES_LOCKED',
         422,
-        'fromMemberId and toMemberId must differ.',
+        'TOSS 済みの予定は進行責任者を変更できません。',
       );
     }
-    // 実在検証は非 null の新規指定のみ (クリア=null は検証不要)
-    const changedMemberIds: string[] = [];
-    if (input.body.fromMemberId) changedMemberIds.push(input.body.fromMemberId);
-    if (input.body.toMemberId) changedMemberIds.push(input.body.toMemberId);
-    await assertMembersBelongToProject({
-      projectId: input.projectId,
-      memberIds: changedMemberIds,
-    });
-    if (input.body.fromMemberId !== undefined) data.fromMemberId = input.body.fromMemberId;
-    if (input.body.toMemberId !== undefined) data.toMemberId = input.body.toMemberId;
+    if (input.body.progressManagerMemberId) {
+      await assertMembersBelongToProject({
+        projectId: input.projectId,
+        memberIds: [input.body.progressManagerMemberId],
+      });
+    }
+    data.progressManagerMemberId = input.body.progressManagerMemberId;
   }
 
   // 後続の予定 (setPlanSuccessor と同じ検証ロジック)。

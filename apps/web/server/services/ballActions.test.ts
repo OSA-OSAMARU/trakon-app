@@ -1,20 +1,24 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type {
-  tossPlan as TossPlanType,
+  approvePlan as ApprovePlanType,
   completePlan as CompletePlanType,
-  undoTossPlan as UndoTossPlanType,
+  requestReviewPlan as RequestReviewPlanType,
+  sendBackPlan as SendBackPlanType,
+  tossPlan as TossPlanType,
+  undoApprovePlan as UndoApprovePlanType,
   undoCompletePlan as UndoCompletePlanType,
+  undoRequestReviewPlan as UndoRequestReviewPlanType,
+  undoTossPlan as UndoTossPlanType,
 } from './ballActions.js';
 
 // =============================================================================
 // In-memory Prisma mock
-//   ballActions.ts が実際に呼ぶメソッドだけを実装する:
+//   ballActions.ts (#131) が実際に呼ぶメソッドだけを実装する:
 //   - $transaction(callback) (コールバック形式のみ使用)
 //   - tx.plan.findFirst (PLAN_INCLUDE / select)
 //   - tx.plan.update
 //   - tx.ballEvent.create
-//   - tx.projectMember.findFirst (select)
 //   - tx.auditLog.create
 //   deriveBallHolder / pickLatestBallEvent は本物を使う (pure なのでモックしない)。
 // =============================================================================
@@ -28,10 +32,21 @@ type MockMember = {
   deletedAt: Date | null;
 };
 
+type EventType =
+  | 'review_requested'
+  | 'approved'
+  | 'sent_back'
+  | 'review_request_undone'
+  | 'approval_undone'
+  | 'tossed'
+  | 'completed'
+  | 'toss_undone'
+  | 'completion_undone';
+
 type MockBallEvent = {
   id: string;
   planId: string;
-  eventType: 'tossed' | 'completed' | 'toss_undone' | 'completion_undone';
+  eventType: EventType;
   source: 'human' | 'auto_chain';
   actorMemberId: string | null;
   actorUserId: string | null;
@@ -47,6 +62,11 @@ type MockPlan = {
   category: string;
   scheduledDate: Date;
   dueDate: Date | null;
+  // 役割 (#131)
+  executorMemberId: string | null;
+  approverMemberId: string | null;
+  progressManagerMemberId: string | null;
+  // TOSS 履歴スナップショット
   fromMemberId: string | null;
   toMemberId: string | null;
   successorPlanId: string | null;
@@ -78,16 +98,21 @@ const newId = (prefix: string) => `${prefix}-${nextId++}`;
 // occurredAt が単調増加するようにし、最新イベント判定を決定的にする
 const nextOccurredAt = () => new Date(Date.UTC(2026, 0, 1, 0, 0, clock++));
 
-// PLAN_INCLUDE を再現: fromMember / toMember を解決し、ballEvents を occurredAt DESC で付与する
+const findMember = (id: string | null) => (id ? (memberStore[id] ?? null) : null);
+
+// PLAN_INCLUDE を再現: 役割 + FROM/TO を解決し、ballEvents を occurredAt DESC で付与する
 function hydratePlan(plan: MockPlan) {
   const ballEvents = ballEventStore
     .filter((e) => e.planId === plan.id)
-    .map((e) => ({ ...e, actorMember: e.actorMemberId ? memberStore[e.actorMemberId] ?? null : null }))
+    .map((e) => ({ ...e, actorMember: findMember(e.actorMemberId) }))
     .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
   return {
     ...plan,
-    fromMember: plan.fromMemberId ? memberStore[plan.fromMemberId] ?? null : null,
-    toMember: plan.toMemberId ? memberStore[plan.toMemberId] ?? null : null,
+    executor: findMember(plan.executorMemberId),
+    approver: findMember(plan.approverMemberId),
+    progressManager: findMember(plan.progressManagerMemberId),
+    fromMember: findMember(plan.fromMemberId),
+    toMember: findMember(plan.toMemberId),
     ballEvents,
   };
 }
@@ -105,6 +130,8 @@ type FindFirstArgs = {
 
 const txClient = {
   plan: {
+    // select 指定でも生 plan (+ hydrate) を返す。ballActions が読むのは
+    // .executorMemberId (toss の successor) と .status/.ballEvents (undoToss の successor) のみ。
     findFirst: vi.fn(async ({ where }: FindFirstArgs) => {
       const plan = Object.values(planStore).find(
         (p) =>
@@ -122,7 +149,7 @@ const txClient = {
     }),
   },
   ballEvent: {
-    create: vi.fn(async ({ data }: { data: Omit<MockBallEvent, 'id' | 'occurredAt' | 'note'> }) => {
+    create: vi.fn(async ({ data }: { data: Omit<MockBallEvent, 'id' | 'occurredAt' | 'note'> & { note?: string | null } }) => {
       const ev: MockBallEvent = {
         id: newId('be'),
         occurredAt: nextOccurredAt(),
@@ -131,17 +158,6 @@ const txClient = {
       };
       ballEventStore.push(ev);
       return ev;
-    }),
-  },
-  projectMember: {
-    findFirst: vi.fn(async ({ where }: FindFirstArgs) => {
-      const m = Object.values(memberStore).find(
-        (mem) =>
-          (where.id === undefined || mem.id === where.id) &&
-          (where.projectId === undefined || mem.projectId === where.projectId) &&
-          (where.deletedAt === undefined || mem.deletedAt === where.deletedAt),
-      );
-      return m ? { id: m.id } : null;
     }),
   },
   auditLog: {
@@ -192,6 +208,9 @@ function makePlan(overrides: Partial<MockPlan> = {}): MockPlan {
     category: 'design',
     scheduledDate: new Date('2026-05-01T00:00:00Z'),
     dueDate: null,
+    executorMemberId: null,
+    approverMemberId: null,
+    progressManagerMemberId: null,
     fromMemberId: null,
     toMemberId: null,
     successorPlanId: null,
@@ -209,7 +228,7 @@ function makePlan(overrides: Partial<MockPlan> = {}): MockPlan {
 
 function addEvent(
   planId: string,
-  eventType: MockBallEvent['eventType'],
+  eventType: EventType,
   source: MockBallEvent['source'] = 'human',
 ): MockBallEvent {
   const ev: MockBallEvent = {
@@ -227,19 +246,46 @@ function addEvent(
 }
 
 const eventTypesFor = (planId: string) =>
-  ballEventStore.filter((e) => e.planId === planId).map((e) => e.eventType);
+  ballEventStore
+    .filter((e) => e.planId === planId)
+    .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+    .map((e) => e.eventType);
+
+/** 実施者/承認者/進行責任者をまとめて用意する。 */
+function makeRoles() {
+  return {
+    executor: makeMember({ name: '実施者' }),
+    approver: makeMember({ name: '承認者' }),
+    pm: makeMember({ name: '進行責任者' }),
+  };
+}
 
 // =============================================================================
 // Tests
 // =============================================================================
 
+let requestReviewPlan: typeof RequestReviewPlanType;
+let undoRequestReviewPlan: typeof UndoRequestReviewPlanType;
+let approvePlan: typeof ApprovePlanType;
+let undoApprovePlan: typeof UndoApprovePlanType;
+let sendBackPlan: typeof SendBackPlanType;
 let tossPlan: typeof TossPlanType;
-let completePlan: typeof CompletePlanType;
 let undoTossPlan: typeof UndoTossPlanType;
+let completePlan: typeof CompletePlanType;
 let undoCompletePlan: typeof UndoCompletePlanType;
 
 beforeAll(async () => {
-  ({ tossPlan, completePlan, undoTossPlan, undoCompletePlan } = await import('./ballActions.js'));
+  ({
+    requestReviewPlan,
+    undoRequestReviewPlan,
+    approvePlan,
+    undoApprovePlan,
+    sendBackPlan,
+    tossPlan,
+    undoTossPlan,
+    completePlan,
+    undoCompletePlan,
+  } = await import('./ballActions.js'));
 });
 
 afterEach(() => {
@@ -251,144 +297,106 @@ afterEach(() => {
 });
 
 // -----------------------------------------------------------------------------
-// tossPlan
+// requestReviewPlan (実施中/差し戻し → 確認待ち)
 // -----------------------------------------------------------------------------
-describe('tossPlan', () => {
-  it('ready の予定を TOSS すると tossed イベントと監査ログを記録し DTO を返す', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
+describe('requestReviewPlan', () => {
+  it('実施中の予定を確認依頼すると review_requested と監査を記録し確認待ちになる', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
 
-    const res = await tossPlan({
+    const res = await requestReviewPlan({
       itemId: 'item-1',
-      projectId: 'proj-1',
       planId: plan.id,
-      body: {},
       currentUserId: 'user-1',
-      currentMemberId: from.id,
+      currentMemberId: executor.id,
       isDirector: false,
     });
 
-    expect(res.autoTossed).toBeNull();
-    expect(res.plan.id).toBe(plan.id);
-    expect(res.plan.ballState).toBe('tossed');
-    expect(res.plan.ballHolder?.id).toBe(to.id);
-    expect(eventTypesFor(plan.id)).toEqual(['tossed']);
-    expect(auditStore).toHaveLength(1);
-    expect(auditStore[0]).toMatchObject({ action: 'toss', resourceId: plan.id, result: 'success' });
+    expect(res.plan.ballState).toBe('review_pending');
+    expect(res.plan.ballHolder?.id).toBe(approver.id);
+    expect(eventTypesFor(plan.id)).toEqual(['review_requested']);
+    expect(auditStore.some((a) => a.action === 'request_review' && a.resourceId === plan.id)).toBe(true);
   });
 
-  it('ディレクターはボール保持者でなくても TOSS できる', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
+  it('差し戻し状態からも確認依頼できる', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
+    addEvent(plan.id, 'sent_back');
 
-    const res = await tossPlan({
+    const res = await requestReviewPlan({
       itemId: 'item-1',
-      projectId: 'proj-1',
       planId: plan.id,
-      body: {},
-      currentUserId: 'user-x',
+      currentUserId: 'user-1',
+      currentMemberId: executor.id,
+      isDirector: false,
+    });
+    expect(res.plan.ballState).toBe('review_pending');
+  });
+
+  it('ディレクターは実施者でなくても確認依頼できる', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    const res = await requestReviewPlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'dir',
       currentMemberId: 'someone-else',
       isDirector: true,
     });
-    expect(res.plan.ballState).toBe('tossed');
+    expect(res.plan.ballState).toBe('review_pending');
   });
 
-  it('body.toMemberId 指定で TOSS 先を差し替えてから tossed する', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const newTo = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
-
-    const res = await tossPlan({
-      itemId: 'item-1',
-      projectId: 'proj-1',
-      planId: plan.id,
-      body: { toMemberId: newTo.id },
-      currentUserId: 'user-1',
-      currentMemberId: from.id,
-      isDirector: false,
-    });
-    expect(txClient.plan.update).toHaveBeenCalled();
-    expect(res.plan.toMember?.id).toBe(newTo.id);
-    expect(res.plan.ballHolder?.id).toBe(newTo.id);
-  });
-
-  it('存在しない予定は NOT_FOUND 404', async () => {
+  it('実施者が未設定なら INCOMPLETE_PLAN 422', async () => {
+    const approver = makeMember();
+    const plan = makePlan({ executorMemberId: null, approverMemberId: approver.id });
     await expect(
-      tossPlan({
+      requestReviewPlan({
         itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: 'missing',
-        body: {},
-        currentUserId: 'user-1',
-        currentMemberId: 'm',
-        isDirector: false,
-      }),
-    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
-  });
-
-  it('active でない予定は PLAN_NOT_ACTIVE 422', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, status: 'completed' });
-    await expect(
-      tossPlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
         planId: plan.id,
-        body: {},
         currentUserId: 'user-1',
-        currentMemberId: from.id,
-        isDirector: false,
-      }),
-    ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
-  });
-
-  it('既に tossed 済みなら ALREADY_TOSSED 409', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
-    addEvent(plan.id, 'tossed');
-    await expect(
-      tossPlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: plan.id,
-        body: {},
-        currentUserId: 'user-1',
-        currentMemberId: from.id,
-        isDirector: false,
-      }),
-    ).rejects.toMatchObject({ code: 'ALREADY_TOSSED', status: 409 });
-  });
-
-  it('FROM/TO 未設定なら INCOMPLETE_PLAN 422', async () => {
-    const plan = makePlan({ fromMemberId: null, toMemberId: null });
-    await expect(
-      tossPlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: plan.id,
-        body: {},
-        currentUserId: 'user-1',
-        currentMemberId: 'm',
+        currentMemberId: 'x',
         isDirector: false,
       }),
     ).rejects.toMatchObject({ code: 'INCOMPLETE_PLAN', status: 422 });
   });
 
-  it('ボール保持者でもディレクターでもなければ FORBIDDEN 403', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
+  it('承認者が未設定なら NO_APPROVER 422', async () => {
+    const executor = makeMember();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: null });
     await expect(
-      tossPlan({
+      requestReviewPlan({
         itemId: 'item-1',
-        projectId: 'proj-1',
         planId: plan.id,
-        body: {},
+        currentUserId: 'user-1',
+        currentMemberId: executor.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'NO_APPROVER', status: 422 });
+  });
+
+  it('確認待ち等の予定は INVALID_STATE 409', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
+    await expect(
+      requestReviewPlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: approver.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
+  });
+
+  it('ボール保持者でもディレクターでもなければ FORBIDDEN 403', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    await expect(
+      requestReviewPlan({
+        itemId: 'item-1',
+        planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'stranger',
         isDirector: false,
@@ -396,140 +404,525 @@ describe('tossPlan', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
 
-  it('body.toMemberId がプロジェクト外なら INVALID_TO_MEMBER 422', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
+  it('active でない予定は PLAN_NOT_ACTIVE 422', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id, status: 'completed' });
     await expect(
-      tossPlan({
+      requestReviewPlan({
         itemId: 'item-1',
-        projectId: 'proj-1',
         planId: plan.id,
-        body: { toMemberId: 'not-a-member' },
         currentUserId: 'user-1',
-        currentMemberId: from.id,
+        currentMemberId: executor.id,
         isDirector: false,
       }),
-    ).rejects.toMatchObject({ code: 'INVALID_TO_MEMBER', status: 422 });
+    ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
   });
 
-  it('body.toMemberId が現ボール保持者(FROM)と同一なら INVALID_TO_MEMBER 422', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
+  it('存在しない予定は NOT_FOUND 404', async () => {
     await expect(
-      tossPlan({
+      requestReviewPlan({
         itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: plan.id,
-        body: { toMemberId: from.id },
+        planId: 'missing',
         currentUserId: 'user-1',
-        currentMemberId: from.id,
+        currentMemberId: 'm',
         isDirector: false,
       }),
-    ).rejects.toMatchObject({ code: 'INVALID_TO_MEMBER', status: 422 });
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
 });
 
 // -----------------------------------------------------------------------------
-// completePlan
+// undoRequestReviewPlan (確認待ち → 実施中)
 // -----------------------------------------------------------------------------
-describe('completePlan', () => {
-  it('tossed 済みの予定を完了でき、completed と監査ログを記録する', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
-    addEvent(plan.id, 'tossed');
+describe('undoRequestReviewPlan', () => {
+  it('確認待ちを取り消して実施中へ戻す (review_request_undone + 監査)', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
 
-    const res = await completePlan({
+    const res = await undoRequestReviewPlan({
       itemId: 'item-1',
-      projectId: 'proj-1',
       planId: plan.id,
       currentUserId: 'user-1',
-      currentMemberId: to.id,
+      currentMemberId: executor.id,
+      isDirector: false,
+    });
+    expect(res.plan.ballState).toBe('in_progress');
+    expect(res.plan.ballHolder?.id).toBe(executor.id);
+    expect(eventTypesFor(plan.id)).toEqual(['review_requested', 'review_request_undone']);
+    expect(auditStore.some((a) => a.action === 'undo_request_review')).toBe(true);
+  });
+
+  it('承認者も取り消せる', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
+    const res = await undoRequestReviewPlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: approver.id,
+      isDirector: false,
+    });
+    expect(res.plan.ballState).toBe('in_progress');
+  });
+
+  it('確認待ちでなければ INVALID_STATE 409', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    await expect(
+      undoRequestReviewPlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: executor.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
+  });
+
+  it('実施者・承認者・ディレクター以外は FORBIDDEN 403', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
+    await expect(
+      undoRequestReviewPlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: 'stranger',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// approvePlan (確認待ち → 承認済み。承認者なしなら 実施中 → 承認済み)
+// -----------------------------------------------------------------------------
+describe('approvePlan', () => {
+  it('確認待ちを承認すると承認済みになり進行責任者にボールが渡る (後続あり)', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const successor = makePlan({ executorMemberId: makeMember().id });
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: successor.id,
+    });
+    addEvent(plan.id, 'review_requested');
+
+    const res = await approvePlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: approver.id,
       isDirector: false,
     });
     expect(res.autoTossed).toBeNull();
+    expect(res.plan.ballState).toBe('approved');
+    expect(res.plan.ballHolder?.id).toBe(pm.id);
+    // 後続があるので承認では完了しない。
+    expect(res.plan.status).toBe('active');
+    expect(planStore[plan.id]!.status).toBe('active');
+    expect(eventTypesFor(plan.id)).toEqual(['review_requested', 'approved']);
+    expect(auditStore.some((a) => a.action === 'approve')).toBe(true);
+  });
+
+  it('後続が無い予定は承認で完了扱い (status=completed) になる', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+    });
+    addEvent(plan.id, 'review_requested');
+
+    const res = await approvePlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: approver.id,
+      isDirector: false,
+    });
     expect(res.plan.status).toBe('completed');
-    expect(res.plan.ballState).toBe('completed');
     expect(planStore[plan.id]!.status).toBe('completed');
     expect(planStore[plan.id]!.completedAt).toBeInstanceOf(Date);
-    expect(eventTypesFor(plan.id)).toEqual(['tossed', 'completed']);
-    expect(auditStore.some((a) => a.action === 'complete')).toBe(true);
+    // ball 状態自体は approved (最新イベントは approved)。
+    expect(res.plan.ballState).toBe('approved');
   });
 
-  it('後続が ready でも自動 TOSS しない (自動連鎖廃止 #117)', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const sFrom = makeMember();
-    const sTo = makeMember();
-    const successor = makePlan({ fromMemberId: sFrom.id, toMemberId: sTo.id });
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, successorPlanId: successor.id });
-    addEvent(plan.id, 'tossed');
-
-    const res = await completePlan({
-      itemId: 'item-1',
-      projectId: 'proj-1',
-      planId: plan.id,
-      currentUserId: 'user-1',
-      currentMemberId: to.id,
-      isDirector: false,
-    });
-    expect(res.autoTossed).toBeNull();
-    // 後続にはイベントが一切追記されず、ready のまま (ボールは後続の実施者=FROM に残る)
-    expect(ballEventStore.filter((e) => e.planId === successor.id)).toHaveLength(0);
-    expect(auditStore.some((a) => a.action === 'auto_toss')).toBe(false);
-  });
-
-  it('後続が既に tossed (ready でない) なら auto_chain しない', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const successor = makePlan({ fromMemberId: makeMember().id, toMemberId: makeMember().id });
-    addEvent(successor.id, 'tossed');
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, successorPlanId: successor.id });
-    addEvent(plan.id, 'tossed');
-
-    const res = await completePlan({
-      itemId: 'item-1',
-      projectId: 'proj-1',
-      planId: plan.id,
-      currentUserId: 'user-1',
-      currentMemberId: to.id,
-      isDirector: false,
-    });
-    expect(res.autoTossed).toBeNull();
-    // 既存 tossed のみ。auto_chain は追記されない。
-    expect(ballEventStore.filter((e) => e.planId === successor.id)).toHaveLength(1);
-  });
-
-  it('後続が見つからない (削除済み) 場合は auto_chain しない', async () => {
-    const from = makeMember();
-    const to = makeMember();
+  it('承認者なしの予定は実施中から直接承認できる', async () => {
+    const { executor, pm } = makeRoles();
+    const successor = makePlan({ executorMemberId: makeMember().id });
     const plan = makePlan({
-      fromMemberId: from.id,
-      toMemberId: to.id,
-      successorPlanId: 'ghost-successor',
+      executorMemberId: executor.id,
+      approverMemberId: null,
+      progressManagerMemberId: pm.id,
+      successorPlanId: successor.id,
     });
-    addEvent(plan.id, 'tossed');
 
-    const res = await completePlan({
+    const res = await approvePlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: executor.id,
+      isDirector: false,
+    });
+    expect(res.plan.ballState).toBe('approved');
+    expect(res.plan.ballHolder?.id).toBe(pm.id);
+  });
+
+  it('承認者なしで実施者も未設定なら INCOMPLETE_PLAN 422', async () => {
+    const plan = makePlan({ executorMemberId: null, approverMemberId: null });
+    await expect(
+      approvePlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: 'x',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'INCOMPLETE_PLAN', status: 422 });
+  });
+
+  it('承認者ありで確認待ちでなければ INVALID_STATE 409', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+    });
+    // 実施中のまま承認しようとする
+    await expect(
+      approvePlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: approver.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
+  });
+
+  it('ディレクターはボール保持者でなくても承認できる', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: makePlan({ executorMemberId: makeMember().id }).id,
+    });
+    addEvent(plan.id, 'review_requested');
+    const res = await approvePlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'dir',
+      currentMemberId: 'other',
+      isDirector: true,
+    });
+    expect(res.plan.ballState).toBe('approved');
+  });
+
+  it('ボール保持者でもディレクターでもなければ FORBIDDEN 403', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+    });
+    addEvent(plan.id, 'review_requested');
+    await expect(
+      approvePlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: 'stranger',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+  });
+
+  it('active でない予定は PLAN_NOT_ACTIVE 422', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id, status: 'canceled' });
+    await expect(
+      approvePlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: approver.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
+  });
+
+  it('存在しない予定は NOT_FOUND 404', async () => {
+    await expect(
+      approvePlan({
+        itemId: 'item-1',
+        planId: 'missing',
+        currentUserId: 'user-1',
+        currentMemberId: 'm',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// undoApprovePlan (承認済み → 確認待ち/実施中。完了扱いなら active に戻す)
+// -----------------------------------------------------------------------------
+describe('undoApprovePlan', () => {
+  it('承認済み (後続ありで active) を取り消して確認待ちへ戻す', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: makePlan({ executorMemberId: makeMember().id }).id,
+    });
+    addEvent(plan.id, 'review_requested');
+    addEvent(plan.id, 'approved');
+
+    const res = await undoApprovePlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: approver.id,
+      isDirector: false,
+    });
+    // 承認者ありなので確認待ちへ戻る。
+    expect(res.plan.ballState).toBe('review_pending');
+    expect(res.plan.ballHolder?.id).toBe(approver.id);
+    expect(eventTypesFor(plan.id)).toEqual(['review_requested', 'approved', 'approval_undone']);
+    expect(auditStore.some((a) => a.action === 'undo_approve')).toBe(true);
+  });
+
+  it('承認=完了 (後続なし completed) を取り消すと active に戻り実施中になる', async () => {
+    const { executor, pm } = makeRoles();
+    // 承認者なし → approval_undone 後は実施中へ戻る。
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: null,
+      progressManagerMemberId: pm.id,
+      status: 'completed',
+      completedAt: new Date(),
+    });
+    addEvent(plan.id, 'approved');
+
+    const res = await undoApprovePlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: pm.id,
+      isDirector: false,
+    });
+    expect(res.plan.status).toBe('active');
+    expect(planStore[plan.id]!.status).toBe('active');
+    expect(planStore[plan.id]!.completedAt).toBeNull();
+    expect(res.plan.ballState).toBe('in_progress');
+    expect(res.plan.ballHolder?.id).toBe(executor.id);
+  });
+
+  it('進行責任者も取り消せる', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: makePlan({ executorMemberId: makeMember().id }).id,
+    });
+    addEvent(plan.id, 'review_requested');
+    addEvent(plan.id, 'approved');
+    const res = await undoApprovePlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: pm.id,
+      isDirector: false,
+    });
+    expect(res.plan.ballState).toBe('review_pending');
+  });
+
+  it('承認済みでなければ INVALID_STATE 409', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
+    await expect(
+      undoApprovePlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: approver.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
+  });
+
+  it('承認者・進行責任者・ディレクター以外は FORBIDDEN 403', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: makePlan({ executorMemberId: makeMember().id }).id,
+    });
+    addEvent(plan.id, 'review_requested');
+    addEvent(plan.id, 'approved');
+    await expect(
+      undoApprovePlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: 'stranger',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+  });
+
+  it('存在しない予定は NOT_FOUND 404', async () => {
+    await expect(
+      undoApprovePlan({
+        itemId: 'item-1',
+        planId: 'missing',
+        currentUserId: 'user-1',
+        currentMemberId: 'm',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// sendBackPlan (確認待ち → 差し戻し)
+// -----------------------------------------------------------------------------
+describe('sendBackPlan', () => {
+  it('確認待ちを差し戻すと実施者にボールが戻り note を保存する', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
+
+    const res = await sendBackPlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      note: '修正してください',
+      currentUserId: 'user-1',
+      currentMemberId: approver.id,
+      isDirector: false,
+    });
+    expect(res.plan.ballState).toBe('sent_back');
+    expect(res.plan.ballHolder?.id).toBe(executor.id);
+    expect(eventTypesFor(plan.id)).toEqual(['review_requested', 'sent_back']);
+    const sentBack = ballEventStore.find((e) => e.planId === plan.id && e.eventType === 'sent_back');
+    expect(sentBack?.note).toBe('修正してください');
+    expect(auditStore.some((a) => a.action === 'send_back')).toBe(true);
+  });
+
+  it('ディレクターは承認者でなくても差し戻せる', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
+    const res = await sendBackPlan({
+      itemId: 'item-1',
+      planId: plan.id,
+      currentUserId: 'dir',
+      currentMemberId: 'other',
+      isDirector: true,
+    });
+    expect(res.plan.ballState).toBe('sent_back');
+  });
+
+  it('確認待ちでなければ INVALID_STATE 409', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    await expect(
+      sendBackPlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: approver.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
+  });
+
+  it('ボール保持者 (承認者) でもディレクターでもなければ FORBIDDEN 403', async () => {
+    const { executor, approver } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
+    addEvent(plan.id, 'review_requested');
+    await expect(
+      sendBackPlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: 'stranger',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+  });
+
+  it('存在しない予定は NOT_FOUND 404', async () => {
+    await expect(
+      sendBackPlan({
+        itemId: 'item-1',
+        planId: 'missing',
+        currentUserId: 'user-1',
+        currentMemberId: 'm',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// tossPlan (承認済み → TOSS済み)
+// -----------------------------------------------------------------------------
+describe('tossPlan', () => {
+  /** approved 状態の先行予定 + 実施者付き後続予定を用意する。 */
+  function setupApproved(overrides: { successorExecutor?: string | null } = {}) {
+    const { executor, pm } = makeRoles();
+    const successorExecutor =
+      overrides.successorExecutor === undefined ? makeMember({ name: '後続実施者' }).id : overrides.successorExecutor;
+    const successor = makePlan({ executorMemberId: successorExecutor });
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: successor.id,
+    });
+    addEvent(plan.id, 'approved');
+    return { plan, successor, pm, successorExecutor };
+  }
+
+  it('承認済みを TOSS すると FROM/TO 履歴を書き込み後続実施者にボールが渡る', async () => {
+    const { plan, pm, successorExecutor } = setupApproved();
+
+    const res = await tossPlan({
       itemId: 'item-1',
       projectId: 'proj-1',
       planId: plan.id,
       currentUserId: 'user-1',
-      currentMemberId: to.id,
+      currentMemberId: pm.id,
       isDirector: false,
     });
+
     expect(res.autoTossed).toBeNull();
+    expect(res.plan.ballState).toBe('tossed');
+    expect(res.plan.ballHolder?.id).toBe(successorExecutor);
+    // FROM=進行責任者 / TO=後続実施者 の履歴。
+    expect(res.plan.fromMember?.id).toBe(pm.id);
+    expect(res.plan.toMember?.id).toBe(successorExecutor);
+    // 先行予定は完了。
+    expect(res.plan.status).toBe('completed');
+    expect(planStore[plan.id]!.status).toBe('completed');
+    expect(planStore[plan.id]!.completedAt).toBeInstanceOf(Date);
+    expect(eventTypesFor(plan.id)).toEqual(['approved', 'tossed']);
+    expect(auditStore.some((a) => a.action === 'toss')).toBe(true);
   });
 
-  it('ディレクターはボール保持者でなくても完了できる', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
-    addEvent(plan.id, 'tossed');
-
-    const res = await completePlan({
+  it('ディレクターは進行責任者でなくても TOSS できる', async () => {
+    const { plan } = setupApproved();
+    const res = await tossPlan({
       itemId: 'item-1',
       projectId: 'proj-1',
       planId: plan.id,
@@ -537,45 +930,87 @@ describe('completePlan', () => {
       currentMemberId: 'other',
       isDirector: true,
     });
-    expect(res.plan.status).toBe('completed');
+    expect(res.plan.ballState).toBe('tossed');
   });
 
-  it('存在しない予定は NOT_FOUND 404', async () => {
+  it('承認済みでなければ NOT_APPROVED 409', async () => {
+    const { executor, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: makePlan({ executorMemberId: makeMember().id }).id,
+    });
+    // イベント無し = 実施中
     await expect(
-      completePlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: 'missing',
-        currentUserId: 'user-1',
-        currentMemberId: 'm',
-        isDirector: false,
-      }),
-    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
-  });
-
-  it('active でない予定は PLAN_NOT_ACTIVE 422', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, status: 'canceled' });
-    await expect(
-      completePlan({
+      tossPlan({
         itemId: 'item-1',
         projectId: 'proj-1',
         planId: plan.id,
         currentUserId: 'user-1',
-        currentMemberId: to.id,
+        currentMemberId: pm.id,
         isDirector: false,
       }),
-    ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
+    ).rejects.toMatchObject({ code: 'NOT_APPROVED', status: 409 });
   });
 
-  it('ボール保持者でもディレクターでもなければ FORBIDDEN 403', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
-    addEvent(plan.id, 'tossed');
+  it('後続が無ければ NO_SUCCESSOR 422', async () => {
+    const { executor, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: null,
+    });
+    addEvent(plan.id, 'approved');
     await expect(
-      completePlan({
+      tossPlan({
+        itemId: 'item-1',
+        projectId: 'proj-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: pm.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'NO_SUCCESSOR', status: 422 });
+  });
+
+  it('進行責任者が未設定なら INCOMPLETE_PLAN 422', async () => {
+    const { executor } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      progressManagerMemberId: null,
+      successorPlanId: makePlan({ executorMemberId: makeMember().id }).id,
+    });
+    addEvent(plan.id, 'approved');
+    await expect(
+      tossPlan({
+        itemId: 'item-1',
+        projectId: 'proj-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: 'x',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'INCOMPLETE_PLAN', status: 422 });
+  });
+
+  it('後続の実施者が未設定なら SUCCESSOR_NO_EXECUTOR 422', async () => {
+    const { plan, pm } = setupApproved({ successorExecutor: null });
+    await expect(
+      tossPlan({
+        itemId: 'item-1',
+        projectId: 'proj-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: pm.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'SUCCESSOR_NO_EXECUTOR', status: 422 });
+  });
+
+  it('ボール保持者 (進行責任者) でもディレクターでもなければ FORBIDDEN 403', async () => {
+    const { plan } = setupApproved();
+    await expect(
+      tossPlan({
         itemId: 'item-1',
         projectId: 'proj-1',
         planId: plan.id,
@@ -585,276 +1020,185 @@ describe('completePlan', () => {
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
+
+  it('active でない予定は PLAN_NOT_ACTIVE 422', async () => {
+    const { executor, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: makePlan({ executorMemberId: makeMember().id }).id,
+      status: 'completed',
+    });
+    addEvent(plan.id, 'approved');
+    await expect(
+      tossPlan({
+        itemId: 'item-1',
+        projectId: 'proj-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: pm.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
+  });
+
+  it('存在しない予定は NOT_FOUND 404', async () => {
+    await expect(
+      tossPlan({
+        itemId: 'item-1',
+        projectId: 'proj-1',
+        planId: 'missing',
+        currentUserId: 'user-1',
+        currentMemberId: 'm',
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+  });
 });
 
 // -----------------------------------------------------------------------------
-// undoTossPlan
+// undoTossPlan (TOSS済み → 承認済み)
 // -----------------------------------------------------------------------------
 describe('undoTossPlan', () => {
-  it('tossed を差し戻して ready に戻す (toss_undone 追記 + 監査)', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
+  /** tossed 済みの先行予定 (status=completed, FROM/TO 履歴あり) を用意する。 */
+  function setupTossed(successorStatus: 'active' | 'completed' = 'active') {
+    const { executor, pm } = makeRoles();
+    const successorExecutor = makeMember().id;
+    const successor = makePlan({ executorMemberId: successorExecutor, status: successorStatus });
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: successor.id,
+      fromMemberId: pm.id,
+      toMemberId: successorExecutor,
+      status: 'completed',
+      completedAt: new Date(),
+    });
+    addEvent(plan.id, 'approved');
     addEvent(plan.id, 'tossed');
+    return { plan, successor, pm };
+  }
+
+  it('TOSS を取り消して承認済みへ戻す (approved 再追記 + FROM/TO クリア + 監査)', async () => {
+    const { plan, pm } = setupTossed();
 
     const res = await undoTossPlan({
       itemId: 'item-1',
       projectId: 'proj-1',
       planId: plan.id,
       currentUserId: 'user-1',
-      currentMemberId: to.id,
+      currentMemberId: pm.id,
     });
-    expect(res.plan.ballState).toBe('ready');
-    expect(res.plan.ballHolder?.id).toBe(from.id);
-    expect(eventTypesFor(plan.id)).toEqual(['tossed', 'toss_undone']);
+    expect(res.plan.ballState).toBe('approved');
+    expect(res.plan.ballHolder?.id).toBe(pm.id);
+    expect(res.plan.status).toBe('active');
+    expect(planStore[plan.id]!.status).toBe('active');
+    expect(planStore[plan.id]!.fromMemberId).toBeNull();
+    expect(planStore[plan.id]!.toMemberId).toBeNull();
+    expect(eventTypesFor(plan.id)).toEqual(['approved', 'tossed', 'approved']);
     expect(auditStore.some((a) => a.action === 'untoss')).toBe(true);
   });
 
-  it('存在しない予定は NOT_FOUND 404', async () => {
-    await expect(
-      undoTossPlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: 'missing',
-        currentUserId: 'user-1',
-        currentMemberId: 'm',
-      }),
-    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
-  });
-
-  it('active でない予定は PLAN_NOT_ACTIVE 422', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, status: 'completed' });
-    addEvent(plan.id, 'tossed');
-    await expect(
-      undoTossPlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: plan.id,
-        currentUserId: 'user-1',
-        currentMemberId: to.id,
-      }),
-    ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
-  });
-
-  it('tossed 状態でなければ NOT_TOSSED 409', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id });
-    // イベント無し = ready
-    await expect(
-      undoTossPlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: plan.id,
-        currentUserId: 'user-1',
-        currentMemberId: from.id,
-      }),
-    ).rejects.toMatchObject({ code: 'NOT_TOSSED', status: 409 });
-  });
-});
-
-// -----------------------------------------------------------------------------
-// undoCompletePlan
-// -----------------------------------------------------------------------------
-describe('undoCompletePlan', () => {
-  it('completed を差し戻して tossed (active) に戻す', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, status: 'completed' });
-    addEvent(plan.id, 'tossed');
-    addEvent(plan.id, 'completed');
-
-    const res = await undoCompletePlan({
+  it('プロジェクトメンバーなら誰でも取り消せる (#50)', async () => {
+    const { plan } = setupTossed();
+    const res = await undoTossPlan({
       itemId: 'item-1',
       projectId: 'proj-1',
       planId: plan.id,
       currentUserId: 'user-1',
-      currentMemberId: to.id,
-      isDirector: false,
+      currentMemberId: 'anyone',
     });
-    expect(res.plan.status).toBe('active');
-    expect(res.plan.ballState).toBe('tossed');
-    expect(planStore[plan.id]!.status).toBe('active');
-    expect(planStore[plan.id]!.completedAt).toBeNull();
-    expect(eventTypesFor(plan.id)).toEqual(['tossed', 'completed', 'completion_undone']);
-    expect(auditStore.some((a) => a.action === 'undo_complete')).toBe(true);
+    expect(res.plan.ballState).toBe('approved');
   });
 
-  it('完了取り消し時、後続 (未完了) には触れない (自動連鎖廃止 #117)', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const successor = makePlan({ fromMemberId: makeMember().id, toMemberId: makeMember().id });
-    // 過去に auto_chain で TOSS された履歴があっても巻き戻さない
-    addEvent(successor.id, 'tossed', 'auto_chain');
-    const plan = makePlan({
-      fromMemberId: from.id,
-      toMemberId: to.id,
-      status: 'completed',
-      successorPlanId: successor.id,
-    });
-    addEvent(plan.id, 'tossed');
-    addEvent(plan.id, 'completed');
-
-    const res = await undoCompletePlan({
-      itemId: 'item-1',
-      projectId: 'proj-1',
-      planId: plan.id,
-      currentUserId: 'user-1',
-      currentMemberId: to.id,
-      isDirector: false,
-    });
-    expect(res.plan.status).toBe('active');
-    // 後続は一切変更されない
-    expect(eventTypesFor(successor.id)).toEqual(['tossed']);
-    expect(auditStore.some((a) => a.action === 'untoss' && a.resourceId === successor.id)).toBe(false);
-  });
-
-  it('後続が auto_chain ではなく既に完了済みなら SUCCESSOR_ALREADY_COMPLETED 409', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const successor = makePlan({
-      fromMemberId: makeMember().id,
-      toMemberId: makeMember().id,
-      status: 'completed',
-    });
-    addEvent(successor.id, 'tossed', 'human');
-    addEvent(successor.id, 'completed', 'human');
-    const plan = makePlan({
-      fromMemberId: from.id,
-      toMemberId: to.id,
-      status: 'completed',
-      successorPlanId: successor.id,
-    });
-    addEvent(plan.id, 'tossed');
-    addEvent(plan.id, 'completed');
-
+  it('後続が完了済みなら SUCCESSOR_ALREADY_COMPLETED 409', async () => {
+    const { plan } = setupTossed('completed');
     await expect(
-      undoCompletePlan({
+      undoTossPlan({
         itemId: 'item-1',
         projectId: 'proj-1',
         planId: plan.id,
         currentUserId: 'user-1',
-        currentMemberId: to.id,
-        isDirector: false,
+        currentMemberId: 'anyone',
       }),
     ).rejects.toMatchObject({ code: 'SUCCESSOR_ALREADY_COMPLETED', status: 409 });
   });
 
-  it('後続が auto_chain でなく完了もしていなければ後続には触れず本体のみ巻き戻す', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const successor = makePlan({ fromMemberId: makeMember().id, toMemberId: makeMember().id });
-    addEvent(successor.id, 'tossed', 'human'); // 人手 TOSS (auto_chain ではない)
-    const plan = makePlan({
-      fromMemberId: from.id,
-      toMemberId: to.id,
-      status: 'completed',
-      successorPlanId: successor.id,
-    });
-    addEvent(plan.id, 'tossed');
-    addEvent(plan.id, 'completed');
-
-    const res = await undoCompletePlan({
-      itemId: 'item-1',
-      projectId: 'proj-1',
-      planId: plan.id,
-      currentUserId: 'user-1',
-      currentMemberId: to.id,
-      isDirector: false,
-    });
-    expect(res.plan.status).toBe('active');
-    // 後続は変更されない
-    expect(eventTypesFor(successor.id)).toEqual(['tossed']);
-  });
-
-  it('後続が削除済み (見つからない) でも本体のみ巻き戻す', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({
-      fromMemberId: from.id,
-      toMemberId: to.id,
-      status: 'completed',
-      successorPlanId: 'ghost',
-    });
-    addEvent(plan.id, 'tossed');
-    addEvent(plan.id, 'completed');
-
-    const res = await undoCompletePlan({
-      itemId: 'item-1',
-      projectId: 'proj-1',
-      planId: plan.id,
-      currentUserId: 'user-1',
-      currentMemberId: to.id,
-      isDirector: false,
-    });
-    expect(res.plan.status).toBe('active');
-  });
-
-  it('ディレクターはボール保持者でなくても差し戻せる', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, status: 'completed' });
-    addEvent(plan.id, 'tossed');
-    addEvent(plan.id, 'completed');
-
-    const res = await undoCompletePlan({
-      itemId: 'item-1',
-      projectId: 'proj-1',
-      planId: plan.id,
-      currentUserId: 'dir',
-      currentMemberId: 'other',
-      isDirector: true,
-    });
-    expect(res.plan.status).toBe('active');
-  });
-
-  it('completed でない予定は PLAN_NOT_COMPLETED 422', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, status: 'active' });
-    addEvent(plan.id, 'tossed');
+  it('TOSS 済みでなければ NOT_TOSSED 409', async () => {
+    const { executor, pm } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id, progressManagerMemberId: pm.id });
+    addEvent(plan.id, 'approved'); // 承認済み (tossed ではない)
     await expect(
-      undoCompletePlan({
+      undoTossPlan({
         itemId: 'item-1',
         projectId: 'proj-1',
         planId: plan.id,
         currentUserId: 'user-1',
-        currentMemberId: to.id,
-        isDirector: false,
+        currentMemberId: pm.id,
       }),
-    ).rejects.toMatchObject({ code: 'PLAN_NOT_COMPLETED', status: 422 });
-  });
-
-  it('ボール保持者でもディレクターでもなければ FORBIDDEN 403', async () => {
-    const from = makeMember();
-    const to = makeMember();
-    const plan = makePlan({ fromMemberId: from.id, toMemberId: to.id, status: 'completed' });
-    addEvent(plan.id, 'tossed');
-    addEvent(plan.id, 'completed');
-    await expect(
-      undoCompletePlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: plan.id,
-        currentUserId: 'user-1',
-        currentMemberId: 'stranger',
-        isDirector: false,
-      }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    ).rejects.toMatchObject({ code: 'NOT_TOSSED', status: 409 });
   });
 
   it('存在しない予定は NOT_FOUND 404', async () => {
     await expect(
-      undoCompletePlan({
+      undoTossPlan({
         itemId: 'item-1',
         projectId: 'proj-1',
         planId: 'missing',
         currentUserId: 'user-1',
         currentMemberId: 'm',
-        isDirector: false,
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// completePlan / undoCompletePlan (後方互換エイリアス)
+// -----------------------------------------------------------------------------
+describe('completePlan / undoCompletePlan (エイリアス)', () => {
+  it('completePlan は approvePlan として振る舞う (後続なしは完了)', async () => {
+    const { executor, approver, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+    });
+    addEvent(plan.id, 'review_requested');
+
+    const res = await completePlan({
+      itemId: 'item-1',
+      projectId: 'proj-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: approver.id,
+      isDirector: false,
+    });
+    expect(res.plan.status).toBe('completed');
+    expect(eventTypesFor(plan.id)).toEqual(['review_requested', 'approved']);
+    expect(auditStore.some((a) => a.action === 'approve')).toBe(true);
+  });
+
+  it('undoCompletePlan は undoApprovePlan として振る舞う (完了を active に戻す)', async () => {
+    const { executor, pm } = makeRoles();
+    const plan = makePlan({
+      executorMemberId: executor.id,
+      approverMemberId: null,
+      progressManagerMemberId: pm.id,
+      status: 'completed',
+      completedAt: new Date(),
+    });
+    addEvent(plan.id, 'approved');
+
+    const res = await undoCompletePlan({
+      itemId: 'item-1',
+      projectId: 'proj-1',
+      planId: plan.id,
+      currentUserId: 'user-1',
+      currentMemberId: pm.id,
+      isDirector: false,
+    });
+    expect(res.plan.status).toBe('active');
+    expect(eventTypesFor(plan.id)).toEqual(['approved', 'approval_undone']);
+    expect(auditStore.some((a) => a.action === 'undo_approve')).toBe(true);
   });
 });

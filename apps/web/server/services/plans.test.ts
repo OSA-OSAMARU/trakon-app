@@ -29,6 +29,10 @@ type MockItem = {
   projectId: string;
   deletedAt: Date | null;
 };
+type MockProject = {
+  id: string;
+  progressManagerMemberId: string | null;
+};
 type MockBallEvent = {
   id: string;
   planId: string;
@@ -46,6 +50,11 @@ type MockPlan = {
   category: string;
   scheduledDate: Date;
   dueDate: Date | null;
+  // 役割 (#131)
+  executorMemberId: string | null;
+  approverMemberId: string | null;
+  progressManagerMemberId: string | null;
+  // TOSS 履歴スナップショット
   fromMemberId: string | null;
   toMemberId: string | null;
   successorPlanId: string | null;
@@ -59,13 +68,17 @@ type MockPlan = {
 
 const memberStore: MockMember[] = [];
 const itemStore: MockItem[] = [];
+const projectStore: MockProject[] = [];
 const planStore: MockPlan[] = [];
 const ballEventStore: MockBallEvent[] = [];
 
 let nextId = 1;
 const newId = (prefix: string) => `${prefix}-${nextId++}`;
 
-// plan を service が読む include 形 (fromMember/toMember/ballEvents) に組み立てる。
+const findMember = (id: string | null) =>
+  id ? (memberStore.find((m) => m.id === id) ?? null) : null;
+
+// plan を service が読む include 形 (役割 + TOSS履歴 + ballEvents) に組み立てる。
 function hydratePlan(p: MockPlan) {
   const events = ballEventStore
     .filter((e) => e.planId === p.id)
@@ -78,12 +91,11 @@ function hydratePlan(p: MockPlan) {
     }));
   return {
     ...p,
-    fromMember: p.fromMemberId
-      ? (memberStore.find((m) => m.id === p.fromMemberId) ?? null)
-      : null,
-    toMember: p.toMemberId
-      ? (memberStore.find((m) => m.id === p.toMemberId) ?? null)
-      : null,
+    executor: findMember(p.executorMemberId),
+    approver: findMember(p.approverMemberId),
+    progressManager: findMember(p.progressManagerMemberId),
+    fromMember: findMember(p.fromMemberId),
+    toMember: findMember(p.toMemberId),
     ballEvents: events,
   };
 }
@@ -180,6 +192,9 @@ const prismaMock = {
         category: data.category as string,
         scheduledDate: data.scheduledDate as Date,
         dueDate: (data.dueDate as Date | null) ?? null,
+        executorMemberId: (data.executorMemberId as string | null) ?? null,
+        approverMemberId: (data.approverMemberId as string | null) ?? null,
+        progressManagerMemberId: (data.progressManagerMemberId as string | null) ?? null,
         fromMemberId: (data.fromMemberId as string | null) ?? null,
         toMemberId: (data.toMemberId as string | null) ?? null,
         successorPlanId: (data.successorPlanId as string | null) ?? null,
@@ -244,6 +259,12 @@ const prismaMock = {
       return item ?? null;
     }),
   },
+  project: {
+    // createPlan の進行責任者デフォルト解決 (resolveProgressManagerId) で使う。
+    findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+      return projectStore.find((p) => p.id === where.id) ?? null;
+    }),
+  },
 };
 
 vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
@@ -279,6 +300,7 @@ beforeAll(async () => {
 afterEach(() => {
   memberStore.length = 0;
   itemStore.length = 0;
+  projectStore.length = 0;
   planStore.length = 0;
   ballEventStore.length = 0;
   vi.clearAllMocks();
@@ -314,6 +336,16 @@ function seedMember(overrides: Partial<MockMember> = {}): MockMember {
   return m;
 }
 
+function seedProject(overrides: Partial<MockProject> = {}): MockProject {
+  const p: MockProject = {
+    id: PROJECT_ID,
+    progressManagerMemberId: null,
+    ...overrides,
+  };
+  projectStore.push(p);
+  return p;
+}
+
 function seedPlan(overrides: Partial<MockPlan> = {}): MockPlan {
   const now = new Date('2026-06-01T00:00:00Z');
   const p: MockPlan = {
@@ -324,6 +356,9 @@ function seedPlan(overrides: Partial<MockPlan> = {}): MockPlan {
     category: 'design',
     scheduledDate: new Date('2026-06-10T00:00:00Z'),
     dueDate: null,
+    executorMemberId: null,
+    approverMemberId: null,
+    progressManagerMemberId: null,
     fromMemberId: null,
     toMemberId: null,
     successorPlanId: null,
@@ -359,39 +394,90 @@ function seedBallEvent(overrides: Partial<MockBallEvent> = {}): MockBallEvent {
 // =============================================================================
 
 describe('toPlanDTO', () => {
-  it('イベントなしは ready で from がホルダー', () => {
-    const from = seedMember();
-    const to = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: to.id, dueDate: new Date('2026-06-20T00:00:00Z'), memo: 'メモ' });
+  it('イベントなしは in_progress で実施者がホルダー', () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const pm = seedMember();
+    const plan = seedPlan({
+      executorMemberId: exec.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+      dueDate: new Date('2026-06-20T00:00:00Z'),
+      memo: 'メモ',
+    });
     const dto = toPlanDTO(hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0], []);
-    expect(dto.ballState).toBe('ready');
-    expect(dto.ballHolder?.id).toBe(from.id);
-    expect(dto.fromMember?.id).toBe(from.id);
-    expect(dto.toMember?.id).toBe(to.id);
+    expect(dto.ballState).toBe('in_progress');
+    expect(dto.ballHolder?.id).toBe(exec.id);
+    expect(dto.executor?.id).toBe(exec.id);
+    expect(dto.approver?.id).toBe(approver.id);
+    expect(dto.progressManager?.id).toBe(pm.id);
+    // 作成直後は FROM/TO 履歴は未設定。
+    expect(dto.fromMember).toBeNull();
+    expect(dto.toMember).toBeNull();
     expect(dto.dueDate).toBe('2026-06-20');
     expect(dto.memo).toBe('メモ');
     expect(dto.latestEvent).toBeNull();
     expect(dto.completedAt).toBeNull();
   });
 
-  it('最新が tossed は tossed で to がホルダー', () => {
-    const from = seedMember();
-    const to = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: to.id });
-    seedBallEvent({ planId: plan.id, eventType: 'tossed', actorMemberId: from.id, note: '投げた' });
+  it('最新が review_requested は review_pending で承認者がホルダー', () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id, approverMemberId: approver.id });
+    seedBallEvent({ planId: plan.id, eventType: 'review_requested', actorMemberId: exec.id, note: '確認願います' });
     const dto = toPlanDTO(hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0], []);
-    expect(dto.ballState).toBe('tossed');
-    expect(dto.ballHolder?.id).toBe(to.id);
-    expect(dto.latestEvent?.eventType).toBe('tossed');
-    expect(dto.latestEvent?.actor?.id).toBe(from.id);
-    expect(dto.latestEvent?.note).toBe('投げた');
+    expect(dto.ballState).toBe('review_pending');
+    expect(dto.ballHolder?.id).toBe(approver.id);
+    expect(dto.latestEvent?.eventType).toBe('review_requested');
+    expect(dto.latestEvent?.actor?.id).toBe(exec.id);
+    expect(dto.latestEvent?.note).toBe('確認願います');
   });
 
-  it('最新が completed は completed で to がホルダー (completedAt あり)', () => {
-    const from = seedMember();
+  it('最新が approved は approved で進行責任者がホルダー', () => {
+    const exec = seedMember();
+    const pm = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id, progressManagerMemberId: pm.id });
+    seedBallEvent({ planId: plan.id, eventType: 'approved', occurredAt: new Date('2026-06-06T00:00:00Z') });
+    const dto = toPlanDTO(hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0], []);
+    expect(dto.ballState).toBe('approved');
+    expect(dto.ballHolder?.id).toBe(pm.id);
+  });
+
+  it('最新が sent_back は sent_back で実施者がホルダー', () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id, approverMemberId: approver.id });
+    seedBallEvent({ planId: plan.id, eventType: 'review_requested', occurredAt: new Date('2026-06-05T00:00:00Z') });
+    seedBallEvent({ planId: plan.id, eventType: 'sent_back', occurredAt: new Date('2026-06-06T00:00:00Z'), note: '修正して' });
+    const dto = toPlanDTO(hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0], []);
+    expect(dto.ballState).toBe('sent_back');
+    expect(dto.ballHolder?.id).toBe(exec.id);
+  });
+
+  it('最新が tossed は tossed で toMember 履歴がホルダー', () => {
+    const pm = seedMember();
+    const successorExec = seedMember();
+    const plan = seedPlan({
+      progressManagerMemberId: pm.id,
+      // TOSS 実行時に書き込まれる履歴スナップショット。
+      fromMemberId: pm.id,
+      toMemberId: successorExec.id,
+    });
+    seedBallEvent({ planId: plan.id, eventType: 'approved', occurredAt: new Date('2026-06-05T00:00:00Z') });
+    seedBallEvent({ planId: plan.id, eventType: 'tossed', actorMemberId: pm.id, occurredAt: new Date('2026-06-06T00:00:00Z') });
+    const dto = toPlanDTO(hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0], []);
+    expect(dto.ballState).toBe('tossed');
+    expect(dto.ballHolder?.id).toBe(successorExec.id);
+    expect(dto.fromMember?.id).toBe(pm.id);
+    expect(dto.toMember?.id).toBe(successorExec.id);
+    expect(dto.latestEvent?.eventType).toBe('tossed');
+  });
+
+  it('最新が completed (レガシー) は completed で toMember がホルダー (completedAt あり)', () => {
+    const pm = seedMember();
     const to = seedMember();
     const plan = seedPlan({
-      fromMemberId: from.id,
+      progressManagerMemberId: pm.id,
       toMemberId: to.id,
       status: 'completed',
       completedAt: new Date('2026-06-12T03:00:00Z'),
@@ -404,20 +490,20 @@ describe('toPlanDTO', () => {
     expect(dto.completedAt).toBe('2026-06-12T03:00:00.000Z');
   });
 
-  it('最新が toss_undone は ready に戻り from がホルダー', () => {
-    const from = seedMember();
-    const to = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: to.id });
-    seedBallEvent({ planId: plan.id, eventType: 'tossed', occurredAt: new Date('2026-06-05T00:00:00Z') });
-    seedBallEvent({ planId: plan.id, eventType: 'toss_undone', occurredAt: new Date('2026-06-06T00:00:00Z') });
+  it('最新が review_request_undone は in_progress に戻り実施者がホルダー', () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id, approverMemberId: approver.id });
+    seedBallEvent({ planId: plan.id, eventType: 'review_requested', occurredAt: new Date('2026-06-05T00:00:00Z') });
+    seedBallEvent({ planId: plan.id, eventType: 'review_request_undone', occurredAt: new Date('2026-06-06T00:00:00Z') });
     const dto = toPlanDTO(hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0], []);
-    expect(dto.ballState).toBe('ready');
-    expect(dto.ballHolder?.id).toBe(from.id);
+    expect(dto.ballState).toBe('in_progress');
+    expect(dto.ballHolder?.id).toBe(exec.id);
   });
 
   it('ホルダー member_id が解決できない場合は null', () => {
-    const from = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: 'ghost' });
+    const pm = seedMember();
+    const plan = seedPlan({ progressManagerMemberId: pm.id, toMemberId: 'ghost' });
     seedBallEvent({ planId: plan.id, eventType: 'tossed' });
     const hydrated = hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0];
     hydrated.toMember = null;
@@ -547,7 +633,9 @@ describe('getPlan', () => {
 // =============================================================================
 
 describe('createPlan', () => {
-  it('FROM/TO 指定なしで作成できる (#55)', async () => {
+  it('ロール指定なしで作成でき、進行責任者はプロジェクト既定値を解決する (#55/#131)', async () => {
+    const defaultPm = seedMember();
+    seedProject({ progressManagerMemberId: defaultPm.id });
     const dto = await createPlan({
       itemId: ITEM_ID,
       projectId: PROJECT_ID,
@@ -556,14 +644,29 @@ describe('createPlan', () => {
       >[0]['body'],
     });
     expect(dto.title).toBe('新規');
-    expect(dto.fromMember).toBeNull();
-    expect(dto.toMember).toBeNull();
+    expect(dto.executor).toBeNull();
+    expect(dto.approver).toBeNull();
+    // 進行責任者はプロジェクト既定値で埋まる。
+    expect(dto.progressManager?.id).toBe(defaultPm.id);
     expect(dto.scheduledDate).toBe('2026-06-10');
   });
 
-  it('FROM/TO/dueDate/memo/successor を指定して作成できる', async () => {
-    const from = seedMember();
-    const to = seedMember();
+  it('プロジェクト既定の進行責任者が無ければ progressManager は null', async () => {
+    seedProject({ progressManagerMemberId: null });
+    const dto = await createPlan({
+      itemId: ITEM_ID,
+      projectId: PROJECT_ID,
+      body: { title: '新規', category: 'design', scheduledDate: '2026-06-10' } satisfies Parameters<
+        typeof CreatePlanType
+      >[0]['body'],
+    });
+    expect(dto.progressManager).toBeNull();
+  });
+
+  it('役割/dueDate/memo/successor を指定して作成できる', async () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const pm = seedMember();
     const succ = seedPlan({ id: 'succ' });
     const dto = await createPlan({
       itemId: ITEM_ID,
@@ -573,14 +676,16 @@ describe('createPlan', () => {
         category: 'coding',
         scheduledDate: '2026-06-10',
         dueDate: '2026-06-20',
-        fromMemberId: from.id,
-        toMemberId: to.id,
+        executorMemberId: exec.id,
+        approverMemberId: approver.id,
+        progressManagerMemberId: pm.id,
         successorPlanId: succ.id,
         memo: 'メモ',
       } satisfies Parameters<typeof CreatePlanType>[0]['body'],
     });
-    expect(dto.fromMember?.id).toBe(from.id);
-    expect(dto.toMember?.id).toBe(to.id);
+    expect(dto.executor?.id).toBe(exec.id);
+    expect(dto.approver?.id).toBe(approver.id);
+    expect(dto.progressManager?.id).toBe(pm.id);
     expect(dto.dueDate).toBe('2026-06-20');
     expect(dto.successorPlanId).toBe('succ');
   });
@@ -594,7 +699,7 @@ describe('createPlan', () => {
           title: '新規',
           category: 'design',
           scheduledDate: '2026-06-10',
-          fromMemberId: 'ghost',
+          executorMemberId: 'ghost',
         } satisfies Parameters<typeof CreatePlanType>[0]['body'],
       }),
     ).rejects.toMatchObject({ code: 'INVALID_MEMBER', status: 422 });
@@ -638,14 +743,19 @@ describe('createPlan', () => {
 // =============================================================================
 
 describe('duplicatePlan', () => {
-  it('同内容・ready 状態の新規予定を作る (successor/履歴はコピーしない)', async () => {
-    const from = seedMember();
-    const to = seedMember();
+  it('同内容・in_progress 状態の新規予定を作る (successor/FROM/TO 履歴はコピーしない)', async () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const pm = seedMember();
     const source = seedPlan({
       title: '元',
       category: 'review',
-      fromMemberId: from.id,
-      toMemberId: to.id,
+      executorMemberId: exec.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+      // FROM/TO 履歴が付いていてもコピーしない。
+      fromMemberId: pm.id,
+      toMemberId: exec.id,
       successorPlanId: 'something',
       memo: 'メモ',
       dueDate: new Date('2026-06-20T00:00:00Z'),
@@ -654,11 +764,16 @@ describe('duplicatePlan', () => {
     const dto = await duplicatePlan({ itemId: ITEM_ID, planId: source.id });
     expect(dto.id).not.toBe(source.id);
     expect(dto.title).toBe('元');
-    expect(dto.fromMember?.id).toBe(from.id);
-    expect(dto.toMember?.id).toBe(to.id);
+    // 役割はコピーする。
+    expect(dto.executor?.id).toBe(exec.id);
+    expect(dto.approver?.id).toBe(approver.id);
+    expect(dto.progressManager?.id).toBe(pm.id);
     expect(dto.memo).toBe('メモ');
+    // FROM/TO 履歴・後続・イベントはコピーしない (新規は未TOSS)。
+    expect(dto.fromMember).toBeNull();
+    expect(dto.toMember).toBeNull();
     expect(dto.successorPlanId).toBeNull();
-    expect(dto.ballState).toBe('ready');
+    expect(dto.ballState).toBe('in_progress');
     expect(dto.latestEvent).toBeNull();
   });
 
@@ -774,76 +889,91 @@ describe('updatePlan', () => {
     expect(dto.successorPlanId).toBeNull();
   });
 
-  it('ready 状態なら FROM/TO を変更できる', async () => {
-    const from = seedMember();
-    const to = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: to.id });
-    const newFrom = seedMember();
+  it('in_progress 状態なら実施者/承認者を変更できる', async () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id, approverMemberId: approver.id });
+    const newExec = seedMember();
     const dto = await updatePlan({
       itemId: ITEM_ID,
       planId: plan.id,
       projectId: PROJECT_ID,
-      body: { fromMemberId: newFrom.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
+      body: { executorMemberId: newExec.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
     });
-    expect(dto.fromMember?.id).toBe(newFrom.id);
+    expect(dto.executor?.id).toBe(newExec.id);
   });
 
-  it('toss_undone 後 (ready) でも FROM/TO を変更できる', async () => {
-    const from = seedMember();
-    const to = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: to.id });
-    seedBallEvent({ planId: plan.id, eventType: 'tossed', occurredAt: new Date('2026-06-05T00:00:00Z') });
-    seedBallEvent({ planId: plan.id, eventType: 'toss_undone', occurredAt: new Date('2026-06-06T00:00:00Z') });
-    const newTo = seedMember();
+  it('sent_back 後でも実施者/承認者を変更できる', async () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id, approverMemberId: approver.id });
+    seedBallEvent({ planId: plan.id, eventType: 'review_requested', occurredAt: new Date('2026-06-05T00:00:00Z') });
+    seedBallEvent({ planId: plan.id, eventType: 'sent_back', occurredAt: new Date('2026-06-06T00:00:00Z') });
+    const newApprover = seedMember();
     const dto = await updatePlan({
       itemId: ITEM_ID,
       planId: plan.id,
       projectId: PROJECT_ID,
-      body: { toMemberId: newTo.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
+      body: { approverMemberId: newApprover.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
     });
-    expect(dto.toMember?.id).toBe(newTo.id);
+    expect(dto.approver?.id).toBe(newApprover.id);
   });
 
-  it('TOSS 済みは FROM/TO 変更不可で 422 FROM_TO_LOCKED', async () => {
-    const from = seedMember();
-    const to = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: to.id });
+  it('確認依頼後は実施者/承認者を変更できず 422 ROLES_LOCKED', async () => {
+    const exec = seedMember();
+    const approver = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id, approverMemberId: approver.id });
+    seedBallEvent({ planId: plan.id, eventType: 'review_requested' });
+    const newExec = seedMember();
+    await expect(
+      updatePlan({
+        itemId: ITEM_ID,
+        planId: plan.id,
+        projectId: PROJECT_ID,
+        body: { executorMemberId: newExec.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
+      }),
+    ).rejects.toMatchObject({ code: 'ROLES_LOCKED', status: 422 });
+  });
+
+  it('TOSS 前なら進行責任者を変更できる', async () => {
+    const exec = seedMember();
+    const pm = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id, progressManagerMemberId: pm.id });
+    seedBallEvent({ planId: plan.id, eventType: 'approved' });
+    const newPm = seedMember();
+    const dto = await updatePlan({
+      itemId: ITEM_ID,
+      planId: plan.id,
+      projectId: PROJECT_ID,
+      body: { progressManagerMemberId: newPm.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
+    });
+    expect(dto.progressManager?.id).toBe(newPm.id);
+  });
+
+  it('TOSS 済みは進行責任者を変更できず 422 ROLES_LOCKED', async () => {
+    const pm = seedMember();
+    const plan = seedPlan({ progressManagerMemberId: pm.id, fromMemberId: pm.id, toMemberId: 'x' });
     seedBallEvent({ planId: plan.id, eventType: 'tossed' });
-    const newFrom = seedMember();
+    const newPm = seedMember();
     await expect(
       updatePlan({
         itemId: ITEM_ID,
         planId: plan.id,
         projectId: PROJECT_ID,
-        body: { fromMemberId: newFrom.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
+        body: { progressManagerMemberId: newPm.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
       }),
-    ).rejects.toMatchObject({ code: 'FROM_TO_LOCKED', status: 422 });
+    ).rejects.toMatchObject({ code: 'ROLES_LOCKED', status: 422 });
   });
 
-  it('FROM と TO が同一なら 422 INVALID_MEMBER', async () => {
-    const from = seedMember();
-    const to = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: to.id });
+  it('変更後の実施者がプロジェクトに無ければ 422 INVALID_MEMBER', async () => {
+    const exec = seedMember();
+    const plan = seedPlan({ executorMemberId: exec.id });
     await expect(
       updatePlan({
         itemId: ITEM_ID,
         planId: plan.id,
         projectId: PROJECT_ID,
-        body: { fromMemberId: to.id } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
-      }),
-    ).rejects.toMatchObject({ code: 'INVALID_MEMBER', status: 422 });
-  });
-
-  it('変更後の FROM/TO がプロジェクトに無ければ 422 INVALID_MEMBER', async () => {
-    const from = seedMember();
-    const to = seedMember();
-    const plan = seedPlan({ fromMemberId: from.id, toMemberId: to.id });
-    await expect(
-      updatePlan({
-        itemId: ITEM_ID,
-        planId: plan.id,
-        projectId: PROJECT_ID,
-        body: { fromMemberId: 'ghost' } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
+        body: { executorMemberId: 'ghost' } satisfies Parameters<typeof UpdatePlanType>[0]['body'],
       }),
     ).rejects.toMatchObject({ code: 'INVALID_MEMBER', status: 422 });
   });

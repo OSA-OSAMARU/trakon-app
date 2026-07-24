@@ -1,5 +1,4 @@
 import { prisma, type Prisma } from '@trakon/db';
-import { deriveBallHolder, pickLatestBallEvent } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import { toPlanDTO, type PlanDTO } from './plans.js';
@@ -19,6 +18,9 @@ export type ShareViewDTO = {
 };
 
 const PLAN_INCLUDE = {
+  executor: true,
+  approver: true,
+  progressManager: true,
   fromMember: true,
   toMember: true,
   ballEvents: {
@@ -255,49 +257,16 @@ export async function shareComplete(input: {
       },
     });
 
-    let autoTossed: Awaited<ReturnType<typeof loadPlanWithIncludes>> | null = null;
-    if (plan.successorPlanId) {
-      const successor = await tx.plan.findFirst({
-        where: { id: plan.successorPlanId, itemId, deletedAt: null },
-        include: PLAN_INCLUDE,
-      });
-      const succLatest = successor
-        ? pickLatestBallEvent(
-            successor.ballEvents.map((e) => ({
-              eventType: e.eventType as 'tossed' | 'completed',
-              source: e.source as 'human' | 'auto_chain',
-              occurredAt: e.occurredAt,
-            })),
-          )
-        : null;
-      const succHolder = successor
-        ? deriveBallHolder(
-            { fromMemberId: successor.fromMemberId, toMemberId: successor.toMemberId, status: successor.status as 'active' | 'completed' | 'canceled' },
-            succLatest,
-          )
-        : null;
-      if (successor && successor.status === 'active' && succHolder?.state === 'ready') {
-        await tx.ballEvent.create({
-          data: {
-            planId: successor.id,
-            eventType: 'tossed',
-            source: 'auto_chain',
-            actorMemberId: null,
-            actorUserId: null,
-          },
-        });
-        autoTossed = await loadPlanWithIncludes(tx, successor.id, itemId);
-      }
-    }
-
+    // 完了時の自動連鎖 TOSS は廃止済み (#117)。後続は未 TOSS のまま残す。
+    // NOTE(#131): 共有リンク (非会員=クライアント) 操作の新 3 ロール対応は別 issue。
+    // 現状は Phase 0 の簡易挙動 (tossed/completed イベントのみ) を維持する。
     return {
       completed: await loadPlanWithIncludes(tx, plan.id, itemId),
-      autoTossed,
     };
   });
 
   return {
     plan: toPlanDTO(result.completed, []),
-    autoTossed: result.autoTossed ? toPlanDTO(result.autoTossed, []) : null,
+    autoTossed: null,
   };
 }

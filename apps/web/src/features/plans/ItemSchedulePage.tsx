@@ -442,14 +442,17 @@ function resolveHolders(itemPlans: Plan[]): MemberRef[] {
       successorPlanId: p.successorPlanId,
       status: p.status,
       ballState: p.ballState,
-      fromMemberId: p.fromMember?.id ?? null,
+      executorMemberId: p.executor?.id ?? null,
+      approverMemberId: p.approver?.id ?? null,
+      progressManagerMemberId: p.progressManager?.id ?? null,
       toMemberId: p.toMember?.id ?? null,
     })),
   );
   const refById = new Map<string, MemberRef>();
   for (const p of itemPlans) {
-    if (p.fromMember) refById.set(p.fromMember.id, p.fromMember);
-    if (p.toMember) refById.set(p.toMember.id, p.toMember);
+    for (const m of [p.executor, p.approver, p.progressManager, p.fromMember, p.toMember]) {
+      if (m) refById.set(m.id, m);
+    }
   }
   return holderIds
     .map((id) => refById.get(id))
@@ -1125,11 +1128,13 @@ function BallChip({
         <div className="mt-1 border-t border-current/10 pt-1 text-[10px] leading-tight">
           <div className="flex items-center gap-1">
             <span className="opacity-60">実施者</span>
-            <span className="line-clamp-1 font-medium">{plan.fromMember?.name ?? '—'}</span>
+            <span className="line-clamp-1 font-medium">{plan.executor?.name ?? '—'}</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="opacity-60">確認者</span>
-            <span className="line-clamp-1 font-medium">{plan.toMember?.name ?? '—'}</span>
+            <span className="opacity-60">{plan.approver ? '承認者' : '進行責任者'}</span>
+            <span className="line-clamp-1 font-medium">
+              {(plan.approver ?? plan.progressManager)?.name ?? '—'}
+            </span>
             {plan.ballHolder && (
               <Badge variant="secondary" className="ml-auto px-1 py-0 text-[9px]">
                 {plan.ballHolder.name}
