@@ -94,8 +94,14 @@ export async function createPlan(args: {
   category?: string;
   scheduledDate?: Date;
   dueDate?: Date | null;
+  // 役割 (#131)
+  executorMemberId?: string | null;
+  approverMemberId?: string | null;
+  progressManagerMemberId?: string | null;
+  // TOSS 履歴スナップショット
   fromMemberId?: string | null;
   toMemberId?: string | null;
+  successorPlanId?: string | null;
   status?: string;
 }) {
   return prisma.plan.create({
@@ -105,8 +111,12 @@ export async function createPlan(args: {
       category: args.category ?? 'design',
       scheduledDate: args.scheduledDate ?? new Date('2026-06-01'),
       dueDate: args.dueDate ?? null,
+      executorMemberId: args.executorMemberId ?? null,
+      approverMemberId: args.approverMemberId ?? null,
+      progressManagerMemberId: args.progressManagerMemberId ?? null,
       fromMemberId: args.fromMemberId ?? null,
       toMemberId: args.toMemberId ?? null,
+      successorPlanId: args.successorPlanId ?? null,
       status: args.status ?? 'active',
     },
   });
@@ -114,7 +124,16 @@ export async function createPlan(args: {
 
 export async function createBallEvent(args: {
   planId: string;
-  eventType: 'tossed' | 'completed' | 'toss_undone' | 'completion_undone';
+  eventType:
+    | 'tossed'
+    | 'completed'
+    | 'toss_undone'
+    | 'completion_undone'
+    | 'review_requested'
+    | 'approved'
+    | 'sent_back'
+    | 'review_request_undone'
+    | 'approval_undone';
   source?: 'human' | 'auto_chain';
   actorMemberId?: string | null;
   actorUserId?: string | null;

@@ -1,19 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import {
-  ArrowRight,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  Undo2,
-} from 'lucide-react';
-import { toast } from 'sonner';
+import { ArrowRight, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -24,7 +15,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/components/ui/utils';
-import { ApiClientError } from '@/lib/api';
 import { projectsApi, projectsQueryKey, type ProjectItem } from '@/features/projects/api';
 import type { ProjectMember } from '@/features/projects/membersApi';
 import { plansApi, plansQueryKey, type Plan } from './api';
@@ -117,80 +107,12 @@ function MemberBoard({
   items: ProjectItem[];
   itemNameById: Map<string, string>;
 }) {
-  const qc = useQueryClient();
   const [, setParams] = useSearchParams();
   const listKey = plansQueryKey.projectList(projectId);
 
   const plansQuery = useQuery({
     queryKey: listKey,
     queryFn: () => plansApi.listByProject(projectId),
-  });
-
-  const invalidateAll = (itemId: string) => {
-    qc.invalidateQueries({ queryKey: listKey });
-    qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
-  };
-
-  /** plan.toMember を新ホルダーとして楽観更新 (toMember 既定先へ前進)。 */
-  const tossMut = useMutation({
-    mutationFn: (plan: Plan) => plansApi.toss(projectId, plan.itemId, plan.id),
-    onMutate: async (plan) => {
-      await qc.cancelQueries({ queryKey: listKey });
-      const prev = qc.getQueryData<Plan[]>(listKey);
-      if (prev) {
-        qc.setQueryData<Plan[]>(
-          listKey,
-          prev.map((p) =>
-            p.id === plan.id
-              ? { ...p, ballHolder: p.toMember, ballState: 'tossed' }
-              : p,
-          ),
-        );
-      }
-      return { prev };
-    },
-    onError: (err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(listKey, ctx.prev);
-      toast.error(err instanceof ApiClientError ? err.message : 'TOSS に失敗しました');
-    },
-    onSuccess: () => toast.success('TOSS しました'),
-    onSettled: (_d, _e, plan) => invalidateAll(plan.itemId),
-  });
-
-  /** tossed の差し戻し: fromMember を再びホルダーに戻す楽観更新。 */
-  const undoMut = useMutation({
-    mutationFn: (plan: Plan) => plansApi.undoToss(projectId, plan.itemId, plan.id),
-    onMutate: async (plan) => {
-      await qc.cancelQueries({ queryKey: listKey });
-      const prev = qc.getQueryData<Plan[]>(listKey);
-      if (prev) {
-        qc.setQueryData<Plan[]>(
-          listKey,
-          prev.map((p) =>
-            p.id === plan.id
-              ? { ...p, ballHolder: p.fromMember, ballState: 'ready' }
-              : p,
-          ),
-        );
-      }
-      return { prev };
-    },
-    onError: (err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(listKey, ctx.prev);
-      toast.error(err instanceof ApiClientError ? err.message : '差し戻しに失敗しました');
-    },
-    onSuccess: () => toast.success('差し戻しました'),
-    onSettled: (_d, _e, plan) => invalidateAll(plan.itemId),
-  });
-
-  const completeMut = useMutation({
-    mutationFn: (plan: Plan) => plansApi.complete(projectId, plan.itemId, plan.id),
-    onSuccess: (_d, plan) => {
-      invalidateAll(plan.itemId);
-      toast.success('完了しました');
-    },
-    onError: (e) =>
-      toast.error(e instanceof ApiClientError ? e.message : '完了に失敗しました'),
   });
 
   const plans = useMemo(() => {
@@ -260,13 +182,7 @@ function MemberBoard({
               member={m}
               plans={plansByHolder.get(m.id) ?? []}
               completedPlans={completedByHolder.get(m.id) ?? []}
-              tossing={tossMut.isPending}
-              undoing={undoMut.isPending}
-              completing={completeMut.isPending}
               itemNameById={itemNameById}
-              onToss={(plan) => tossMut.mutate(plan)}
-              onUndo={(plan) => undoMut.mutate(plan)}
-              onComplete={(plan) => completeMut.mutate(plan)}
               onOpenDetail={openDetail}
             />
           ))}
@@ -297,25 +213,13 @@ function MemberColumn({
   member,
   plans,
   completedPlans,
-  tossing,
-  undoing,
-  completing,
   itemNameById,
-  onToss,
-  onUndo,
-  onComplete,
   onOpenDetail,
 }: {
   member: ProjectMember;
   plans: Plan[];
   completedPlans: Plan[];
-  tossing: boolean;
-  undoing: boolean;
-  completing: boolean;
   itemNameById: Map<string, string>;
-  onToss: (plan: Plan) => void;
-  onUndo: (plan: Plan) => void;
-  onComplete: (plan: Plan) => void;
   onOpenDetail: (planId: string) => void;
 }) {
   return (
@@ -339,13 +243,7 @@ function MemberColumn({
             <PlanCard
               key={p.id}
               plan={p}
-              tossing={tossing}
-              undoing={undoing}
-              completing={completing}
               itemName={itemNameById.get(p.itemId)}
-              onToss={onToss}
-              onUndo={onUndo}
-              onComplete={onComplete}
               onOpenDetail={onOpenDetail}
             />
           ))
@@ -454,39 +352,36 @@ function CompletedPlanCard({
   );
 }
 
+const KANBAN_STATE_LABEL: Record<Plan['ballState'], string> = {
+  in_progress: '実施中',
+  review_pending: '確認待ち',
+  approved: 'TOSS待ち',
+  tossed: 'TOSS済',
+  sent_back: '差し戻し',
+  completed: '完了',
+};
+
 function PlanCard({
   plan,
-  tossing,
-  undoing,
-  completing,
   itemName,
-  onToss,
-  onUndo,
-  onComplete,
   onOpenDetail,
 }: {
   plan: Plan;
-  tossing: boolean;
-  undoing: boolean;
-  completing: boolean;
   itemName?: string;
-  onToss: (plan: Plan) => void;
-  onUndo: (plan: Plan) => void;
-  onComplete: (plan: Plan) => void;
   onOpenDetail: (planId: string) => void;
 }) {
   const cat = CATEGORY_STYLE[plan.category];
   const tossed = plan.ballState === 'tossed';
-  const ready = plan.ballState === 'ready';
+  const pending = plan.ballState !== 'tossed' && plan.ballState !== 'completed';
   const overdue =
-    ready &&
-    !!plan.dueDate &&
-    new Date(plan.dueDate) < new Date(new Date().toDateString());
+    pending && !!plan.dueDate && new Date(plan.dueDate) < new Date(new Date().toDateString());
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={() => onOpenDetail(plan.id)}
       className={cn(
-        'rounded-md border bg-card shadow-sm',
+        'block w-full rounded-md border bg-card text-left shadow-sm hover:bg-accent/30',
         overdue ? 'border-red-400' : tossed ? 'border-slate-300' : cat.border,
       )}
     >
@@ -499,18 +394,12 @@ function PlanCard({
       >
         <span>{cat.label}</span>
         <Badge variant="secondary" className="ml-auto px-1 py-0 text-[10px]">
-          {tossed ? 'TOSS済' : '準備中'}
+          {KANBAN_STATE_LABEL[plan.ballState]}
         </Badge>
       </div>
-      {/* 本体 (クリックで詳細) */}
-      <button
-        type="button"
-        onClick={() => onOpenDetail(plan.id)}
-        className="block w-full px-2 py-1.5 text-left text-xs hover:bg-accent/30"
-      >
-        <p className={cn('line-clamp-2 font-medium', overdue && 'text-red-700')}>
-          {plan.title}
-        </p>
+      {/* 本体 */}
+      <div className="px-2 py-1.5 text-xs">
+        <p className={cn('line-clamp-2 font-medium', overdue && 'text-red-700')}>{plan.title}</p>
         {itemName && (
           <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{itemName}</p>
         )}
@@ -518,63 +407,19 @@ function PlanCard({
           {format(new Date(plan.scheduledDate), 'M/d')}
           {plan.dueDate ? ` 〜 期日 ${format(new Date(plan.dueDate), 'M/d')}` : ''}
         </p>
-        {/* FROM → TO の流れ */}
-        {(plan.fromMember || plan.toMember) && (
+        {/* 実施者 → 承認者 の流れ */}
+        {(plan.executor || plan.approver) && (
           <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-            <span className="truncate">{plan.fromMember?.name ?? '—'}</span>
-            <ArrowRight className="size-2.5 shrink-0 opacity-60" />
-            <span className="truncate">{plan.toMember?.name ?? '—'}</span>
+            <span className="truncate">{plan.executor?.name ?? '—'}</span>
+            {plan.approver && (
+              <>
+                <ArrowRight className="size-2.5 shrink-0 opacity-60" />
+                <span className="truncate">{plan.approver.name}</span>
+              </>
+            )}
           </p>
         )}
-      </button>
-      {/* アクション (状態で出し分け) */}
-      <div className="flex flex-wrap items-center justify-end gap-1 px-2 pb-1.5">
-        {ready && plan.toMember && (
-          <Button
-            size="sm"
-            className="h-7 gap-1 text-[11px]"
-            onClick={() => onToss(plan)}
-            disabled={tossing}
-          >
-            {tossing ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <ArrowRight className="size-3" />
-            )}
-            {plan.toMember.name}へトス
-          </Button>
-        )}
-        {tossed && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 text-[11px]"
-            onClick={() => onUndo(plan)}
-            disabled={undoing}
-          >
-            {undoing ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <Undo2 className="size-3" />
-            )}
-            差し戻す
-          </Button>
-        )}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 gap-1 text-[11px]"
-          onClick={() => onComplete(plan)}
-          disabled={completing}
-        >
-          {completing ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <CheckCircle2 className="size-3" />
-          )}
-          完了
-        </Button>
       </div>
-    </div>
+    </button>
   );
 }

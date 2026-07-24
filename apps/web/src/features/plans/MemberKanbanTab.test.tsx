@@ -80,13 +80,16 @@ const plan = (over: Partial<Plan> = {}): Plan => ({
   category: 'design',
   scheduledDate: '2026-06-10',
   dueDate: null,
+  executor: memberRef(),
+  approver: memberRef({ id: 'm2', name: '鈴木 花子', memberType: 'client' }),
+  progressManager: memberRef(),
   fromMember: memberRef(),
   toMember: memberRef({ id: 'm2', name: '鈴木 花子', memberType: 'client' }),
   successorPlanId: null,
   status: 'active',
   memo: null,
   ballHolder: memberRef(),
-  ballState: 'ready',
+  ballState: 'in_progress',
   latestEvent: null,
   completedAt: null,
   createdAt: '2026-06-01T00:00:00.000Z',
@@ -197,132 +200,44 @@ describe('MemberKanbanTab', () => {
     expect(screen.getAllByText('担当中の予定はありません').length).toBeGreaterThan(0);
   });
 
-  it('ボール保持者の列に担当中の予定 (ready) を表示し、トスできる', async () => {
+  it('ボール保持者の列に担当中の予定を表示し、状態バッジ・件数・制作物名を出す', async () => {
     const p = plan({
       id: 'plan-1',
       ballHolder: memberRef({ id: 'm1' }),
-      ballState: 'ready',
-      toMember: memberRef({ id: 'm2', name: '鈴木 花子', memberType: 'client' }),
+      ballState: 'in_progress',
     });
-    let tossCalled = false;
     stub({ plans: [p] });
-    server.use(
-      http.post('*/api/v1/projects/p1/items/it1/plans/plan-1/toss', () => {
-        tossCalled = true;
-        return HttpResponse.json({ data: { plan: p, autoTossed: null } });
-      }),
-    );
 
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderBoard();
 
     expect(await screen.findByText('デザイン作成')).toBeInTheDocument();
     // 担当件数バッジ。
     expect(screen.getByText('担当 1 件')).toBeInTheDocument();
-    // 準備中ラベルと制作物名。
-    expect(screen.getByText('準備中')).toBeInTheDocument();
+    // 状態バッジ (KANBAN_STATE_LABEL) と制作物名。
+    expect(screen.getByText('実施中')).toBeInTheDocument();
     expect(screen.getByText('LP制作')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /鈴木 花子へトス/ }));
-    await waitFor(() => expect(tossCalled).toBe(true));
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('TOSS しました'));
+    // インラインのトス/完了ボタンは廃止され、カード自体がクリック対象になる (#131)。
+    expect(screen.queryByRole('button', { name: /へトス/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /完了/ })).not.toBeInTheDocument();
   });
 
-  it('toss が失敗するとロールバックしエラートーストを出す', async () => {
-    const p = plan({ id: 'plan-1', ballState: 'ready', ballHolder: memberRef({ id: 'm1' }) });
-    stub({ plans: [p] });
-    server.use(
-      http.post('*/api/v1/projects/p1/items/it1/plans/plan-1/toss', () =>
-        HttpResponse.json({ error: { code: 'CONFLICT', message: 'トス不可' } }, { status: 409 }),
-      ),
-    );
+  it('状態に応じたカンバンバッジ (確認待ち / TOSS待ち / TOSS済) を表示する', async () => {
+    const reviewing = plan({ id: 'a', ballState: 'review_pending', ballHolder: memberRef({ id: 'm1' }) });
+    const approved = plan({ id: 'b', ballState: 'approved', ballHolder: memberRef({ id: 'm1' }) });
+    const tossed = plan({ id: 'c', ballState: 'tossed', ballHolder: memberRef({ id: 'm1' }) });
+    stub({ plans: [reviewing, approved, tossed] });
 
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderBoard();
 
-    await user.click(await screen.findByRole('button', { name: /へトス/ }));
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('トス不可'));
+    expect(await screen.findByText('確認待ち')).toBeInTheDocument();
+    expect(screen.getByText('TOSS待ち')).toBeInTheDocument();
+    expect(screen.getByText('TOSS済')).toBeInTheDocument();
   });
 
-  it('tossed の予定は差し戻し (undoToss) できる', async () => {
+  it('overdue (未完了かつ期日超過) の予定は強調表示する', async () => {
     const p = plan({
       id: 'plan-1',
-      ballState: 'tossed',
-      ballHolder: memberRef({ id: 'm1' }),
-    });
-    let undoCalled = false;
-    stub({ plans: [p] });
-    server.use(
-      http.post('*/api/v1/projects/p1/items/it1/plans/plan-1/toss-undo', () => {
-        undoCalled = true;
-        return HttpResponse.json({ data: { plan: p } });
-      }),
-    );
-
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
-    renderBoard();
-
-    expect(await screen.findByText('TOSS済')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /差し戻す/ }));
-    await waitFor(() => expect(undoCalled).toBe(true));
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('差し戻しました'));
-  });
-
-  it('差し戻しが失敗するとエラートーストを出す', async () => {
-    const p = plan({ id: 'plan-1', ballState: 'tossed', ballHolder: memberRef({ id: 'm1' }) });
-    stub({ plans: [p] });
-    server.use(
-      http.post('*/api/v1/projects/p1/items/it1/plans/plan-1/toss-undo', () =>
-        HttpResponse.json({ error: { code: 'X', message: '戻せません' } }, { status: 422 }),
-      ),
-    );
-
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
-    renderBoard();
-
-    await user.click(await screen.findByRole('button', { name: /差し戻す/ }));
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('戻せません'));
-  });
-
-  it('予定を完了でき、完了 API 失敗時はエラートーストを出す', async () => {
-    const p = plan({ id: 'plan-1', ballState: 'ready', ballHolder: memberRef({ id: 'm1' }) });
-    stub({ plans: [p] });
-    server.use(
-      http.post('*/api/v1/projects/p1/items/it1/plans/plan-1/complete', () =>
-        HttpResponse.json({ error: { code: 'X', message: '完了できません' } }, { status: 422 }),
-      ),
-    );
-
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
-    renderBoard();
-
-    await user.click(await screen.findByRole('button', { name: /完了/ }));
-    await waitFor(() => expect(toastError).toHaveBeenCalledWith('完了できません'));
-  });
-
-  it('完了成功時は成功トーストを出す', async () => {
-    const p = plan({ id: 'plan-1', ballState: 'ready', ballHolder: memberRef({ id: 'm1' }) });
-    let completeCalled = false;
-    stub({ plans: [p] });
-    server.use(
-      http.post('*/api/v1/projects/p1/items/it1/plans/plan-1/complete', () => {
-        completeCalled = true;
-        return HttpResponse.json({ data: { plan: p, autoTossed: null } });
-      }),
-    );
-
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
-    renderBoard();
-
-    await user.click(await screen.findByRole('button', { name: /完了/ }));
-    await waitFor(() => expect(completeCalled).toBe(true));
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('完了しました'));
-  });
-
-  it('overdue (ready かつ期日超過) の予定は強調表示する', async () => {
-    const p = plan({
-      id: 'plan-1',
-      ballState: 'ready',
+      ballState: 'in_progress',
       ballHolder: memberRef({ id: 'm1' }),
       dueDate: '2020-01-01', // 過去 → overdue
       title: '遅延タスク',
@@ -335,7 +250,7 @@ describe('MemberKanbanTab', () => {
   });
 
   it('カードクリックで詳細モーダルが開く (URL に planId が乗る)', async () => {
-    const p = plan({ id: 'plan-1', ballState: 'ready', ballHolder: memberRef({ id: 'm1' }) });
+    const p = plan({ id: 'plan-1', ballState: 'in_progress', ballHolder: memberRef({ id: 'm1' }) });
     stub({ plans: [p] });
     server.use(
       http.get('*/api/v1/projects/p1/items/it1/plans/plan-1', () =>

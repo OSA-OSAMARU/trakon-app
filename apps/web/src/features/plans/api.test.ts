@@ -27,13 +27,16 @@ const stubPlan: Plan = {
   category: 'design',
   scheduledDate: '2026-01-01',
   dueDate: null,
+  executor: null,
+  approver: null,
+  progressManager: null,
   fromMember: null,
   toMember: null,
   successorPlanId: null,
   status: 'active',
   memo: null,
   ballHolder: null,
-  ballState: 'ready',
+  ballState: 'in_progress',
   latestEvent: null,
   completedAt: null,
   createdAt: '2026-01-01T00:00:00Z',
@@ -183,21 +186,85 @@ describe('plansApi', () => {
     expect(body).toEqual({ successorPlanId: 'plan-2' });
   });
 
-  it('toss: body 指定時はそれを送る', async () => {
-    let body: unknown = null;
-    const result: BallActionResult = { plan: stubPlan, autoTossed: null };
+  it('requestReview: POST で空 body を送り { plan } を返す', async () => {
+    let body: unknown = 'unset';
     server.use(
-      http.post('*/api/v1/projects/proj-1/items/item-1/plans/plan-1/toss', async ({ request }) => {
-        body = await request.json();
-        return HttpResponse.json({ data: result });
-      }),
+      http.post(
+        '*/api/v1/projects/proj-1/items/item-1/plans/plan-1/request-review',
+        async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ data: { plan: stubPlan } });
+        },
+      ),
     );
-    const res = await plansApi.toss(P, IT, PL, { toMemberId: 'm-1' });
-    expect(res).toEqual(result);
-    expect(body).toEqual({ toMemberId: 'm-1' });
+    const res = await plansApi.requestReview(P, IT, PL);
+    expect(res).toEqual({ plan: stubPlan });
+    expect(body).toEqual({});
   });
 
-  it('toss: body 未指定時は空 body を送る', async () => {
+  it('undoRequestReview: POST で { plan } を返す', async () => {
+    server.use(
+      http.post('*/api/v1/projects/proj-1/items/item-1/plans/plan-1/request-review-undo', () =>
+        HttpResponse.json({ data: { plan: stubPlan } }),
+      ),
+    );
+    const res = await plansApi.undoRequestReview(P, IT, PL);
+    expect(res).toEqual({ plan: stubPlan });
+  });
+
+  it('approve: POST で BallActionResult を返す', async () => {
+    const result: BallActionResult = { plan: stubPlan, autoTossed: null };
+    server.use(
+      http.post('*/api/v1/projects/proj-1/items/item-1/plans/plan-1/approve', () =>
+        HttpResponse.json({ data: result }),
+      ),
+    );
+    const res = await plansApi.approve(P, IT, PL);
+    expect(res).toEqual(result);
+  });
+
+  it('undoApprove: POST で { plan } を返す', async () => {
+    server.use(
+      http.post('*/api/v1/projects/proj-1/items/item-1/plans/plan-1/approve-undo', () =>
+        HttpResponse.json({ data: { plan: stubPlan } }),
+      ),
+    );
+    const res = await plansApi.undoApprove(P, IT, PL);
+    expect(res).toEqual({ plan: stubPlan });
+  });
+
+  it('sendBack: note 指定時はそれを送る', async () => {
+    let body: unknown = null;
+    server.use(
+      http.post(
+        '*/api/v1/projects/proj-1/items/item-1/plans/plan-1/send-back',
+        async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ data: { plan: stubPlan } });
+        },
+      ),
+    );
+    const res = await plansApi.sendBack(P, IT, PL, '直してください');
+    expect(res).toEqual({ plan: stubPlan });
+    expect(body).toEqual({ note: '直してください' });
+  });
+
+  it('sendBack: note 未指定時は空 body を送る', async () => {
+    let body: unknown = 'unset';
+    server.use(
+      http.post(
+        '*/api/v1/projects/proj-1/items/item-1/plans/plan-1/send-back',
+        async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ data: { plan: stubPlan } });
+        },
+      ),
+    );
+    await plansApi.sendBack(P, IT, PL);
+    expect(body).toEqual({});
+  });
+
+  it('toss: POST で空 body を送り BallActionResult を返す', async () => {
     let body: unknown = 'unset';
     const result: BallActionResult = { plan: stubPlan, autoTossed: null };
     server.use(
@@ -206,19 +273,9 @@ describe('plansApi', () => {
         return HttpResponse.json({ data: result });
       }),
     );
-    await plansApi.toss(P, IT, PL);
-    expect(body).toEqual({});
-  });
-
-  it('complete: POST で BallActionResult を返す', async () => {
-    const result: BallActionResult = { plan: stubPlan, autoTossed: null };
-    server.use(
-      http.post('*/api/v1/projects/proj-1/items/item-1/plans/plan-1/complete', () =>
-        HttpResponse.json({ data: result }),
-      ),
-    );
-    const res = await plansApi.complete(P, IT, PL);
+    const res = await plansApi.toss(P, IT, PL);
     expect(res).toEqual(result);
+    expect(body).toEqual({});
   });
 
   it('undoToss: POST で { plan } を返す', async () => {
@@ -228,16 +285,6 @@ describe('plansApi', () => {
       ),
     );
     const res = await plansApi.undoToss(P, IT, PL);
-    expect(res).toEqual({ plan: stubPlan });
-  });
-
-  it('undoComplete: POST で { plan } を返す', async () => {
-    server.use(
-      http.post('*/api/v1/projects/proj-1/items/item-1/plans/plan-1/complete-undo', () =>
-        HttpResponse.json({ data: { plan: stubPlan } }),
-      ),
-    );
-    const res = await plansApi.undoComplete(P, IT, PL);
     expect(res).toEqual({ plan: stubPlan });
   });
 

@@ -74,7 +74,10 @@ function memberRef(m: ProjectMember) {
   };
 }
 
-/** Plan を組み立てる。ball 状態は ballState / ballHolder / status で表現する。 */
+/**
+ * Plan を組み立てる。ball 状態は ballState / ballHolder / status で表現する。
+ * 役割の既定: 実施者=自分, 承認者=他人, 進行責任者=自分 (#131)。
+ */
 function makePlan(overrides: Partial<Plan> = {}): Plan {
   return {
     id: PLAN_ID,
@@ -84,13 +87,16 @@ function makePlan(overrides: Partial<Plan> = {}): Plan {
     category: 'design',
     scheduledDate: '2026-06-21',
     dueDate: null,
+    executor: memberRef(meMember),
+    approver: memberRef(otherMember),
+    progressManager: memberRef(meMember),
     fromMember: memberRef(meMember),
     toMember: memberRef(otherMember),
     successorPlanId: null,
     status: 'active',
     memo: null,
     ballHolder: memberRef(meMember),
-    ballState: 'ready',
+    ballState: 'in_progress',
     latestEvent: null,
     completedAt: null,
     createdAt: '2026-06-01T00:00:00.000Z',
@@ -189,7 +195,7 @@ describe('BallDetailModal (integration)', () => {
   // ---------------------------------------------------------------------------
   // 基本表示
   // ---------------------------------------------------------------------------
-  it('詳細取得に成功するとタイトル・FROM/TO・履歴を描画する', async () => {
+  it('詳細取得に成功するとタイトル・実施者/承認者・履歴を描画する', async () => {
     setupReads({
       plan: makePlan({ ballState: 'tossed' }),
       events: [makeEvent()],
@@ -197,9 +203,13 @@ describe('BallDetailModal (integration)', () => {
     renderModal();
 
     expect(await screen.findByText('デザインカンプ作成')).toBeInTheDocument();
-    // FROM / TO メンバー
-    expect(screen.getByText('自分 太郎 (Acme)')).toBeInTheDocument();
-    expect(screen.getByText('他人 花子 (Acme)')).toBeInTheDocument();
+    // 実施者=自分 太郎 / 承認者=他人 花子 (進行責任者・TOSS履歴でも名前が重複しうるため getAllByText)
+    expect(screen.getAllByText('自分 太郎 (Acme)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('他人 花子 (Acme)').length).toBeGreaterThan(0);
+    // 役割ラベル
+    expect(screen.getByText('実施者')).toBeInTheDocument();
+    expect(screen.getByText('承認者')).toBeInTheDocument();
+    expect(screen.getByText('進行責任者')).toBeInTheDocument();
     // 履歴 (TOSS イベント)
     expect(screen.getByText('TOSS')).toBeInTheDocument();
     expect(screen.getByText('by 自分 太郎')).toBeInTheDocument();
@@ -258,12 +268,17 @@ describe('BallDetailModal (integration)', () => {
   // ---------------------------------------------------------------------------
   // ボール状態ごとの表示差分
   // ---------------------------------------------------------------------------
-  it('ready 状態: TOSS 待ちバナーと TOSS ボタンを表示する (本人=保持者)', async () => {
-    setupReads({ plan: makePlan({ ballState: 'ready' }), events: [] });
+  it('approved 状態: TOSS 待ちバナーと TOSS ボタンを表示する (進行責任者=本人)', async () => {
+    setupReads({
+      plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
+      events: [makeEvent({ eventType: 'approved' })],
+    });
     renderModal();
 
-    expect(await screen.findByText('TOSS 待ち')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /TOSS/ })).toBeInTheDocument();
+    // 状態バッジ (承認済み・TOSS待ち)。
+    expect(await screen.findByText('承認済み・TOSS待ち')).toBeInTheDocument();
+    // 進行責任者 (=本人) なので TOSS ボタンが出る。
+    expect(screen.getByRole('button', { name: /^TOSS$/ })).toBeInTheDocument();
   });
 
   it('completed 状態: 完了済みバナーを表示し TOSS/完了ボタンを出さない', async () => {
@@ -281,50 +296,64 @@ describe('BallDetailModal (integration)', () => {
   // ---------------------------------------------------------------------------
   // 認可分岐
   // ---------------------------------------------------------------------------
-  it('認可: 本人が保持者でないと TOSS ボタンを表示しない', async () => {
-    // ballHolder を他人にする。role は member。
+  it('認可: 進行責任者でない一般メンバーには TOSS ボタンを表示しない', async () => {
+    // 進行責任者・承認者を他人にする。role は member。
     setupReads({
-      plan: makePlan({ ballState: 'ready', ballHolder: memberRef(otherMember) }),
-      events: [],
+      plan: makePlan({
+        ballState: 'approved',
+        successorPlanId: 'plan-2',
+        progressManager: memberRef(otherMember),
+        approver: memberRef(otherMember),
+        ballHolder: memberRef(otherMember),
+      }),
+      events: [makeEvent({ eventType: 'approved' })],
     });
     renderModal();
 
     // 詳細が描画されるまで待つ
-    expect(await screen.findByText('TOSS 待ち')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /TOSS/ })).not.toBeInTheDocument();
+    expect(await screen.findByText('承認済み・TOSS待ち')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^TOSS$/ })).not.toBeInTheDocument();
   });
 
-  it('認可: 保持者でなくてもディレクターなら TOSS できる', async () => {
+  it('認可: 進行責任者でなくてもディレクターなら TOSS できる', async () => {
     setupReads(
       {
-        plan: makePlan({ ballState: 'ready', ballHolder: memberRef(otherMember) }),
+        plan: makePlan({
+          ballState: 'approved',
+          successorPlanId: 'plan-2',
+          progressManager: memberRef(otherMember),
+          ballHolder: memberRef(otherMember),
+        }),
+        events: [makeEvent({ eventType: 'approved' })],
+      },
+      { role: 'director' },
+    );
+    renderModal();
+
+    expect(await screen.findByRole('button', { name: /^TOSS$/ })).toBeInTheDocument();
+  });
+
+  it('認可: 実施者が未設定なら操作の代わりに案内文を表示する (director)', async () => {
+    setupReads(
+      {
+        plan: makePlan({ ballState: 'in_progress', executor: null, approver: null }),
         events: [],
       },
       { role: 'director' },
     );
     renderModal();
 
-    expect(await screen.findByRole('button', { name: /TOSS/ })).toBeInTheDocument();
-  });
-
-  it('認可: 実施者/確認者が未設定なら TOSS の代わりに案内文を表示する', async () => {
-    setupReads({
-      plan: makePlan({ ballState: 'ready', toMember: null }),
-      events: [],
-    });
-    renderModal();
-
-    expect(
-      await screen.findByText('実施者・確認者を設定するとTOSSできます'),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /TOSS/ })).not.toBeInTheDocument();
+    expect(await screen.findByText('実施者を設定すると操作できます')).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
   // TOSS mutation
   // ---------------------------------------------------------------------------
   it('TOSS 成功: toss エンドポイントへ POST する', async () => {
-    setupReads({ plan: makePlan({ ballState: 'ready' }), events: [] });
+    setupReads({
+      plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
+      events: [makeEvent({ eventType: 'approved' })],
+    });
     const tossed = makePlan({ ballState: 'tossed', ballHolder: memberRef(otherMember) });
     let tossCalled = false;
     server.use(
@@ -340,14 +369,17 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: /TOSS/ });
+    const btn = await screen.findByRole('button', { name: /^TOSS$/ });
     await user.click(btn);
 
     await waitFor(() => expect(tossCalled).toBe(true));
   });
 
   it('TOSS 失敗: サーバ 4xx でも例外で落ちずに描画が保たれる', async () => {
-    setupReads({ plan: makePlan({ ballState: 'ready' }), events: [] });
+    setupReads({
+      plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
+      events: [makeEvent({ eventType: 'approved' })],
+    });
     let tossCalled = false;
     server.use(
       http.post(
@@ -365,7 +397,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: /TOSS/ });
+    const btn = await screen.findByRole('button', { name: /^TOSS$/ });
     await user.click(btn);
 
     // mutation が呼ばれ、onError でトースト表示 (UI は維持される)
@@ -374,21 +406,21 @@ describe('BallDetailModal (integration)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 完了 mutation
+  // 承認 mutation (承認者なし → 実施者が承認 = 完了)
   // ---------------------------------------------------------------------------
-  it('完了 成功: tossed 状態で完了ボタンを押すと complete へ POST する', async () => {
+  it('承認 成功: 承認者なしの実施中で「完了」ボタンを押すと approve へ POST する', async () => {
     setupReads({
-      plan: makePlan({ ballState: 'tossed', ballHolder: memberRef(meMember) }),
-      events: [makeEvent()],
+      plan: makePlan({ ballState: 'in_progress', approver: null }),
+      events: [],
     });
-    let completeCalled = false;
+    let approveCalled = false;
     server.use(
       http.post(
-        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/complete`,
+        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/approve`,
         () => {
-          completeCalled = true;
+          approveCalled = true;
           return HttpResponse.json({
-            data: { plan: makePlan({ ballState: 'completed', status: 'completed' }), autoTossed: null },
+            data: { plan: makePlan({ ballState: 'approved', status: 'completed' }), autoTossed: null },
           });
         },
       ),
@@ -400,22 +432,22 @@ describe('BallDetailModal (integration)', () => {
     const btn = await screen.findByRole('button', { name: '完了' });
     await user.click(btn);
 
-    await waitFor(() => expect(completeCalled).toBe(true));
+    await waitFor(() => expect(approveCalled).toBe(true));
   });
 
-  it('完了 失敗: complete が 4xx を返してもクラッシュしない', async () => {
+  it('承認 失敗: approve が 4xx を返してもクラッシュしない', async () => {
     setupReads({
-      plan: makePlan({ ballState: 'tossed', ballHolder: memberRef(meMember) }),
-      events: [makeEvent()],
+      plan: makePlan({ ballState: 'in_progress', approver: null }),
+      events: [],
     });
-    let completeCalled = false;
+    let approveCalled = false;
     server.use(
       http.post(
-        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/complete`,
+        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/approve`,
         () => {
-          completeCalled = true;
+          approveCalled = true;
           return HttpResponse.json(
-            { error: { code: 'CONFLICT', message: '完了できません' } },
+            { error: { code: 'CONFLICT', message: '承認できません' } },
             { status: 409 },
           );
         },
@@ -428,39 +460,47 @@ describe('BallDetailModal (integration)', () => {
     const btn = await screen.findByRole('button', { name: '完了' });
     await user.click(btn);
 
-    await waitFor(() => expect(completeCalled).toBe(true));
+    await waitFor(() => expect(approveCalled).toBe(true));
     expect(screen.getByText('デザインカンプ作成')).toBeInTheDocument();
   });
 
-  it('後続あり tossed: 完了ボタンが「次のタスクへトス」表記になる', async () => {
+  it('後続あり・承認者なしの実施中: ボタンが「承認」表記になり後続名を表示する', async () => {
     const successor = makePlan({ id: 'plan-2', title: '後続タスク' });
     setupReads({
       plan: makePlan({
-        ballState: 'tossed',
-        ballHolder: memberRef(meMember),
+        ballState: 'in_progress',
+        approver: null,
         successorPlanId: 'plan-2',
       }),
-      events: [makeEvent()],
+      events: [],
     });
     renderModal({ plans: [successor] });
 
-    expect(await screen.findByRole('button', { name: '次のタスクへトス' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '承認' })).toBeInTheDocument();
     // 後続タスク名がバナーに表示される
     expect(screen.getByText('後続タスク')).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
-  // 差し戻し (toss-undo)
+  // 差し戻し (send-back) : 確認待ち状態で承認者が実施者へ戻す
   // ---------------------------------------------------------------------------
-  it('差し戻し: tossed 状態の差し戻すボタンで toss-undo へ POST する', async () => {
-    setupReads({ plan: makePlan({ ballState: 'tossed' }), events: [makeEvent()] });
-    let undoCalled = false;
+  it('差し戻し: 確認待ち状態の「差し戻す」ボタンで send-back へ POST する', async () => {
+    // 承認者=本人。確認待ちで承認者/director が差し戻せる。
+    setupReads({
+      plan: makePlan({
+        ballState: 'review_pending',
+        approver: memberRef(meMember),
+        ballHolder: memberRef(meMember),
+      }),
+      events: [makeEvent({ eventType: 'review_requested' })],
+    });
+    let sendBackCalled = false;
     server.use(
       http.post(
-        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/toss-undo`,
+        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/send-back`,
         () => {
-          undoCalled = true;
-          return HttpResponse.json({ data: { plan: makePlan({ ballState: 'ready' }) } });
+          sendBackCalled = true;
+          return HttpResponse.json({ data: { plan: makePlan({ ballState: 'sent_back' }) } });
         },
       ),
     );
@@ -471,28 +511,57 @@ describe('BallDetailModal (integration)', () => {
     const btn = await screen.findByRole('button', { name: '差し戻す' });
     await user.click(btn);
 
+    await waitFor(() => expect(sendBackCalled).toBe(true));
+  });
+
+  // ---------------------------------------------------------------------------
+  // TOSS の取り消し (toss-undo)
+  // ---------------------------------------------------------------------------
+  it('TOSS の取り消し: tossed 状態は誰でも toss-undo できる', async () => {
+    // ballHolder を他人にし role=member でも取り消せる (#50)。
+    setupReads({
+      plan: makePlan({ ballState: 'tossed', ballHolder: memberRef(otherMember) }),
+      events: [makeEvent()],
+    });
+    let undoCalled = false;
+    server.use(
+      http.post(
+        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/toss-undo`,
+        () => {
+          undoCalled = true;
+          return HttpResponse.json({ data: { plan: makePlan({ ballState: 'approved' }) } });
+        },
+      ),
+    );
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderModal();
+
+    const btn = await screen.findByRole('button', { name: 'TOSS を取り消す' });
+    await user.click(btn);
+
     await waitFor(() => expect(undoCalled).toBe(true));
   });
 
   // ---------------------------------------------------------------------------
-  // 完了の取り消し (complete-undo)
+  // 完了の取り消し (approve-undo) : 承認=完了 (後続なし) を取り消す
   // ---------------------------------------------------------------------------
-  it('完了の取り消し: completed + 本人保持者で complete-undo へ POST する', async () => {
+  it('完了の取り消し: completed + 進行責任者/承認者で approve-undo へ POST する', async () => {
     setupReads({
       plan: makePlan({
-        ballState: 'completed',
+        ballState: 'approved',
         status: 'completed',
         ballHolder: memberRef(meMember),
       }),
-      events: [makeEvent({ eventType: 'completed' })],
+      events: [makeEvent({ eventType: 'approved' })],
     });
-    let undoCompleteCalled = false;
+    let undoApproveCalled = false;
     server.use(
       http.post(
-        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/complete-undo`,
+        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/approve-undo`,
         () => {
-          undoCompleteCalled = true;
-          return HttpResponse.json({ data: { plan: makePlan({ ballState: 'tossed', status: 'active' }) } });
+          undoApproveCalled = true;
+          return HttpResponse.json({ data: { plan: makePlan({ ballState: 'in_progress', status: 'active' }) } });
         },
       ),
     );
@@ -503,17 +572,19 @@ describe('BallDetailModal (integration)', () => {
     const btn = await screen.findByRole('button', { name: '完了を取り消す' });
     await user.click(btn);
 
-    await waitFor(() => expect(undoCompleteCalled).toBe(true));
+    await waitFor(() => expect(undoApproveCalled).toBe(true));
   });
 
-  it('完了の取り消し: 本人でもディレクターでもなければボタンを出さない', async () => {
+  it('完了の取り消し: 承認者/進行責任者でもディレクターでもなければボタンを出さない', async () => {
     setupReads({
       plan: makePlan({
-        ballState: 'completed',
+        ballState: 'approved',
         status: 'completed',
+        approver: memberRef(otherMember),
+        progressManager: memberRef(otherMember),
         ballHolder: memberRef(otherMember),
       }),
-      events: [makeEvent({ eventType: 'completed' })],
+      events: [makeEvent({ eventType: 'approved' })],
     });
     renderModal();
 
@@ -525,7 +596,7 @@ describe('BallDetailModal (integration)', () => {
   // 複製 / 削除 / 編集 / 閉じる
   // ---------------------------------------------------------------------------
   it('複製: コピーアイコンで copy へ POST し onCopied を呼ぶ', async () => {
-    setupReads({ plan: makePlan({ ballState: 'ready' }), events: [] });
+    setupReads({ plan: makePlan({ ballState: 'in_progress' }), events: [] });
     let copyCalled = false;
     server.use(
       http.post(
@@ -548,7 +619,7 @@ describe('BallDetailModal (integration)', () => {
   });
 
   it('削除: イベントなし active で削除確認→DELETE→onClose', async () => {
-    setupReads({ plan: makePlan({ ballState: 'ready' }), events: [] });
+    setupReads({ plan: makePlan({ ballState: 'in_progress' }), events: [] });
     let deleteCalled = false;
     server.use(
       http.delete(
@@ -579,7 +650,7 @@ describe('BallDetailModal (integration)', () => {
   });
 
   it('編集: active なら編集アイコンで onEdit を呼ぶ', async () => {
-    setupReads({ plan: makePlan({ ballState: 'ready' }), events: [] });
+    setupReads({ plan: makePlan({ ballState: 'in_progress' }), events: [] });
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     const { onEdit } = renderModal();
 

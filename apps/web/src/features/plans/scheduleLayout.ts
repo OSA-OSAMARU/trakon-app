@@ -115,9 +115,11 @@ export function ballTier(heightPx: number): BallTier {
   return 'normal';
 }
 
-/** ボールが期限超過か (ballState=ready かつ 終了日 < 今日)。 */
+/** ボールが期限超過か (誰かがまだ対応中の active 予定で 終了日 < 今日)。 */
 export function isOverdue(plan: Plan, today: Date): boolean {
-  if (plan.ballState !== 'ready') return false;
+  if (plan.status !== 'active') return false;
+  // TOSS 済み/完了は「対応待ち」ではないので対象外。
+  if (plan.ballState === 'tossed' || plan.ballState === 'completed') return false;
   const { end } = planRange(plan);
   return parseISO(end).getTime() < startOfDay(today).getTime();
 }

@@ -47,7 +47,7 @@ describe('dashboard routes (integration)', () => {
       // イベント無し → holder=from(ctx.member), state=ready
       const plan = await createPlan({
         itemId: item.id,
-        fromMemberId: ctx.member.id,
+        executorMemberId: ctx.member.id,
         // イベント未発生時のホルダーは from。to は CHECK 制約 (from<>to) 回避のため未設定。
         toMemberId: null,
         scheduledDate: new Date('2026-06-01'),
@@ -64,7 +64,7 @@ describe('dashboard routes (integration)', () => {
       const section = res.body.data.projects[0]!.memberSections[0]!;
       expect(section.member.id).toBe(ctx.member.id);
       expect(section.tasks.map((t) => t.planId)).toContain(plan.id);
-      expect(section.tasks[0]!.ballState).toBe('ready');
+      expect(section.tasks[0]!.ballState).toBe('in_progress');
     });
 
     it('dueDate が today より前なら isOverdue=true で overdueCount に計上する', async () => {
@@ -72,7 +72,7 @@ describe('dashboard routes (integration)', () => {
       const item = await createItem({ projectId: ctx.project.id });
       await createPlan({
         itemId: item.id,
-        fromMemberId: ctx.member.id,
+        executorMemberId: ctx.member.id,
         // イベント未発生時のホルダーは from。to は CHECK 制約 (from<>to) 回避のため未設定。
         toMemberId: null,
         scheduledDate: new Date('2026-06-01'),
@@ -94,7 +94,7 @@ describe('dashboard routes (integration)', () => {
       const item = await createItem({ projectId: ctx.project.id });
       await createPlan({
         itemId: item.id,
-        fromMemberId: ctx.member.id,
+        executorMemberId: ctx.member.id,
         // イベント未発生時のホルダーは from。to は CHECK 制約 (from<>to) 回避のため未設定。
         toMemberId: null,
         scheduledDate: new Date('2026-12-01'),
@@ -116,7 +116,7 @@ describe('dashboard routes (integration)', () => {
       const strangerItem = await createItem({ projectId: stranger.project.id });
       await createPlan({
         itemId: strangerItem.id,
-        fromMemberId: stranger.member.id,
+        executorMemberId: stranger.member.id,
         toMemberId: null,
         scheduledDate: new Date('2026-06-01'),
         status: 'active',

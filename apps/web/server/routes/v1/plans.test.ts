@@ -30,6 +30,30 @@ describe('plans routes', () => {
     expect(res.status).toBe(401);
   });
 
+  it('requires authentication for POST /request-review', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/projects/abc/items/def/plans/xyz/request-review', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('requires authentication for POST /approve', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/projects/abc/items/def/plans/xyz/approve', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('requires authentication for POST /send-back', async () => {
+    const { app } = await import('../../app.js');
+    const res = await app.request('/api/v1/projects/abc/items/def/plans/xyz/send-back', {
+      method: 'POST',
+    });
+    expect(res.status).toBe(401);
+  });
+
   it('requires authentication for GET project-wide plans', async () => {
     const { app } = await import('../../app.js');
     const res = await app.request('/api/v1/projects/abc/plans');
