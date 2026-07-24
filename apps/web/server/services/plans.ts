@@ -241,11 +241,14 @@ async function assertMembersBelongToProject(input: {
   projectId: string;
   memberIds: string[];
 }): Promise<void> {
+  // 1 人が複数役割を兼ねうる (#131 §5) ため重複を除いてから検証する。
+  const uniqueIds = [...new Set(input.memberIds)];
+  if (uniqueIds.length === 0) return;
   const found = await prisma.projectMember.findMany({
-    where: { projectId: input.projectId, id: { in: input.memberIds }, deletedAt: null },
+    where: { projectId: input.projectId, id: { in: uniqueIds }, deletedAt: null },
     select: { id: true },
   });
-  if (found.length !== input.memberIds.length) {
+  if (found.length !== uniqueIds.length) {
     throw new ApiException(
       'INVALID_MEMBER',
       422,
