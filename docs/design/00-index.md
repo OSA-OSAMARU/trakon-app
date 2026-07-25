@@ -26,6 +26,7 @@
 | v1.0 | 2026-05-09 | 第6章「インフラ・デプロイ・運用」v1.0 確定（dev+prod 2環境 / Supabase CLI ローカル / 仮ドメイン → 商用前に本確定 / Sentry 1プロジェクト + env タグ / Phase 0 はレビュースキップ可 / 復元テスト Phase 1 から / ログは既定保管 + audit_logs のみ DB 長期 / Better Stack Uptime / app_user + app_migrator 分離 / **Production デプロイは GitHub Release 公開がトリガ**）。全6章 v1.0 確定により基本設計書 v1.0 完成。 | — |
 | v1.1a | 2026-05-09 | **PRD v1.3 改訂（非会員URL共有を Phase 1 → Phase 0 へ前倒し）に追従**。FR-SHARE-01〜06、SR-AUTH-08、UC-23、SC-16、`share_links` テーブルを Phase 0 スコープに取り込み、第1〜6章の Phase 区切り・テーブル定義・エンドポイント一覧・画面ツリー・認可ガード・監査ログ記録対象を更新。組織レベル統制（FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09、`organizations` / `organization_settings`）は Phase 2 維持。 | — |
 | v1.1b | 2026-05-24 | **Figma Make プロトタイプ反映による全章改訂**。① Google/Microsoft OAuth（FR-AUTH-10、Phase 0 から）／② 新規登録項目拡充（full_name + display_name、Magic-link 風サインアップ、FR-AUTH-11）／③ 後続紐付け自動 TOSS（plans.successor_plan_id、FR-SCH-17、FR-BALL-13、UC-25）／④ ダッシュボード階層ビュー（プロジェクト×メンバー×今日、SC-09 改訂、Phase 0 へ繰り上げ）／⑤ カテゴリ必須（plans.category 6値、FR-SCH-18）／⑥ メンバーかんばん SC-17 新規（DnD = TOSS、UC-26）／⑦ oauth_identities テーブル新規。PRD v1.3、02-database v1.1、03-api v1.1、04-frontend v1.1、05-security v1.1、06-infrastructure v1.1 を同期反映。v1.1a と統合し **v1.1 として確定**。 | — |
+| #131 | 2026-07-24 | **確認者付き予定・進行責任者の追加（issue #131）**。① 予定に 3 役割（実施者 executor / 承認者 approver / 進行責任者 progress_manager）を追加、projects に既定進行責任者列。② ボール状態機械を 6 値（in_progress / review_pending / approved / tossed / sent_back / completed）へ拡張、承認と TOSS を分離。③ **自動連鎖 TOSS を廃止（#117）**。④ from/to を TOSS 履歴スナップショット（FROM=進行責任者 / TO=後続実施者）へ意味変更、`ck_plans_toss_members` 撤去。⑤ 共有リンクに確認依頼/承認/差し戻しを許可（**#59 の閲覧専用を撤回**、TOSS は共有不可）。⑥ ball_events/audit_logs の許可値拡張（マイグレーション 20260724000001 / 20260724000002）。02-database・03-api・05-security を全面更新、00/01/04/06 を整合修正。 | — |
 
 ---
 
@@ -101,9 +102,10 @@ PRD §1.3 と §13.3 を参照。本書で新たに定義する用語は各章�
 | 制作物 / 納品物 / item / deliverable | **「制作物（project_items）」を物理／設計用語として維持**、URL も `/items/` 維持。プロトタイプの「deliverable」は画面表示文言レベルの言い換え | データモデル・API は変更なし。画面表示は「制作物」/「納品物」の選択肢があるが、Phase 0 は「制作物」で統一 |
 | メンバー | プロジェクト参加者（`project_members`）の通称、横軸／カンバン列の単位 | ユーザー（`users`）とは区別（メンバーは特定プロジェクト内、ユーザーは横断アカウント） |
 | カテゴリ | 予定の作業種別（`plans.category`、6 値 CHECK） | wireframe / design / coding / review / meeting / other |
-| 後続紐付け | 1 つの予定（先行）に対し 1 つの後続予定を紐付ける関係（`plans.successor_plan_id`、1対1、UNIQUE） | 先行完了で後続を **system actor の自動 TOSS** で受領状態に遷移（FR-BALL-13、UC-25） |
+| 後続紐付け | 1 つの予定（先行）に対し 1 つの後続予定を紐付ける関係（`plans.successor_plan_id`、1対1、UNIQUE） | **#131：先行の承認 → 進行責任者による TOSS で後続へボールを渡す。~~自動 TOSS~~ は #117 で廃止**（承認と TOSS は分離） |
+| 役割（#131） | 予定の 3 役割：**実施者 executor**（作業/確認、実質必須）／**承認者 approver**（任意）／**進行責任者 progress_manager**（承認済みを後続へ TOSS）。1 人が複数役割を兼任可 | ballState は 6 値（in_progress / review_pending / approved / tossed / sent_back / completed） |
 | Magic-link サインアップ | メール先行 → 認証リンク押下 → 詳細入力 → 自動ログインの2段階フロー | UC-01 改訂、SC-01 で 7 状態統合 |
 | OAuth | Google / Microsoft の外部 ID 連携。Phase 0 から提供 | 同一メール 1 認証手段制約（FR-AUTH-12） |
-| メンバーかんばん | プロジェクト参加メンバーごとの予定を状態別かんばんで表示（SC-17、`/projects/:projectId/members`） | DnD で TOSS / 完了。SC-11 参加者管理とは別タブで併設 |
+| メンバーかんばん | プロジェクト参加メンバーごとの予定を状態別かんばんで表示（SC-17、`/projects/:projectId/members`） | **#131：DnD は状態機械の各操作（確認依頼 / 承認 / 差し戻し / TOSS）に対応**。SC-11 参加者管理とは別タブで併設 |
 
 > **本書の判断**：用語の物理レイヤー（DB・API・コード）は **既存命名を維持**し、画面表示文言は柔軟に運用。プロトタイプとの命名差分は実装時の翻訳テーブル（`packages/shared/i18n/messages.ja.ts`）で吸収する。

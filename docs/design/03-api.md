@@ -64,7 +64,7 @@ Phase 0 で必要な REST API（Hono on Vercel Functions）の設計を行う。
 | **検証** | BE ミドルウェアで Supabase 公開鍵により署名・有効期限・iss/aud 検証 |
 | **失敗時** | 401 Unauthorized + `{ error: { code: 'AUTH_INVALID', ... } }` |
 | **リフレッシュ** | FE 側 Supabase Auth クライアント SDK が自動 refresh、BE は無関心 |
-| **未認証許容エンドポイント** | `GET /invitations/:token`（招待内容確認）、`POST /invitations/:token/accept`（招待受諾）、`GET /share/:token`（非会員URL閲覧／FR-SHARE-01〜05、Phase 0）、`POST /share/:token/plans/:planId/*`（非会員URL経由のボール操作／FR-SHARE-05、Phase 0）、`GET /healthz`（ヘルスチェック） |
+| **未認証許容エンドポイント** | `GET /invitations/:token`（招待内容確認）、`POST /invitations/:token/accept`（招待受諾）、`GET /share/:token`（非会員URL閲覧／FR-SHARE-01〜05、Phase 0）、`POST /share/:token/plans/:planId/{request-review,approve,send-back}`（非会員URL経由のボール操作／**#131**。旧 `/toss`・`/complete` は廃止）、`GET /healthz`（ヘルスチェック） |
 
 > 詳細・XSS 対策（FE 側のトークン保持戦略）は章5 で扱う。
 
@@ -126,7 +126,7 @@ Phase 0 で必要な REST API（Hono on Vercel Functions）の設計を行う。
 
 | HTTP ステータス | アプリエラーコード（例） | 用途 |
 |---|---|---|
-| 400 | `VALIDATION_ERROR` | Zod 検証失敗、ビジネスルール違反（例：FROM=TO） |
+| 400 | `VALIDATION_ERROR` | Zod 検証失敗、ビジネスルール違反（例：必須フィールド欠落。**#131 で FROM≠TO 制約は撤廃**） |
 | 401 | `AUTH_INVALID` / `AUTH_EXPIRED` | JWT 無効・期限切れ |
 | 403 | `FORBIDDEN` | 認可失敗（プロジェクト参加はあるがロール不足・状態遷移不可） |
 | 404 | `NOT_FOUND` | リソース存在せず（**自分が参加していないプロジェクトは 404 で漏らす**：§3.10-3） |
@@ -221,7 +221,7 @@ flowchart TB
 | `requireProjectDirector` | 〃 | 上記＋ロール `director` 必須。不足は 403 |
 | `requireItemInProject` | 〃 | `:itemId` が `:projectId` 配下に存在することを検証、`currentItem` を context に |
 | `requirePlanInItem` | 〃 | `:planId` が `:itemId` 配下に存在することを検証、`currentPlan` を context に |
-| `auditLog` | `apps/web/server/middleware/audit.ts` | Phase 0 は `login` / `toss` / `complete` のみ自動記録 |
+| `auditLog` | `apps/web/server/middleware/audit.ts` | `login` / `toss` / `untoss` / `complete` / `undo_complete` に加え、**#131 の `request_review` / `undo_request_review` / `approve` / `undo_approve` / `send_back`、共有 `share_request_review` / `share_approve` / `share_send_back` を記録** |
 
 > **Hono ルート定義例**：
 > ```typescript
@@ -264,19 +264,27 @@ flowchart TB
 | `GET /projects/:projectId/items/:itemId/plans` | ❌ | ❌ | ✅ | ✅ | |
 | `POST /projects/:projectId/items/:itemId/plans` | ❌ | ❌ | ✅ | ✅ | 参加者なら作成可（メンバー含む） |
 | `GET /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅ | ✅ | |
-| `PATCH /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅※own | ✅ | own = from/to のいずれか or owner |
-| `DELETE /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅※own | ✅ | Phase 0 物理削除 |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/toss` | ❌ | ❌ | ✅※holder | ✅※override | 現 Ball Holder のみ実行可（ディレクターは override 可）。**v1.1：カンバン DnD（UC-26）からも呼ばれる** |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/complete` | ❌ | ❌ | ✅※holder | ✅※override | 同上。**v1.1：successor_plan_id があれば自動 TOSS を連鎖（UC-25、FR-BALL-13）** |
-| `PATCH /projects/:projectId/items/:itemId/plans/:planId/successor` **(v1.1 プロトタイプ反映)** | ❌ | ❌ | ✅※own | ✅ | 後続予定の紐付け設定／解除（FR-SCH-17） |
+| `PATCH /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅ | ✅ | **#131：参加者なら編集可。役割は ball の進み具合でロック（実施者/承認者は実施中・差し戻し中のみ変更可、進行責任者は TOSS 前なら可）** |
+| `DELETE /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ❌ | ✅ | Phase 0 物理削除（ディレクターのみ） |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/request-review` **(#131)** | ❌ | ❌ | ✅※holder | ✅※override | 実施中/差し戻し → 確認待ち。実施者が承認者へ確認依頼。承認者あり必須 |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/request-review-undo` **(#131)** | ❌ | ❌ | ✅※involved | ✅※override | 確認待ち → 実施中。実施者/承認者が取り消し |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/approve` **(#131)** | ❌ | ❌ | ✅※holder | ✅※override | 確認待ち → 承認済み（承認者なしは実施中 → 承認済み）。後続なしは承認=完了 |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/approve-undo` **(#131)** | ❌ | ❌ | ✅※involved | ✅※override | 承認済み → 確認待ち/実施中。承認者/進行責任者が取り消し |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/send-back` **(#131)** | ❌ | ❌ | ✅※holder | ✅※override | 確認待ち → 差し戻し。承認者が実施者へ戻す |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/toss` | ❌ | ❌ | ✅※holder | ✅※override | **#131：承認済みの予定のみ・進行責任者（現 Ball Holder）のみ・後続必須**。FROM=進行責任者/TO=後続実施者を履歴記録。カンバン DnD（UC-26）からも呼ばれる |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/toss-undo` | ❌ | ❌ | ✅ | ✅ | TOSS済み → 承認済み（誤TOSS救済 #50。プロジェクトメンバーなら可） |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/complete` | ❌ | ❌ | ✅※holder | ✅※override | **#131：`approve` のエイリアス（後方互換）。~~自動 TOSS 連鎖~~ は #117 廃止** |
+| `PATCH /projects/:projectId/items/:itemId/plans/:planId/successor` **(v1.1 プロトタイプ反映)** | ❌ | ❌ | ✅ | ✅ | 後続予定の紐付け設定／解除（FR-SCH-17） |
 | `GET /projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01／SC-16 一覧 |
 | `POST /projects/:projectId/share-links` **(v1.1)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01, 02／SC-16 発行 |
 | `DELETE /projects/:projectId/share-links/:shareLinkId` **(v1.1)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-03／SC-16 個別失効 |
 | `GET /share/:token` **(v1.1)** | ✅ | ✅ | — | — | トークンが認可代わり／FR-SHARE-01, 04, 05／UC-23 |
-| `POST /share/:token/plans/:planId/toss` **(v1.1)** | ✅ | ✅ | — | — | 非会員URL経由のボール操作（スコープ判定）／FR-SHARE-05／UC-23 |
-| `POST /share/:token/plans/:planId/complete` **(v1.1)** | ✅ | ✅ | — | — | 同上 |
+| `POST /share/:token/plans/:planId/request-review` **(#131)** | ✅ | ✅ | — | — | 非会員（クライアント）による確認依頼／FR-SHARE-05／UC-23。scope 内かつ状態機械が許す限り可 |
+| `POST /share/:token/plans/:planId/approve` **(#131)** | ✅ | ✅ | — | — | 非会員による承認／同上 |
+| `POST /share/:token/plans/:planId/send-back` **(#131)** | ✅ | ✅ | — | — | 非会員による差し戻し／同上 |
 
-> 凡例：✅ 許可／❌ 拒否（401 or 403／親リソース未参加なら 404）／✅※own（自分が当事者）／✅※holder（現 Ball Holder）／✅※override（ディレクターは追加権限あり）／`/share/:token` 系はトークン自体が認可、有効期限・個別失効・スコープ・対象 plan が share_link.scope に整合することを `requireShareToken` ミドルウェアが検証（章5 §5.x）
+> 凡例：✅ 許可／❌ 拒否（401 or 403／親リソース未参加なら 404）／✅※holder（現 Ball Holder）／✅※involved（当該予定の実施者/承認者/進行責任者のいずれか）／✅※override（ディレクターは追加権限あり）／`/share/:token` 系はトークン自体が認可、有効期限・個別失効・スコープ・対象 plan が share_link.scope に整合することを `requireShareToken` ミドルウェアが検証（章5 §5.x）。
+> **#131 改訂**：共有リンクからの操作は「保持者の種別を問わず、scope 内かつ状態機械が許す限り可」。ただし TOSS（進行責任者の次工程操作）は共有リンクからは提供しない。旧 `/share/:token/plans/:planId/{toss,complete}` は廃止（**#59 の「共有＝閲覧専用」方針は撤回**）。
 
 ---
 
@@ -311,15 +319,20 @@ flowchart TB
 | Plans | GET | `/projects/:projectId/items/:itemId/plans/:planId` | UC-08 | SC-08 ボール詳細 |
 | Plans | PATCH | `/projects/:projectId/items/:itemId/plans/:planId` | UC-05 | SC-07, SC-08 |
 | Plans | DELETE | `/projects/:projectId/items/:itemId/plans/:planId` | — | SC-08（MVP物理削除：FR-BALL-12） |
+| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/request-review(-undo)` **(#131)** | UC-08 系 | SC-08 |
+| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/approve(-undo)` **(#131)** | UC-12 | SC-08 |
+| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/send-back` **(#131)** | UC-10 | SC-08 |
 | Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/toss` | UC-08, UC-26 | SC-08, SC-17 |
-| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/complete` | UC-12, UC-25 | SC-08 |
+| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/toss-undo` | UC-09 | SC-08 |
+| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/complete(-undo)` | UC-12 | SC-08（`approve(-undo)` エイリアス、後方互換） |
 | Plans | PATCH | `/projects/:projectId/items/:itemId/plans/:planId/successor` **(v1.1 プロトタイプ反映)** | UC-25（紐付け管理） | SC-07 |
 | Share Links | GET | `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | UC-23 | SC-16 |
 | Share Links | POST | `/projects/:projectId/share-links` **(v1.1)** | UC-23 | SC-16 |
 | Share Links | DELETE | `/projects/:projectId/share-links/:shareLinkId` **(v1.1)** | UC-23 | SC-16 |
 | Share Access | GET | `/share/:token` **(v1.1)** | UC-23 | （非会員URL閲覧画面） |
-| Share Access | POST | `/share/:token/plans/:planId/toss` **(v1.1)** | UC-23 | （非会員URL閲覧画面） |
-| Share Access | POST | `/share/:token/plans/:planId/complete` **(v1.1)** | UC-23 | （非会員URL閲覧画面） |
+| Share Access | POST | `/share/:token/plans/:planId/request-review` **(#131)** | UC-23 | （非会員URL画面） |
+| Share Access | POST | `/share/:token/plans/:planId/approve` **(#131)** | UC-23 | （非会員URL画面） |
+| Share Access | POST | `/share/:token/plans/:planId/send-back` **(#131)** | UC-23 | （非会員URL画面） |
 
 > **v1.1 改訂注**：`Share Links` / `Share Access` 6本は v1.0 まで §3.9 Phase 1 で予告していたが、PRD v1.3 で Phase 0 へ前倒しされたため Phase 0 必須として正式採番。詳細仕様は §3.6.9（非会員URL前倒し改訂）を参照。
 
@@ -935,23 +948,31 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
     category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',  // v1.1
     scheduledDate: string,
     dueDate: string | null,
-    fromMember: { id: string, name: string, organizationName: string },
-    toMember: { id: string, name: string, organizationName: string },
+    // 役割（#131）。MemberRef | null（任意項目のため null 可）
+    executor: MemberRef | null,        // 実施者
+    approver: MemberRef | null,        // 承認者（任意）
+    progressManager: MemberRef | null, // 進行責任者
+    // TOSS 履歴スナップショット（#131 §14）。作成時 null、TOSS 実行で書き込む
+    fromMember: MemberRef | null,      // FROM=TOSS した進行責任者
+    toMember: MemberRef | null,        // TO=後続予定の実施者
     status: 'active' | 'completed' | 'canceled',
-    ballHolder: { id: string, name: string, organizationName: string },  // 導出値
-    ballState: 'ready' | 'tossed' | 'completed',                         // 導出値
+    ballHolder: MemberRef | null,      // 導出値（保持者を各ロール MemberRef に解決）
+    // 導出値（#131 で 6 値に拡張）
+    ballState: 'in_progress' | 'review_pending' | 'approved' | 'tossed' | 'sent_back' | 'completed',
     latestEvent: { eventType: string, occurredAt: string, source: 'human' | 'auto_chain' } | null,  // v1.1 source 追加
     successorPlanId: string | null,                                       // v1.1
     memo: string | null,
+    completedAt: string | null,
     createdAt: string,
     updatedAt: string,
   }>
 }
+// MemberRef = { id, name, organizationName, memberType: 'client' | 'production' }
 ```
 
 **処理**：
 - Repository 層で `plans + 最新の ball_events` を取得
-- `deriveBallHolder()` で Ball Holder と ballState を計算（章2 §2.6.1）
+- `deriveBallHolder()` で Ball Holder と ballState を計算（章2 §2.6.1、`packages/shared/src/domain/ballHolder.ts` が正）
 - N+1 回避：plans 一覧取得時に LATERAL JOIN または `DISTINCT ON` で各 plan の最新 event を1クエリで取得
 
 ---
@@ -970,21 +991,24 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
   category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',  // v1.1 必須（FR-SCH-18）
   scheduledDate: string,            // YYYY-MM-DD
   dueDate?: string,
-  fromMemberId: string,
-  toMemberId: string,               // fromMemberId と異なる必須
+  // 役割（#131）。いずれも任意。1 人が複数役割を兼任可。FROM/TO は作成時に指定しない
+  executorMemberId?: string,        // 実施者（実質必須）
+  approverMemberId?: string,        // 承認者（任意）
+  progressManagerMemberId?: string, // 進行責任者。未指定なら project.progressManagerMemberId を既定採用
   successorPlanId?: string,         // v1.1 任意（FR-SCH-17）。同一プロジェクト内の plan のみ許容
   memo?: string,
 }
 ```
 
-**処理**：
-- バリデーション（章2 `ck_plans_toss_members` 同等の事前チェック）
+**処理**（#131）：
+- 進行責任者を解決：`progressManagerMemberId` 指定 > プロジェクト既定（`project.progressManagerMemberId`）> null
+- 指定された役割 member がプロジェクト配下か検証（**兼任があるため重複を除いてから検証**。~~`ck_plans_toss_members`~~ 相当の FROM≠TO チェックは廃止）
 - `successorPlanId` 指定時：(a) 同一プロジェクト内に属するか確認、(b) `UNIQUE successor_plan_id` 制約に従い既に他 plan の successor になっていないか確認、(c) 循環参照チェック（§2.4.5）
-- `plans` INSERT（`status='active'`、Ball Holder = `fromMemberId`、`ball_events` はまだ作成しない）
+- `plans` INSERT（`status='active'`、初期 ballState=`in_progress`（保持者=実施者）、**FROM/TO と ball_events はまだ作成しない**）
 
 **レスポンス（201）**：作成された plan（GET と同形式）
 
-**エラー**：400 (`VALIDATION_ERROR`)、422 (`SUCCESSOR_OUT_OF_PROJECT` / `SUCCESSOR_ALREADY_USED` / `CIRCULAR_SUCCESSOR`)。
+**エラー**：400 (`VALIDATION_ERROR`)、422 (`INVALID_MEMBER` / `SUCCESSOR_OUT_OF_SCOPE` / `SUCCESSOR_ALREADY_USED` / `CIRCULAR_SUCCESSOR`)。
 
 ---
 
@@ -1001,8 +1025,12 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
     plan: { /* GET 一覧 1件と同 */ },
     events: Array<{
       id: string,
-      eventType: 'tossed' | 'completed',
-      actor: { id: string, name: string, organizationName: string },
+      // #131：新イベント種別。actor は auto_chain（共有リンク由来）では null
+      eventType: 'review_requested' | 'approved' | 'sent_back' | 'review_request_undone'
+               | 'approval_undone' | 'tossed'
+               | 'completed' | 'toss_undone' | 'completion_undone',  // 末尾3つはレガシー
+      source: 'human' | 'auto_chain',
+      actor: MemberRef | null,
       occurredAt: string,
       note: string | null,
     }>,
@@ -1016,14 +1044,17 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 
 予定編集。
 
-**認可**：プロジェクト参加者で、当該 plan の from/to のいずれか（or ディレクター）。
+**認可**：プロジェクト参加者（#131：役割当事者に限定しない）。
 
-**リクエスト**：`{ title?, category?, scheduledDate?, dueDate?, memo? }`（Phase 0）
+**リクエスト**（#131）：`{ title?, category?, scheduledDate?, dueDate?, memo?, itemId?, executorMemberId?, approverMemberId?, progressManagerMemberId?, successorPlanId? }`
 
-**ビジネスルール**：
-- `status === 'completed'` の予定は編集不可（422 `STATE_INVALID`）
-- TOSS 後（`ball_events.event_type='tossed'` 存在）に from/to の変更は不可（422）
-- successor_plan_id の変更は `PATCH .../successor`（後述、v1.1）で別エンドポイント
+**ビジネスルール**（#131）：
+- `status !== 'active'` の予定は編集不可（422 `PLAN_NOT_ACTIVE`）
+- **役割の編集可否は ball の進み具合で制限**：
+  - 実施者/承認者（`executorMemberId` / `approverMemberId`）は **実施中・差し戻し中のみ変更可**。確認依頼・承認後はロック（422 `ROLES_LOCKED`）
+  - 進行責任者（`progressManagerMemberId`）は **TOSS 前ならいつでも変更可**（TOSS 済みは 422 `ROLES_LOCKED`）
+- `itemId` 変更で別制作物へ移動可（#52）。移動時は successor 紐付けを自動解除
+- successor_plan_id の変更は本 PATCH でも `PATCH .../successor` でも可
 
 ---
 
@@ -1031,7 +1062,7 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 
 後続予定の紐付け設定／解除（FR-SCH-17）。
 
-**認可**：プロジェクト参加者で、当該 plan の from/to のいずれか（or ディレクター）。
+**認可**：プロジェクト参加者（#131）。
 
 **リクエスト**：
 ```typescript
@@ -1053,92 +1084,69 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 
 #### `DELETE /api/v1/projects/:projectId/items/:itemId/plans/:planId`
 
-予定削除。Phase 0 は物理削除（FR-BALL-12）。配下の `ball_events` も CASCADE で物理削除。
+予定削除。Phase 0 は物理削除（FR-BALL-12）。
 
-**認可**：プロジェクト参加者で、当該 plan の from/to のいずれか（or ディレクター）。
+**認可**：プロジェクトディレクター（#131：`requireProjectDirector`）。
 
-**ビジネスルール**：
-- TOSS 後の plan の削除は警告のみ（FE 確認モーダル）
+**ビジネスルール**（#131）：
+- **`ball_events` が 1 件でも付いた予定は物理削除拒否**（409 `PLAN_HAS_EVENTS`）。ball_events は append-only（FK ON DELETE RESTRICT）のため CASCADE できない
 - **削除対象 plan を successor として参照している先行 plan があれば、その `successor_plan_id` を NULL にセット**（DB の `ON DELETE SET NULL`、v1.1）
 
 ---
 
-### 3.6.8. Ball Actions（状態遷移）
+### 3.6.8. Ball Actions（状態遷移、#131 で刷新）
 
-#### `POST /api/v1/projects/:projectId/items/:itemId/plans/:planId/toss`
+> **#131 状態機械**：実施中 →（確認依頼 `review_requested`）→ 確認待ち →（承認 `approved`）→ 承認済み →（TOSS `tossed`）→ TOSS済み。承認者なしの予定は確認待ちを経ず実施者が直接 approve する。差し戻し（`sent_back`）は承認者→実施者（同一予定内で継続）。**承認とTOSSは分離**され、承認だけでは後続は自動開始しない（進行責任者だけが TOSS できる）。**承認=完了**：後続なしは approve で `status=completed`、後続ありは toss で先行が `status=completed` になる。共通の認可は「現 Ball Holder or ディレクター（override）」。実装の正は `apps/web/server/services/ballActions.ts`。
 
-TOSS 実行。
+#### `POST .../plans/:planId/request-review` / `request-review-undo`（#131）
 
-**認可**：現 Ball Holder ＝ `plans.from_member_id`（TOSS 未実行）かつ JWT ユーザーが当該 member。
-あるいはプロジェクトディレクター（override）。
+確認依頼：実施中/差し戻し → 確認待ち（保持者を実施者→承認者へ）。取り消しはその逆。
 
-**リクエスト**（v1.1 でカンバン UI からの呼び出しを想定し、to_member 指定をサポート）：
+- **事前条件**：`status='active'`。request-review は現状態が `in_progress` または `sent_back`、かつ実施者・承認者が設定済み（承認者なしは 422 `NO_APPROVER` → 直接承認へ誘導）。undo は現状態が `review_pending`。
+- **認可**：request-review は現 Ball Holder（実施者）or ディレクター。undo は実施者/承認者/ディレクター。
+- **イベント**：`review_requested` / `review_request_undone`（`source='human'`）。
+- **監査**：`request_review` / `undo_request_review`。
+- **エラー**：409 `INVALID_STATE`、422 `INCOMPLETE_PLAN` / `NO_APPROVER`、403 `FORBIDDEN`。
+
+#### `POST .../plans/:planId/approve` / `approve-undo`（#131）
+
+承認：確認待ち → 承認済み（保持者を承認者→進行責任者へ）。承認者なしの予定は実施中 → 承認済み（実施者が直接承認）。
+
+- **事前条件**：承認者ありは現状態 `review_pending`。承認者なしは `in_progress`/`sent_back` かつ実施者設定済み。**後続が無い予定は承認で `status='completed'`（TOSS 先が無い＝承認=完了）**。
+- **認可**：現 Ball Holder or ディレクター。undo は承認者/進行責任者/ディレクター。
+- **イベント**：`approved` / `approval_undone`。undo で completed だった予定は `status='active'` に戻す。
+- **監査**：`approve` / `undo_approve`。
+- **エラー**：409 `INVALID_STATE`、422 `INCOMPLETE_PLAN`、403。
+
+#### `POST .../plans/:planId/send-back`（#131）
+
+差し戻し：確認待ち → 差し戻し（保持者を承認者→実施者へ、同一予定で継続）。
+
+- **リクエスト**：`{ note?: string }`（差し戻し理由）。
+- **事前条件**：`status='active'` かつ現状態 `review_pending`。
+- **認可**：現 Ball Holder（承認者）or ディレクター。
+- **イベント**：`sent_back`（`note` を保存）。**監査**：`send_back`。
+
+#### `POST .../plans/:planId/toss` / `toss-undo`
+
+TOSS：承認済み → TOSS済み。進行責任者が後続予定へボールを渡す。
+
+- **事前条件**（#131）：`status='active'` かつ現状態 `approved`、**後続予定必須**（`successorPlanId` あり、かつ後続に実施者設定済み）、進行責任者設定済み。
+- **認可**：現 Ball Holder（進行責任者）or ディレクター。TOSS は**共有リンクからは不可**。
+- **処理**：先行 plan に **FROM=進行責任者 / TO=後続予定の実施者**を履歴として書き込み（§14）、`status='completed'`。`ball_events` に `tossed` を INSERT。
+- **監査**：`toss`。
+- **toss-undo**（#50 誤TOSS救済）：TOSS済み → 承認済み。append-only のため **`approved` を再追記**して戻し、FROM/TO を NULL に、`status='active'` へ。後続が既に完了済みなら 409 `SUCCESSOR_ALREADY_COMPLETED`。プロジェクトメンバーなら誰でも可。**監査**：`untoss`。
+- **エラー**：409 `NOT_APPROVED` / `NOT_TOSSED`、422 `NO_SUCCESSOR` / `SUCCESSOR_NO_EXECUTOR` / `INCOMPLETE_PLAN`、403。
+
+**レスポンス（各アクション共通、200）**：
 ```typescript
-{ toMemberId?: string }   // 任意。指定された場合は plans.to_member_id を更新してから TOSS。SC-17 カンバンの別メンバー DnD で使用
+{ data: { plan: PlanDTO /* 更新後。ballState / ballHolder は導出で切替 */ } }
 ```
+> `toss` / `complete` は後方互換のため `{ plan, autoTossed: null }` を返す（`autoTossed` は #117 の自動連鎖廃止で常に `null`）。
 
-**処理**（同一トランザクション）：
-1. `plans` を SELECT FOR UPDATE
-2. 状態確認：
-   - `status === 'active'` であること
-   - 既に `event_type='tossed'` の `ball_events` が存在しないこと（多重 TOSS 防止）
-3. `toMemberId` 指定時：`to_member_id` を更新（同プロジェクト内 member であることを検証）
-4. `ball_events` INSERT (`event_type='tossed'`, `source='human'`, `actor_member_id=currentMember.id`, `actor_user_id=currentUser.id`, `occurred_at=now()`)
-5. `audit_logs` に `action='toss'` を記録
+#### `POST .../plans/:planId/complete` / `complete-undo`（後方互換エイリアス）
 
-**レスポンス（200）**：
-```typescript
-{
-  data: {
-    plan: { /* 更新後の plan、ballHolder は to_member に切替 */ },
-    event: { /* 作成された ball_events（source 含む） */ },
-  }
-}
-```
-
-**エラー**：
-- 403 `FORBIDDEN`（権限なし）
-- 409 `ALREADY_TOSSED`（既に TOSS 済み）
-- 422 `PLAN_NOT_ACTIVE`（completed/canceled 状態）
-- 422 `INVALID_TO_MEMBER`（toMemberId が同プロジェクト外）
-
----
-
-#### `POST /api/v1/projects/:projectId/items/:itemId/plans/:planId/complete`
-
-予定完了。**v1.1：`successor_plan_id` が設定されていれば、同一トランザクション内で後続予定に対し system actor の自動 TOSS を実行する**（FR-BALL-13、UC-25）。
-
-**認可**：現 Ball Holder（or ディレクター）。
-
-**処理**（同一トランザクション）：
-1. `plans[A]` を SELECT FOR UPDATE
-2. 状態確認：`status === 'active'` であること
-3. `ball_events` INSERT (`plan=A`, `event_type='completed'`, `source='human'`, `actor_member_id=currentMember.id`, `actor_user_id=currentUser.id`)
-4. `plans[A].status = 'completed'`、`completed_at = now()`
-5. **`plans[A].successor_plan_id = B` の場合**：
-   - `plans[B]` を SELECT FOR UPDATE
-   - `B.status === 'active'` なら：
-     - `ball_events` INSERT (`plan=B`, `event_type='tossed'`, `source='auto_chain'`, `actor_member_id=NULL`, `actor_user_id=NULL`)
-     - B の Ball Holder = `B.to_member` に切り替わる（導出ロジックで自動）
-   - `B.status` が 'completed' / 'canceled' なら：スキップ（連鎖中断）
-6. `audit_logs` に `action='complete'`（A）を記録
-7. Phase 1 で `action='auto_toss'`（B）も記録、Phase 0 は最低限のみ
-
-**レスポンス（200）**：
-```typescript
-{
-  data: {
-    plan: { /* A の plan、status='completed' */ },
-    event: { /* A の completed event */ },
-    autoTossed?: {                                // v1.1：自動連鎖が起きた場合のみ
-      plan: { /* B の plan、ballHolder は B.to_member */ },
-      event: { /* B の tossed event、source='auto_chain' */ },
-    },
-  }
-}
-```
-
-**エラー**：403、409 `ALREADY_COMPLETED`、422。
+**#131：`complete` は `approve` の、`complete-undo` は `approve-undo` のエイリアス**（後方互換のため残す。新モデルでは「完了」= 承認に対応）。~~`successor_plan_id` があれば後続へ自動 TOSS を連鎖~~ する挙動は **#117 で廃止済み**（承認と TOSS は分離され、進行責任者が明示的に TOSS する）。
 
 ---
 
@@ -1271,30 +1279,22 @@ TOSS 実行。
 }
 ```
 
-#### `POST /api/v1/share/:token/plans/:planId/toss`
+#### `POST /api/v1/share/:token/plans/:planId/{request-review,approve,send-back}`（#131）
 
-非会員URL経由で TOSS を実行（FR-SHARE-05）。閲覧者が現 Ball Holder の場合のみ可。
+非会員（クライアント）による状態機械操作。**#131 で共有画面は閲覧専用ではなくなった（#59 の「共有＝閲覧専用」方針を撤回）**。会員版と同じ状態遷移（確認依頼 / 承認 / 差し戻し）を提供する。**TOSS（進行責任者の次工程操作）は共有リンクからは提供しない**。旧 `/share/:token/plans/:planId/{toss,complete}` は廃止。
 
-**認可**：`requireShareToken` ＋ `assertPlanInScope(planId, share_link.scope)` ＋ `assertCallerIsBallHolderViaShare(plan, share_link)`。
+**認可**：`requireShareToken` ＋ `assertPlanInShareScope(planId, share_link.scope)`。**#131：保持者の種別は問わず、scope 内かつ状態機械が許す限り操作可**（会員版のような「現 Ball Holder のみ」制限は課さない）。
 
-**リクエスト**（FR-SHARE-06、任意）：
-```typescript
-{
-  displayName?: string,         // 表示名（ハンドル）
-  acknowledgedEmail?: string    // 受領メールアドレスの確認入力
-}
-```
+**処理**（各アクション共通）：
+- 会員版と同じ事前条件・状態遷移（§3.6.8）。`request-review`（実施中/差し戻し→確認待ち、承認者あり必須）／`approve`（確認待ち→承認済み、承認者なしは実施中→承認済み、後続なしは承認=完了）／`send-back`（確認待ち→差し戻し）。
+- **actor は匿名**のため `ball_events` は `source='auto_chain'`（`actor_member_id` / `actor_user_id` 両方 NULL、`note` に `via share_link:<id>` を残す）で記録。誰が操作したかは `audit_logs.share_link_id`（＋ IP / UA）で辿る（§5.6）。
+- `audit_logs` に `action='share_request_review' / 'share_approve' / 'share_send_back'` を記録。
 
-**処理**：通常の TOSS と同様の状態遷移＋ `ball_events.actor_member_id` は share_link.scope に紐づくクライアント member を充てる。
-`audit_logs` に `action='share_toss'`（`share_link_id` セット、`actor_user_id` は NULL）を記録。
+**レスポンス（200）**：`{ data: { plan: PlanDTO } }`。
 
-**レスポンス（200）**：plan + event。
+**エラー**：404 `SHARE_NOT_FOUND_OR_EXPIRED`（scope 外・期限切れ等）、409 `INVALID_STATE`、422 `INCOMPLETE_PLAN` / `NO_APPROVER` / `PLAN_NOT_ACTIVE`。
 
-#### `POST /api/v1/share/:token/plans/:planId/complete`
-
-非会員URL経由で完了（差し戻し相当）。仕様は上記 toss と同様、`audit_logs.action='share_complete'`。
-
-> **エラー方針**：トークン期限切れ・失効・存在せずは **すべて 404 に集約**（PRD §9.1 機密第一）。クライアント側は専用の「失効ページ」を表示（基本設計書 第4章 §4.4.x）。
+> **エラー方針**：トークン期限切れ・失効・存在せず・scope 外は **すべて 404 に集約**（PRD §9.1 機密第一）。クライアント側は専用の「失効ページ」を表示（基本設計書 第4章 §4.4.x）。
 
 ---
 
@@ -1331,48 +1331,53 @@ flowchart LR
 
 | ファイル | 責務 |
 |---|---|
-| `apps/web/server/repositories/plans.ts` | `findPlansWithLatestEvents(itemId, range)` — `plans + LATERAL JOIN ball_events` で取得 |
-| `packages/shared/domain/ball-holder.ts` | `deriveBallHolder(plan, latestEvent): { memberId, state }` — 純関数。FE/BE 共通で使う |
-| `apps/web/server/services/plans.ts` | Repository から取得 → `deriveBallHolder` を適用 → API レスポンス形式に整形 |
+| `apps/web/server/services/plans.ts` | `plans + 最新の ball_events` を取得（`toPlanDTO`）→ `deriveBallHolder` を適用 → API レスポンス形式に整形 |
+| **`packages/shared/src/domain/ballHolder.ts`** | `deriveBallHolder(plan, latestEvent): { memberId, state }`（純関数、FE/BE 共通）、`deriveLineBallHolders(plans)`、`pickLatestBallEvent(events)` |
+| `apps/web/server/services/ballActions.ts` | 状態遷移（イベント INSERT + status 更新）。`deriveBallHolder` で現状態・保持者を判定して事前条件を検証 |
 
-> `packages/shared` に純関数として置くことで、将来 FE 側で楽観更新時に同じロジックを使える（TOSS 直後に refetch を待たず Ball Holder 表示を即時切替）。
+> `packages/shared` に純関数として置くことで、FE 側で楽観更新時に同じロジックを使える（操作直後に refetch を待たず Ball Holder 表示を即時切替）。**このファイルが仕様の正**。
 
-### 3.8.1. 関数仕様（packages/shared/domain/ball-holder.ts）
+### 3.8.1. 関数仕様（packages/shared/src/domain/ballHolder.ts、#131）
 
 ```typescript
-type Plan = {
-  planType: 'toss' | 'shared' | 'solo';
-  fromMemberId?: string;
-  toMemberId?: string;
-  ownerMemberId?: string;
+type PlanLike = {
+  executorMemberId: string | null;
+  approverMemberId: string | null;
+  progressManagerMemberId: string | null;
+  toMemberId: string | null;          // TOSS 履歴 TO=後続実施者
   status: 'active' | 'completed' | 'canceled';
 };
 
-type BallEvent = {
-  eventType: 'tossed' | 'completed' | 'canceled' | 'returned' | 'retossed';
-  actorMemberId: string | null;       // v1.1：auto_chain では null
-  source: 'human' | 'auto_chain';     // v1.1 追加
+type BallEventLike = {
+  eventType: 'review_requested' | 'approved' | 'sent_back' | 'review_request_undone'
+           | 'approval_undone' | 'tossed'
+           | 'completed' | 'toss_undone' | 'completion_undone';  // 末尾3つはレガシー
+  source: 'human' | 'auto_chain';
+  occurredAt: string | Date;
 };
 
-type BallHolderResult = {
-  memberId: string;
-  state: 'ready' | 'tossed' | 'returned' | 'completed' | 'canceled';
-};
+type PlanState = 'in_progress' | 'review_pending' | 'approved' | 'tossed' | 'sent_back' | 'completed';
 
-export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): BallHolderResult;
+type BallHolderResult = { memberId: string | null; state: PlanState };
+
+export function deriveBallHolder(plan: PlanLike, latestEvent?: BallEventLike | null): BallHolderResult;
 ```
 
-**Phase 0 の挙動（plan_type='toss' のみ）**：
-| latestEvent | 返り値 |
-|---|---|
-| null | { memberId: plan.fromMemberId, state: 'ready' } |
-| 'tossed' (source='human') | { memberId: plan.toMemberId, state: 'tossed' } |
-| 'tossed' (source='auto_chain', v1.1) | { memberId: plan.toMemberId, state: 'tossed' } — 自動 TOSS の結果も同じ Ball Holder 切替 |
-| 'completed' | { memberId: plan.toMemberId, state: 'completed' } |
+**挙動（最新イベント種別 → (state, holder)。#131）**：
+| latestEvent | state | Ball Holder |
+|---|---|---|
+| null / `review_request_undone` / `toss_undone`(レガシー) | `in_progress` | executorMemberId |
+| `sent_back` | `sent_back` | executorMemberId |
+| `review_requested` | `review_pending` | approverMemberId |
+| `approval_undone` | 承認者あり: `review_pending` ／ なし: `in_progress` | approverMemberId ／ executorMemberId |
+| `approved` | `approved` | progressManagerMemberId |
+| `tossed` / `completion_undone`(レガシー) | `tossed` | toMemberId |
+| `completed`(レガシー) | `completed` | toMemberId |
 
-> `source` は導出結果（memberId / state）に影響しない（同じ TOSS イベントとして扱う）。ただし FE の表示で「自動連鎖」アイコンを出すなどには活用できる。
+> **各イベントは「遷移後の状態」を表す**不変条件を維持し、最新イベント 1 件で現状態が決まる。TOSS の取り消しは `approved` を再追記して承認済みへ戻す（新モデルは `toss_undone` を新規発行しない）。`source` は導出結果に影響しない（共有リンク由来の匿名イベントも同じ遷移）。
+> ライン（後続チェーン）単位の保持者は `deriveLineBallHolders(plans)` が導出する（`status='completed'` を後続へ辿り、未完了に到達した予定の `ballState` で保持者を決定、canceled は無視）。
 
-**Phase 1 で拡張**：'returned' / 'retossed' / 'canceled' / shared / solo 対応。テストは状態遷移網羅。
+**Phase 1 で拡張**：shared / solo 予定種別（`ownerMemberId`）対応。テストは状態遷移網羅。
 
 ---
 
@@ -1383,9 +1388,7 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | Auth | POST | `/auth/password/reset` | UC-01 |
 | Auth | POST | `/auth/password/reset/confirm` | UC-01 |
 | Plans | POST | `/projects/:projectId/items/:itemId/plans` (planType 拡張) | UC-06, UC-07 |
-| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/cancel-toss` | UC-09 |
-| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/return` | UC-10 |
-| Ball Actions | POST | `/projects/:projectId/items/:itemId/plans/:planId/retoss` | UC-11 |
+| ~~Ball Actions~~ | ~~POST~~ | ~~`.../cancel-toss`（UC-09）／`.../return`（UC-10）／`.../retoss`（UC-11）~~ | **#131 で実装済み**（`toss-undo` / `send-back` / `approve-undo`→再 approve/toss に相当、§3.6.8） |
 | Projects | POST | `/projects/:projectId/close` | UC-17 |
 | Projects | POST | `/projects/:projectId/archive` | UC-18 |
 | Projects | DELETE | `/projects/:projectId` | UC-18 |
@@ -1418,8 +1421,8 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | 9 | 警告の返し方 | **レスポンスボディの `warnings` 配列** | 多件警告・構造化データを乗せやすい、FE 型生成と相性◎ |
 | 10 | 楽観的ロック | **Phase 0 では実装しない（最後勝ち）** | 同一ボール多人数同時編集ケースが少ない。Phase 1 でコメント・差し戻し追加時に再検討 |
 | 11 | URL 階層の表現方針 | **データ上の所有関係を完全に URL に反映**（深さ上限なし） | 認可ミドルウェアの階層チェーン化、未参加リソースの 404 集約、子リソース追加時の素直な配置に有利 |
-| 12 | カンバン DnD の API マッピング（v1.1） | **既存 TOSS / 完了 API に集約**、専用 EP を作らない | UC-26 整合。`POST .../toss { toMemberId }` で別メンバー DnD を表現、状態列 DnD は `complete` / `cancel-toss`（Phase 1）を呼ぶ |
-| 13 | 自動 TOSS 連鎖の実行方式（v1.1） | **complete API 内の同一トランザクション**で連鎖、follow-up job 不採用 | FR-BALL-13 と整合。Phase 0 で Inngest 未導入、トランザクション整合性が最優先。Phase 1 で連鎖長が伸びる場合は再評価 |
+| 12 | カンバン DnD の API マッピング（v1.1） | **既存 Ball Action API に集約**、専用 EP を作らない | UC-26 整合。**#131：状態列 DnD は状態機械の各アクション（request-review / approve / send-back / toss）に対応** |
+| 13 | ~~自動 TOSS 連鎖の実行方式~~（v1.1、**#117 で廃止**） | **廃止済み**。承認（approve）と TOSS を分離し、進行責任者が明示的に TOSS する | 自動連鎖は誤操作・意図しない進行を招くため撤回（#117）。complete は approve のエイリアスとして残す |
 | 14 | OAuth コールバックの方式（v1.1） | **専用 EP（callback）+ Supabase Auth `exchangeCodeForSession`** で確立、`/auth/me/sync` で users 同期 | Supabase Auth の標準コールバック処理を BE 経由で扱うことで PKCE/state 検証を一元化 |
 
 ---
@@ -1431,7 +1434,7 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | §6 UC-01〜08, 12, 15, 16 | §3.5〜3.6 で全て対応エンドポイント定義 |
 | §7 SC-01〜04, 06〜08, 10, 11 | 各画面が必要とする API を §3.5 に列挙 |
 | §9.4 ロール別操作マトリクス | §3.4 で API レベルに物理化 |
-| §9.6 SR-AUDIT-01 | §3.6.2 / §3.6.8 / §3.6.9〜10 で Phase 0 範囲（login/toss/complete/share_access/share_create/share_revoke/share_toss/share_complete）を実装 |
+| §9.6 SR-AUDIT-01 | §3.6.2 / §3.6.8 / §3.6.9〜10 で監査アクションを実装。**#131：会員 request_review/undo_request_review/approve/undo_approve/send_back、共有 share_request_review/share_approve/share_send_back を追加**（旧 share_toss/share_complete は廃止、auto_toss は #117 廃止で新規記録なし） |
 | §10.2 Phase 0 成功基準 | §3.5 の Phase 0 必須エンドポイントが満たすことを確認（FR-SHARE-01〜06／UC-23／SC-16 を含む） |
 | §10.2 FR-SHARE-01〜06／SR-AUTH-08 | §3.6.9 share-link 管理エンドポイント＋§3.6.10 share access エンドポイントで物理化（v1.1 改訂で Phase 0 化） |
 | FR-BALL-12 MVP 物理削除 | §3.6.7 DELETE 系で物理削除を実装、Phase 1 で論理削除へ |
@@ -1458,3 +1461,4 @@ export function deriveBallHolder(plan: Plan, latestEvent: BallEvent | null): Bal
 | 2026-05-09 | **v1.0.1 確定** | URL 階層の表現方針を改訂：「ネスト深さ最大2階層」の縛りを撤回し、データ所有関係を完全に URL に反映する方針へ更新（plans 系・items 詳細・ball actions・Phase 1 系のパスを完全階層化）。§3.10 に論点11として記録。 |
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§3.5 Phase 0 必須エンドポイントに Share Links（GET/POST/DELETE）と Share Access（GET /share/:token、POST /share/:token/plans/:planId/{toss,complete}）を追加、§3.6.9〜10 に詳細仕様を新設、§3.4 認可マトリクスに share-link 行を追加、§3.2.3 未認証許容エンドポイントに `/share/:token` を追加、§3.9 から share 関連 4行を削除、§3.11 PRD 整合チェックと Phase 1+ 持ち越しを更新。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | OAuth start/callback EP 追加 / complete-signup 追加 / GET /users/me/dashboard 追加 / PATCH .../successor 追加 / POST .../toss に toMemberId 追加 / POST .../complete に自動連鎖追加 / GET .../plans レスポンスに category, successorPlanId, source 追加 / 認可マトリクス更新 / deriveBallHolder の BallEvent に source 追加 / §3.10 論点 12〜14 追加。 |
+| 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | Ball Action を状態機械へ刷新：§3.6.8 に request-review(-undo)/approve(-undo)/send-back/toss(-undo)/complete(-undo エイリアス) を定義、toss は「進行責任者・承認済み・後続必須」で FROM/TO を履歴記録、自動連鎖 TOSS は #117 廃止。§3.6.7 PlanDTO に executor/approver/progressManager と ballState 6値、POST/PATCH に役割項目とロックルール。§3.6.10 共有アクセスを request-review/approve/send-back に置換（旧 toss/complete 廃止、閲覧専用撤回）。§3.4 認可マトリクス・§3.5 EP 一覧・§3.8 deriveBallHolder 仕様表・監査アクションを更新。§3.10 論点 12〜13 改訂。 |

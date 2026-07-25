@@ -231,8 +231,8 @@ sequenceDiagram
 |---|---|---|---|
 | `plans.plan_type` | `'toss'` 固定 | `'toss' / 'shared' / 'solo'` の3値 | チェック制約は最初から3値で定義 |
 | `plans.deleted_at` | 物理削除（MVP §6.3）で未使用 | 論理削除に切替 | 列は最初から定義、Phase 0 のコードは無視 |
-| `ball_events.event_type` | `tossed / completed` のみ | `+ canceled / returned / retossed` | 型として最初から enum 定義 |
-| `audit_logs.action` | `login / toss / complete` のみ | 全アクション記録 | 列構造は Phase 1 仕様で先に確定 |
+| `ball_events.event_type` | **#131：review_requested / approved / sent_back / review_request_undone / approval_undone / tossed（＋レガシー completed / toss_undone / completion_undone）** | Phase 1 で共同/単独予定向けに拡張 | 型として最初から enum 定義、CHECK は許可値の追加で拡張 |
+| `audit_logs.action` | `login / toss / complete` に加え **#131 の request_review / approve / send_back 系・share_* 系** | 全アクション記録 | 列構造は Phase 1 仕様で先に確定 |
 | `organization_id`（全主要テーブル） | NULL 許容 | NOT NULL 化（移行スクリプト） | Phase 0 から列存在 |
 | `share_links.organization_off_revoked` | 列定義あり・常に false | Phase 2 で組織OFF反映時に参照開始 | 列は最初から定義（章2 §2.4 share_links）。`share_links` テーブル本体は v1.3 で Phase 0 物理化 |
 | `comments` / `attachments` テーブル | 作らない | 新規作成 | 同上 |
@@ -246,7 +246,7 @@ sequenceDiagram
 | `JobQueue` インターフェース | `apps/web/server/lib/job-queue.ts` | Phase 0 では使わなくても定義・空実装を置く。Phase 1 で **Inngest** に差し替え |
 | `FileService` インターフェース | `apps/web/server/lib/file-service.ts` | Phase 0 で未使用。Phase 1 で Supabase Storage 実装、Phase 2 で GCS/S3 実装に差し替え |
 | `MailService` インターフェース | `apps/web/server/lib/mail-service.ts` | Phase 0 から **Resend** 実装を入れる（招待・パスワード再発行）。Phase 1 で通知種別を拡張 |
-| `AuditLogger` インターフェース | `apps/web/server/lib/audit-logger.ts` | Phase 0 から最低限のアクション（login / toss / complete）を記録 |
+| `AuditLogger` インターフェース | `apps/web/server/lib/audit-logger.ts` | Phase 0 から login / toss / complete に加え **#131 の状態機械操作（request_review / approve / send_back 等）・共有操作**を記録 |
 
 ### 1.6.3. Phase 2 を見据えた A（GCP）移行視野
 

@@ -118,7 +118,8 @@ erDiagram
     project_items ||--o{ plans : "item_id"
     plans ||--o{ ball_events : "plan_id"
     plans }o--|| plans : "successor_plan_id (v1.1)"
-    project_members ||--o{ plans : "from_member_id / to_member_id"
+    project_members ||--o{ plans : "executor / approver / progress_manager (#131) ・ from/to 履歴 (#131)"
+    project_members ||--o{ projects : "progress_manager_member_id 既定 (#131)"
     project_members ||--o{ ball_events : "actor_member_id"
     project_members ||--o{ invitations : "invited_member_id"
     project_members ||--o{ share_links : "issued_by_member_id"
@@ -152,6 +153,7 @@ erDiagram
         date end_date
         text status "active/closed (CHECK)"
         uuid created_by FK
+        uuid progress_manager_member_id "#131 予定作成時の進行責任者既定 NULL可 FK"
         timestamptz closed_at "Phase1〜"
         timestamptz archived_at "Phase1〜"
         timestamptz deleted_at "Phase1〜"
@@ -194,8 +196,11 @@ erDiagram
         date scheduled_date
         date due_date
         date end_date
-        uuid from_member_id FK
-        uuid to_member_id FK
+        uuid executor_member_id "#131 実施者 NULL可 FK"
+        uuid approver_member_id "#131 承認者(任意) NULL可 FK"
+        uuid progress_manager_member_id "#131 進行責任者 NULL可 FK"
+        uuid from_member_id "#131 TOSS履歴 FROM=TOSSした進行責任者 FK"
+        uuid to_member_id "#131 TOSS履歴 TO=後続予定の実施者 FK"
         uuid owner_member_id "Phase1〜 共同/単独"
         uuid successor_plan_id "v1.1 FK self, NULL可, UNIQUE"
         text location_or_url "Phase1〜"
@@ -210,7 +215,7 @@ erDiagram
     ball_events {
         uuid id PK
         uuid plan_id FK
-        text event_type "tossed/completed(P0) +canceled/returned/retossed(P1)"
+        text event_type "#131 review_requested/approved/sent_back/review_request_undone/approval_undone/tossed +レガシー completed/toss_undone/completion_undone (CHECK)"
         uuid actor_member_id "v1.1 NULL可"
         uuid actor_user_id "v1.1 NULL可 (system actor対応)"
         text source "v1.1 human/auto_chain (CHECK, NOT NULL)"
@@ -221,7 +226,7 @@ erDiagram
         uuid id PK
         timestamptz occurred_at
         uuid actor_user_id "FK NULL可"
-        text action "login/toss/complete(P0) +他(P1)"
+        text action "login/toss/complete +#131 request_review/approve/send_back(+undo)/share_request_review/share_approve/share_send_back (CHECK)"
         text resource_type
         uuid resource_id
         text result "success/failure (CHECK)"
@@ -359,6 +364,7 @@ erDiagram
 | end_date | date | × | — | start_date 以降（CHECK） |
 | status | text | × | 'active' | 'active' / 'closed'（CHECK） |
 | created_by | uuid | × | — | FK → users.id |
+| **progress_manager_member_id** | uuid | ○ | NULL | **予定作成時の進行責任者の既定値（#131 追加）。FK → project_members.id** |
 | closed_at | timestamptz | ○ | NULL | Phase 1〜（status='closed' に同期） |
 | archived_at | timestamptz | ○ | NULL | Phase 1〜（表示状態） |
 | deleted_at | timestamptz | ○ | NULL | Phase 1〜 |
@@ -370,6 +376,7 @@ erDiagram
 - `ck_projects_date_range` CHECK (end_date >= start_date)
 - `ck_projects_name_length` CHECK (char_length(name) BETWEEN 1 AND 255)
 - `fk_projects_created_by` FK → users(id) ON DELETE RESTRICT
+- **`fk_projects_progress_manager_member_id` FK → project_members(id) ON DELETE RESTRICT（#131 追加）**
 
 **インデックス**：
 - `idx_projects_organization_id`（Phase 2 で活用、Phase 0 から付ける）
@@ -439,6 +446,8 @@ erDiagram
 
 **司る機能**：FR-SCH-01〜16／FR-BALL-01, 02, 03, 08, 11／UC-05〜08, 12／SC-06 各制作物画面／SC-07 予定作成モーダル。**Phase 0 では `plan_type='toss'` のみ**、Phase 1 で `'shared'` `'solo'` を追加。
 
+> **#131 改訂**：予定に 3 つの役割 — **実施者 executor**（作業/確認を行う。実質必須）／**承認者 approver**（実施者の成果を承認する。任意）／**進行責任者 progress_manager**（承認済みの予定を後続へ TOSS する）— を持たせ、ボール状態機械を「実施中 → 確認待ち → 承認済み → TOSS済み」に拡張した（詳細は 03-api.md §3.8、状態一覧は本節下の補足）。これに伴い `from_member_id` / `to_member_id` は列自体は残るが**意味が「予定の固定属性」から「TOSS 実行時の履歴スナップショット（FROM=TOSSした進行責任者 / TO=後続予定の実施者）」へ変化**した。作成時は NULL で、TOSS 実行時にのみ書き込む。1 人が複数役割を兼任できる。
+
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
 | id | uuid | × | uuidv7 | |
@@ -449,8 +458,11 @@ erDiagram
 | scheduled_date | date | × | — | 予定日（TOSS／共同）／開始予定日（単独） |
 | due_date | date | ○ | NULL | 期日（TOSS 用、任意） |
 | end_date | date | ○ | NULL | 終了予定日（共同／単独 用、任意） |
-| from_member_id | uuid | ○ | NULL | TOSS の FROM。Phase 1 で plan_type='toss' のとき NOT NULL 相当 |
-| to_member_id | uuid | ○ | NULL | TOSS の TO。同上 |
+| **executor_member_id** | uuid | ○ | NULL | **実施者（#131 追加、実質必須）。FK → project_members.id** |
+| **approver_member_id** | uuid | ○ | NULL | **承認者（#131 追加、任意）。FK → project_members.id** |
+| **progress_manager_member_id** | uuid | ○ | NULL | **進行責任者（#131 追加）。FK → project_members.id** |
+| from_member_id | uuid | ○ | NULL | **#131 改訂：TOSS 履歴スナップショット FROM=TOSS した進行責任者。作成時 NULL、TOSS 実行時に書き込む** |
+| to_member_id | uuid | ○ | NULL | **#131 改訂：TOSS 履歴スナップショット TO=後続予定の実施者。同上** |
 | owner_member_id | uuid | ○ | NULL | Phase 1〜（共同／単独 の主担当者） |
 | **successor_plan_id** | uuid | ○ | NULL | **後続予定の FK (self、UNIQUE、v1.1 追加、FR-SCH-17)**。Phase 0 では同一プロジェクト内に限定 |
 | location_or_url | text | ○ | NULL | Phase 1〜（共同予定用） |
@@ -466,13 +478,13 @@ erDiagram
 - `ck_plans_plan_type` CHECK (plan_type IN ('toss'))  ← **Phase 0 のチェック式。Phase 1 で `('toss','shared','solo')` に ALTER**
 - `ck_plans_status` CHECK (status IN ('active','completed','canceled'))
 - `ck_plans_category` CHECK (category IN ('wireframe','design','coding','review','meeting','other')) ← **v1.1、enum 拡張は ALTER で対応**
-- `ck_plans_toss_members` CHECK (
-    plan_type <> 'toss' OR
-    (from_member_id IS NOT NULL AND to_member_id IS NOT NULL AND from_member_id <> to_member_id)
-  ) ← TOSS は FROM/TO 必須かつ別人
+- ~~`ck_plans_toss_members`~~ **（#131 で撤去）**。旧制約は from/to を「実施者/確認者」とみなし `from <> to` を強制していたが、#131 で from/to は TOSS 履歴スナップショット（進行責任者→後続実施者）へ意味が変わり、かつ **1 人が複数役割を兼任できる**（from = to もありうる）ため、役割相違制約は課さない。
 - `uq_plans_successor_plan_id` UNIQUE (successor_plan_id) — **後続は1つの先行からのみ指される（v1.1）**
 - `ck_plans_no_self_successor` CHECK (successor_plan_id IS NULL OR successor_plan_id <> id) ← 自己参照防止（深い循環はアプリ層で）
 - `fk_plans_item_id` FK → project_items(id) ON DELETE CASCADE
+- **`fk_plans_executor_member_id` FK → project_members(id) ON DELETE RESTRICT（#131 追加）**
+- **`fk_plans_approver_member_id` FK → project_members(id) ON DELETE RESTRICT（#131 追加）**
+- **`fk_plans_progress_manager_member_id` FK → project_members(id) ON DELETE RESTRICT（#131 追加）**
 - `fk_plans_from_member_id` FK → project_members(id) ON DELETE RESTRICT
 - `fk_plans_to_member_id` FK → project_members(id) ON DELETE RESTRICT
 - `fk_plans_successor_plan_id` FK → plans(id) ON DELETE SET NULL — 後続が削除された場合は紐付け解除のみ
@@ -485,8 +497,9 @@ erDiagram
 **インデックス**：
 - `idx_plans_item_id_scheduled_date`（縦型カレンダー描画クエリ用）
 - `idx_plans_from_member_id`、`idx_plans_to_member_id`、`idx_plans_owner_member_id`（参加者列ごとの取得用）
+- **`idx_plans_executor_member`、`idx_plans_progress_manager_member`（#131 追加、役割ごとの取得用）**
 - `idx_plans_status_scheduled_date`（ダッシュボード用）
-- `idx_plans_successor_plan_id`（**v1.1、後続自動 TOSS の SELECT FOR UPDATE 用**）
+- `idx_plans_successor_plan_id`（**v1.1、後続紐付けの SELECT FOR UPDATE 用**。~~後続自動 TOSS~~ は #117 で廃止済み）
 - `idx_plans_category`（**v1.1、カテゴリでのフィルタ・色分け用**）
 - 部分インデックス：`idx_plans_active` ON plans(scheduled_date) WHERE status = 'active' AND deleted_at IS NULL
 
@@ -494,13 +507,15 @@ erDiagram
 
 ### 2.4.6. ball_events — ボール責任移動履歴
 
-**司る機能**：FR-BALL-04〜10, 13／UC-08 TOSS実行／UC-09 TOSS取消／UC-10 差し戻し／UC-11 再TOSS／UC-12 予定完了／**UC-25 後続自動 TOSS 連鎖**。**追記専用、物理削除しない**。Ball Holder 導出のソース・オブ・トゥルース。**v1.1 で `source` 列を追加（human / auto_chain）、`actor_user_id` を NULL 許容化**（system actor 対応、FR-BALL-13）。
+**司る機能**：FR-BALL-04〜10, 13／UC-08 TOSS実行／UC-09 TOSS取消／UC-10 差し戻し／UC-11 再TOSS／UC-12 予定完了／~~UC-25 後続自動 TOSS 連鎖~~（**#117 で廃止済み**）。**追記専用、物理削除しない**。Ball Holder 導出のソース・オブ・トゥルース。**v1.1 で `source` 列を追加（human / auto_chain）、`actor_user_id` を NULL 許容化**（system actor 対応、FR-BALL-13）。
+
+> **#131 改訂**：状態機械の拡張に伴い、会員操作イベント `review_requested` / `approved` / `sent_back` / `review_request_undone` / `approval_undone` を追加した。既存の `tossed`（意味は「進行責任者→後続実施者」へ変化）は残存。`completed` / `toss_undone` / `completion_undone` は**レガシー**（旧モデルの既存データ解釈のためだけに残す。新コードは発行しない）。`source='auto_chain'`（system actor）は自動連鎖 TOSS 廃止後は新規生成されないが、**共有リンク（非会員）の操作を匿名 actor として記録する用途で再利用**する（誰が操作したかは `audit_logs.share_link_id` で辿る）。
 
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
 | id | uuid | × | uuidv7 | |
 | plan_id | uuid | × | — | FK → plans.id |
-| event_type | text | × | — | 'tossed' / 'completed'（P0）／+'canceled' / 'returned' / 'retossed'（P1）（CHECK） |
+| event_type | text | × | — | **#131：`review_requested` / `approved` / `sent_back` / `review_request_undone` / `approval_undone` / `tossed` ＋レガシー `completed` / `toss_undone` / `completion_undone`（CHECK）** |
 | actor_member_id | uuid | ○ | NULL | 実行者（FK → project_members.id）。**v1.1 で NULL 許容化**（system actor 時は NULL）|
 | **actor_user_id** | uuid | ○ | NULL | **実行ユーザー（FK → users.id、v1.1 追加、system actor 時は NULL）** |
 | **source** | text | × | 'human' | **'human' / 'auto_chain'**（CHECK、NOT NULL、v1.1 追加、FR-BALL-13）|
@@ -508,7 +523,7 @@ erDiagram
 | note | text | ○ | NULL | 差し戻し理由など |
 
 **制約**：
-- `ck_be_event_type` CHECK (event_type IN ('tossed','completed'))  ← **Phase 0、Phase 1 で拡張**
+- `ck_be_event_type` CHECK (event_type IN ('tossed','completed','toss_undone','completion_undone','review_requested','approved','sent_back','review_request_undone','approval_undone'))  ← **#131 で新イベント 5 種を追加（許可値の追加＝スーパーセット。マイグレーション 20260724000001）**
 - `ck_be_source` CHECK (source IN ('human','auto_chain'))
 - `ck_be_actor_consistency` CHECK (
     (source = 'human' AND actor_member_id IS NOT NULL AND actor_user_id IS NOT NULL)
@@ -522,7 +537,7 @@ erDiagram
 
 **インデックス**：
 - `idx_be_plan_id_occurred_at_desc`（最新イベント取得・Ball Holder 導出用）
-- `idx_be_source`（**v1.1：自動連鎖イベントの分析・監査用**）
+- `idx_be_source`（**v1.1：自動連鎖イベントの分析・監査用。#131 以降は共有リンク由来の匿名イベント抽出にも使う**）
 
 ---
 
@@ -530,13 +545,15 @@ erDiagram
 
 **司る機能**：SR-AUDIT-01〜04／FR-SHARE-04（非会員URLアクセス記録）。**追記専用・改ざん防止**。Phase 0 では `login` / `toss` / `complete` / `share_access` / `share_create` / `share_revoke` / `share_toss` / `share_complete` を記録、Phase 1 で全アクションに拡張。
 
+> **#131 改訂**：新状態機械の会員操作 `request_review` / `undo_request_review` / `approve` / `undo_approve` / `send_back`、および共有リンク（非会員）操作 `share_request_review` / `share_approve` / `share_send_back` を追加（マイグレーション 20260724000001 / 20260724000002）。旧 `share_toss` / `share_complete` は CHECK に残す（既存行の互換のため）が、対応する共有ルートは廃止済み。`auto_toss` は #117 の自動連鎖 TOSS 廃止に伴い**新規記録されない**（許可値としては残す）。
+
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
 | id | uuid | × | uuidv7 | |
 | occurred_at | timestamptz | × | now() | 発生日時 |
 | actor_user_id | uuid | ○ | NULL | FK → users.id（非会員URL経由は NULL） |
 | share_link_id | uuid | ○ | NULL | FK → share_links.id（非会員URL経由のアクセス時のみ／Phase 0 から有効） |
-| action | text | × | — | 'login','logout','toss','complete','share_access','share_create','share_revoke','share_toss','share_complete' …（CHECK） |
+| action | text | × | — | 'login','logout','toss','untoss','complete','undo_complete','auto_toss'(#117廃止), **#131: 'request_review','undo_request_review','approve','undo_approve','send_back'**, 'share_access','share_create','share_revoke','share_toss'(廃止),'share_complete'(廃止), **#131: 'share_request_review','share_approve','share_send_back'** …（CHECK） |
 | resource_type | text | × | — | 'project','plan','ball_event' 等 |
 | resource_id | uuid | ○ | NULL | 対象リソース ID |
 | result | text | × | — | 'success' / 'failure'（CHECK） |
@@ -674,25 +691,34 @@ erDiagram
 
 ## 2.6. Ball Holder 導出戦略
 
-PRD §8.2 plans 注釈：「Ball Holder は本テーブルから導出する（TOSS：最新の to_member、TOSS前は from_member／共同・単独：owner_member）」。
+PRD §8.2 plans 注釈：「Ball Holder は本テーブルから導出する」。**#131 で役割 3 種と状態機械を導入したため、導出は「最新イベント種別 → (状態, 保持者ロール)」のマッピングに刷新された。**
 
-### 2.6.1. Phase 0：シンプル算出
+### 2.6.1. #131 モデル：6 状態の算出
 
-`plans.plan_type='toss'` のみのため、以下のロジックで導出：
+`plans` の役割列（executor / approver / progress_manager）＋ TOSS 履歴 to_member と、最新の `ball_events.event_type` 1 件から、状態 (`ballState`) と保持者を導出する。実装の正は共有純関数 **`packages/shared/src/domain/ballHolder.ts` の `deriveBallHolder(plan, latestEvent)`**（FE/BE 共通）。「各イベントは遷移後の状態を表す」不変条件を保つため、最新イベント 1 件で現状態が決まる。
 
-```
-最新の ball_events.event_type を取得：
-  - 't未存在'（TOSS未実行）→ Ball Holder = plans.from_member_id
-  - 'tossed' → Ball Holder = plans.to_member_id
-  - 'completed' → Ball Holder = plans.to_member_id（完了者）
-```
+| 最新イベント種別 | 状態 `ballState` | Ball Holder |
+|---|---|---|
+| （イベント無し）／`review_request_undone` | `in_progress`（実施中） | executor_member_id |
+| `sent_back` | `sent_back`（差し戻し） | executor_member_id |
+| `review_requested` | `review_pending`（確認待ち） | approver_member_id |
+| `approval_undone` | 承認者あり: `review_pending` ／ なし: `in_progress` | approver_member_id ／ executor_member_id |
+| `approved` | `approved`（承認済み・TOSS待ち） | progress_manager_member_id |
+| `tossed` | `tossed`（TOSS済み） | to_member_id（後続実施者の履歴） |
+| `completed`（レガシー） | `completed`（完了） | to_member_id |
+| `toss_undone`（レガシー） | `in_progress`（実施中） | executor_member_id |
+| `completion_undone`（レガシー） | `tossed` | to_member_id |
 
-実装は **Repository 層の純関数**として書く（`apps/web/server/repositories/plans.ts` の `deriveBallHolder(plan, latestEvent)`）。アプリ層で計算するため DB 側にビューやデノーマライズ列は持たない。
+- **承認とTOSSは分離**：承認だけでは後続は自動開始せず、進行責任者だけが TOSS できる。承認者なしの予定は「確認待ち」を経ず実施者が直接 approve する。
+- **TOSS の取り消し**は「`approved` を再追記」して承認済みへ戻す（新モデルは `toss_undone` を新規発行しない）。これによりレガシー `toss_undone` の解釈と衝突しない。
+- ライン（後続チェーン）単位の保持者導出は同ファイルの `deriveLineBallHolders()` が担う（`status='completed'` の予定は後続へ辿り、未完了に到達した予定の `ballState` で保持者を決める）。
+
+アプリ層で計算するため DB 側にビューやデノーマライズ列は持たない。
 
 ### 2.6.2. Phase 1〜：拡張ロジック
 
-- `'returned'` → Ball Holder = from_member_id（差し戻し）
-- `'retossed'` → Ball Holder = to_member_id
+> **#131 追記**：かつて Phase 1 拡張として想定していた `'returned'` / `'retossed'` イベントは実装されず、差し戻しは #131 の `sent_back`（→ 実施者）に置き換わった（§2.6.1 の表が正）。下記は共同／単独予定など未実装の将来拡張の残りメモ。
+
 - `'canceled'` → 直前の状態にロールバック（直前の event 解釈）
 - 共同／単独：`plans.owner_member_id`
 
@@ -763,7 +789,8 @@ CREATE TRIGGER trg_ball_events_no_update BEFORE UPDATE OR DELETE ON ball_events
 | ユーザー認証時の `users` 取得 | 全API ミドルウェア | `idx_users_auth_user_id` |
 | **OAuth コールバックの identity 検索（v1.1）** | **POST /auth/oauth/:provider/callback** | `idx_oauth_identities_provider_provider_user_id` |
 | **ダッシュボード（自分／全員の今日のタスク、v1.1 Phase 0 へ繰り上げ）** | **GET /users/me/dashboard** | `idx_plans_status_scheduled_date` + 部分インデックス `idx_plans_active` |
-| **後続自動 TOSS の連鎖元検索（v1.1）** | **POST .../plans/:id/complete 内部処理** | `idx_plans_successor_plan_id` |
+| ~~後続自動 TOSS の連鎖元検索~~ → **TOSS 時の後続予定参照（#131 / 自動連鎖は #117 廃止）** | **POST .../plans/:id/toss 内部処理** | `idx_plans_successor_plan_id` |
+| **役割ごとの予定取得（#131）** | **SC-06 描画・ダッシュボード** | `idx_plans_executor_member`, `idx_plans_progress_manager_member` |
 | **カテゴリでのフィルタ・色分け（v1.1）** | **GET /items/:id/plans レスポンス描画** | `idx_plans_category` |
 | 監査ログの時系列参照 | （Phase 1〜） | `idx_al_occurred_at_desc`, `brin_al_occurred_at` |
 
@@ -818,6 +845,13 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 | M001d | `plans.successor_plan_id`（FK self, UNIQUE）追加、`ck_plans_no_self_successor` | 低 |
 | M001e | `ball_events.source`（NOT NULL, CHECK）追加、`actor_user_id`（NULL可）追加、`actor_member_id` を NULL 許容化、`ck_be_actor_consistency` | 低 |
 | M001f | 追加インデックス：`idx_oauth_identities_provider_provider_user_id`, `idx_plans_successor_plan_id`, `idx_plans_category`, `idx_plans_status_scheduled_date`, `idx_plans_active`, `idx_be_source` | 低 |
+
+**#131（issue #131「確認者付き予定と進行責任者」）マイグレーション（Phase 0 範囲・追加投入）**：
+
+| マイグレーション | 内容 | リスク |
+|---|---|---|
+| `20260724000001_add_plan_roles` | `plans` に 3 役割列（executor / approver / progress_manager）＋ `projects.progress_manager_member_id` を追加（すべて nullable UUID）、対応 FK（ON DELETE RESTRICT）と index（`idx_plans_executor_member` / `idx_plans_progress_manager_member`）を追加、`ck_be_event_type` / `ck_al_action` を新値追加で拡張、**`ck_plans_toss_members` を撤去**。バックフィル（executor ← from_member、progress_manager ← 作成者 created_by の該当メンバー）は updated_at 保持のため set_updated_at トリガを一時 DISABLE して実行。 | 低（追加列は nullable・CHECK はスーパーセット・破壊的操作なし） |
+| `20260724000002_add_share_action_events` | `audit_logs.action` に `share_request_review` / `share_approve` / `share_send_back` を追加（許可値の追加のみ）。旧 `share_toss` / `share_complete` は残す。 | 低 |
 
 ---
 
@@ -879,3 +913,4 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 | 2026-05-09 | **v1.0 確定** | §2.10 全10論点を AskUserQuestion で確定（全て推奨案＝たたき台どおり） |
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§2.3.1 ER 図に `share_links` を追加、§2.4.9 share_links テーブル定義を新設、§2.4.7 audit_logs に `share_link_id`／`share_*` アクションを Phase 0 から有効化、§2.9.3 マイグレーション計画から `share_links` を M001 に統合、§2.11 Phase 1+ 持ち越しから `share_links` を除外。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | users 拡張（full_name/display_name 分離、primary_auth_method）／oauth_identities 新規／plans 拡張（successor_plan_id, category）／ball_events 拡張（source, actor_user_id NULL化、ck_be_actor_consistency）／インデックス追加（OAuth/successor/category/ダッシュボード）／§2.5.3 OAuth 紐付け方針新設／§2.10 に論点 11〜14 追加／M001a〜f マイグレーション。 |
+| 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | plans に 3 役割列（executor/approver/progress_manager）＋ projects に既定進行責任者列を追加、from/to を TOSS 履歴スナップショットへ意味変更、`ck_plans_toss_members` 撤去、ball_events.event_type / audit_logs.action を新値で拡張、§2.6 Ball Holder 導出を 6 状態モデルへ刷新、§2.9.3 に 20260724000001 / 20260724000002 を追記。自動連鎖 TOSS は #117 廃止を明記。 |
