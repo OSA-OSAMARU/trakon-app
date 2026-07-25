@@ -44,7 +44,7 @@ PRD §9.1 の6方針を本章での実装ポリシーに落とす。
 | **最小権限** | 全 API に認可ガードを必須付与。デフォルトは「拒否」、明示的な許可のみ通す |
 | **デフォルト非公開** | 新規プロジェクト・予定・添付は全てプロジェクト参加者限定。公開（=非会員URL）は明示操作（Phase 0、§5.4.5） |
 | **公開範囲は最小化・統制下で許可** | 認証なしアクセスは Phase 0 では `/healthz` `/login` `/signup` `/invitations/:token` `/share/:token` のみ。非会員URL共有は短時間有効期限・個別失効・全アクセスの監査ログを必須（FR-SHARE-01〜04、SR-AUTH-08） |
-| **監査可能性** | 重要操作は `audit_logs` に記録。Phase 0 は最低限（login/toss/complete）で素地確保 |
+| **監査可能性** | 重要操作は `audit_logs` に記録。login/toss/complete に加え、**#131 の状態機械操作（request_review/approve/send_back 等）と共有操作（share_request_review/share_approve/share_send_back）を記録**（§5.6.1） |
 | **失敗に備える** | エラー時もスタックトレース・機密情報を返さない。シークレット漏洩時の即時無効化手順を運用に組み込む |
 
 ### 5.2.1. 多層防御（Defense in Depth）
@@ -503,7 +503,7 @@ Phase 0 は role_type を実装しないため、簡易ロール導出：
 | URL の :projectId 改ざん | `requireProjectMember` で参加判定 → 未参加は 404 |
 | URL の :itemId 改ざん | `requireItemInProject` で「指定 projectId の配下に存在するか」を必ず確認（**親子関係の検証**） |
 | URL の :planId 改ざん | `requirePlanInItem` で同上 |
-| リクエストボディの id 参照（例：`from_member_id`） | サービス層で「対象 member が currentProject の参加者であること」を検証 |
+| リクエストボディの id 参照（**#131：`executorMemberId` / `approverMemberId` / `progressManagerMemberId`**） | サービス層で「対象 member が currentProject の参加者であること」を検証（**兼任があるため重複を除いてから検証**） |
 | **`successor_plan_id` の指定（v1.1）** | サービス層で「対象後続 plan が **同一 project 内** に存在すること」を検証（Phase 0 制約）。`UNIQUE` 制約 + アプリ層の循環参照検出 |
 | **`oauth_identities` の参照（v1.1）** | アカウント設定画面（Phase 1+）で OAuth 連携を表示する際、`user_id == currentUser.id` を必ず WHERE 句に含める |
 | **カンバン DnD の `toMemberId`（v1.1、SC-17）** | TOSS API のサービス層で「対象 member が currentProject の参加者で、is_active=true であること」を検証 |
@@ -512,15 +512,20 @@ Phase 0 は role_type を実装しないため、簡易ロール導出：
 
 ### 5.4.4. 状態遷移ガード（サービス層）
 
-ミドルウェアではなく、サービス層で実施：
+ミドルウェアではなく、サービス層で実施（**#131 で状態機械へ刷新**。実装の正は `apps/web/server/services/ballActions.ts`。現状態・保持者は `deriveBallHolder` で判定）：
 
-| 操作 | サービス関数 | チェック内容 |
-|---|---|---|
-| TOSS | `assertCanToss(plan, currentMember, latestEvent)` | `plan.status='active'`、`latestEvent` が `tossed` でない、`currentMember.id === plan.from_member_id` または director |
-| 完了 | `assertCanComplete(plan, currentMember)` | `plan.status='active'`、currentMember が現 Ball Holder または director |
-| 削除 | `assertCanDeletePlan(plan, currentMember)` | currentMember が plan の from/to のいずれか または director |
+| 操作 | チェック内容（事前条件・認可） |
+|---|---|
+| 確認依頼 request-review | `status='active'`、現状態 `in_progress`/`sent_back`、実施者・承認者設定済み、現 Ball Holder（実施者）or director |
+| 確認依頼取消 | `status='active'`、現状態 `review_pending`、実施者/承認者/director |
+| 承認 approve | 承認者ありは現状態 `review_pending`／なしは `in_progress`/`sent_back`（実施者設定済み）、現 Ball Holder or director。後続なしは承認で `status='completed'` |
+| 承認取消 | 現状態 `approved`（または承認=完了で completed）、承認者/進行責任者/director |
+| 差し戻し send-back | `status='active'`、現状態 `review_pending`、現 Ball Holder（承認者）or director |
+| TOSS | `status='active'`、現状態 `approved`、**後続予定必須**（後続に実施者あり）、進行責任者設定済み、現 Ball Holder（進行責任者）or director。FROM=進行責任者/TO=後続実施者を履歴記録 |
+| TOSS取消 | 現状態 `tossed`、後続が完了済みでないこと、プロジェクトメンバー（誤TOSS救済 #50）。`approved` を再追記して戻す |
+| 削除 | `ball_events` が付いた予定は物理削除拒否（409）、director のみ |
 
-> 失敗時は カスタムエラー型 `BusinessRuleError` を throw、`errorBoundary` ミドルウェアで 422 にマッピング（章3 §3.2.6）。
+> 失敗時は `ApiException`（`lib/errors.ts`）を throw、`errorBoundary` ミドルウェアで所定のステータス（409 `INVALID_STATE`/`NOT_APPROVED` 等、422 `INCOMPLETE_PLAN`/`NO_APPROVER` 等、403 `FORBIDDEN`）にマッピングする。
 
 ### 5.4.5. 非会員URL共有のセキュリティ実装（FR-SHARE-01〜06、SR-AUTH-08／Phase 0）
 
@@ -591,9 +596,9 @@ app.use('/share/:token/*', async (c, next) => {
 
 | ガード | 検証内容 | 失敗時 |
 |---|---|---|
-| `assertScopeMatchesPath(shareLink, planId)` | `shareLink.scopeType` に応じて、リクエストパスの `:planId` が share_link.scope の範囲内に存在することを確認（`project` なら同 project_id 配下、`item` なら同 item_id 配下、`plan` なら同一 plan_id） | 404 |
-| `assertCallerIsBallHolderViaShare(plan, shareLink)` | アクション系（toss/complete）で、share_link が代表する member（発行者が指定したクライアント member）が現 Ball Holder であること | 403 |
+| `assertPlanInShareScope(shareLink, planId)` | `shareLink.scopeType` に応じて、リクエストパスの `:planId` が share_link.scope の範囲内に存在することを確認（`project` なら同 project_id 配下、`item` なら同 item_id 配下、`plan` なら同一 plan_id） | 404 |
 
+> **#131 改訂**：かつての `assertCallerIsBallHolderViaShare`（共有操作を「現 Ball Holder のみ」に制限）は**撤廃**した。非会員（クライアント）の操作は **scope 内かつ状態機械が許す限り、保持者の種別を問わず可**（確認依頼 / 承認 / 差し戻し）。ただし **TOSS（進行責任者の次工程操作）は共有リンクからは提供しない**（会員のみ）。
 > **原則**：トークンが取れたからといって全リソースに触れられるわけではない。share_link.scope 外のリソースへのアクセスは「見えない」（404）。
 
 #### レート制限（FR-SHARE 関連）
@@ -686,27 +691,30 @@ app.use('/share/:token/*', async (c, next) => {
 
 ## 5.6. 監査ログ実装
 
-### 5.6.1. Phase 0 の記録対象（v1.1 で auto_toss / oauth_login を追加）
+### 5.6.1. 記録対象（#131 で状態機械操作を追加）
 
-PRD SR-AUDIT-01 の全項目のうち、**Phase 0 では以下の最低限を記録**：
+PRD SR-AUDIT-01 の全項目のうち、**以下を記録**：
 
 | action | トリガ | 記録元 | 備考 |
 |---|---|---|---|
 | `login` | サインアップ・ログイン成功（password / OAuth 両方） | `POST /auth/me/sync` | actor_user_id = currentUser.id |
-| `toss` | TOSS 実行成功（human、認証経路） | `POST .../toss` | source='human' |
-| `auto_toss` **(v1.1 プロトタイプ反映)** | **後続自動 TOSS 連鎖**（UC-25、FR-BALL-13） | `POST .../complete` 内部処理 | source='auto_chain'、**actor_user_id = NULL**（system actor）、extra に `triggered_by_plan_id` |
-| `complete` | 予定完了成功（認証経路） | `POST .../complete` | actor_user_id = currentUser.id |
+| `request_review` / `undo_request_review` **(#131)** | 確認依頼／取消 | `POST .../request-review(-undo)` | source='human' |
+| `approve` / `undo_approve` **(#131)** | 承認／取消（`complete(-undo)` エイリアス含む） | `POST .../approve(-undo)`、`.../complete(-undo)` | source='human' |
+| `send_back` **(#131)** | 差し戻し | `POST .../send-back` | source='human'、extra/note に理由 |
+| `toss` | TOSS 実行成功（進行責任者、認証経路） | `POST .../toss` | source='human' |
+| `untoss` | TOSS 取消（誤TOSS救済 #50） | `POST .../toss-undo` | source='human' |
+| ~~`auto_toss`~~ | ~~後続自動 TOSS 連鎖~~ | **#117 で廃止（新規記録なし）** | 許可値としては残す |
+| ~~`complete`~~ | 予定完了 | **#131：`approve` のエイリアス**（`complete` action は後方互換で残るが新規は `approve` を記録） | actor_user_id = currentUser.id |
 | `share_create` **(v1.1 非会員URL前倒し)** | 非会員URL 発行成功 | `POST /projects/:projectId/share-links` | actor_user_id = currentUser.id |
 | `share_revoke` **(v1.1)** | 非会員URL 個別失効 | `DELETE /projects/:projectId/share-links/:shareLinkId` | actor_user_id = currentUser.id |
 | `share_access` **(v1.1)** | 非会員URL 経由のアクセス（GET/POST すべて） | `requireShareToken` ミドルウェア | actor_user_id = NULL、share_link_id 設定、IP/UA 記録（FR-SHARE-04） |
-| `share_toss` **(v1.1)** | 非会員URL 経由の TOSS 実行 | `POST /share/:token/plans/:planId/toss` | actor_user_id = NULL、share_link_id 設定 |
-| `share_complete` **(v1.1)** | 非会員URL 経由の完了 | `POST /share/:token/plans/:planId/complete` | 同上 |
+| `share_request_review` / `share_approve` / `share_send_back` **(#131)** | 非会員URL 経由の確認依頼／承認／差し戻し | `POST /share/:token/plans/:planId/{request-review,approve,send-back}` | actor_user_id = NULL、share_link_id 設定。~~`share_toss` / `share_complete` は廃止~~（許可値は残す） |
 
-> **v1.1 改訂（非会員URL前倒し）**：`share_*` 5アクションは v1.0 まで Phase 1 追加リストに含まれていたが、PRD v1.3 で非会員URL共有が Phase 0 化されたため Phase 0 必須記録対象に格上げ（FR-SHARE-04、SR-AUTH-08）。
+> **#131 改訂**：会員の状態機械操作 5 種と共有の 3 種を Phase 0 記録対象に追加。旧 `share_toss` / `share_complete` は対応ルート廃止に伴い新規記録なし（CHECK には残す）。`auto_toss` は #117 廃止で新規記録なし。
 
-> Phase 1 で追加：`logout`、`login_failed`、**`oauth_login` / `oauth_state_failure` / `complete_signup` / `email_changed`（v1.1 想定）**、`cancel_toss`、`return`、`retoss`、`member_added`、`member_removed`、`item_deleted`、`project_closed`、`project_archived`、`project_deleted`、`pdf_export`、`file_download`、`invitation_accepted`、`invitation_email_mismatch`。
+> Phase 1 で追加：`logout`、`login_failed`、**`oauth_login` / `oauth_state_failure` / `complete_signup` / `email_changed`（v1.1 想定）**、`member_added`、`member_removed`、`item_deleted`、`project_closed`、`project_archived`、`project_deleted`、`pdf_export`、`file_download`、`invitation_accepted`、`invitation_email_mismatch`。
 
-> **重要（v1.1 プロトタイプ反映）**：`auto_toss` の `actor_user_id` は NULL とし、`ball_events.actor_user_id` および `ball_events.actor_member_id` も NULL になる（章2 §2.4.6 `ck_be_actor_consistency`）。**system actor 操作を人間 actor と明確に区別**する。同様に `share_*` 系は actor_user_id = NULL、share_link_id を設定して非会員 URL 経路の操作を明示する。
+> **重要（#131）**：共有リンク経由の操作（`share_*`）では、`ball_events` を `source='auto_chain'`（`actor_member_id` / `actor_user_id` 両方 NULL、章2 §2.4.6 `ck_be_actor_consistency`）で記録し、`audit_logs` 側は `actor_user_id = NULL` + `share_link_id` を設定して非会員 URL 経路の匿名操作を明示する。**human actor と system/匿名 actor を DB CHECK レベルで明確に区別**する。
 
 ### 5.6.2. ログ書き込みの実装方式（AuditLogger 抽象）
 
@@ -747,8 +755,8 @@ export const auditLogger: AuditLogger = {
 | 操作 | 呼び出し位置 |
 |---|---|
 | login | `POST /auth/me/sync` ハンドラ末尾（成功時） |
-| toss | `POST .../toss` ハンドラ末尾（成功時、トランザクション内） |
-| complete | `POST .../complete` ハンドラ末尾（成功時、トランザクション内） |
+| request_review / approve / send_back / toss / untoss ほか（#131） | `services/ballActions.ts` の各アクション内（状態遷移と同一トランザクション） |
+| share_request_review / share_approve / share_send_back（#131） | `services/shareAccess.ts` の共有アクション内（同一トランザクション、`share_link_id` セット） |
 
 #### 記録の同期 / 非同期
 
@@ -942,7 +950,7 @@ Content-Security-Policy:
 | 11 | OAuth state の保管先（v1.1） | **Phase 0 はメモリ Map で代替、商用リリース前に Upstash KV / Vercel KV へ移行** | Vercel Functions のサーバレス性質でメモリ持続性は弱いが、5分 TTL かつ取り扱いトラフィックが Phase 0 では小規模なため許容。Phase 1 で KV 化 |
 | 12 | OAuth プロバイダのメール変更同期（v1.1） | **Webhook 経由で users.email / oauth_identities.email を片方向同期**（Supabase Auth が真） | Phase 1 でユーザー通知メール追加 |
 | 13 | 招待リンク × OAuth のメール不一致（v1.1） | **422 INVITATION_EMAIL_MISMATCH で拒否**（招待先メール ≠ OAuth プロバイダのメール） | 他人の招待を別アカウントで横取り防止 |
-| 14 | system actor（auto_chain）の監査記録（v1.1） | **`audit_logs.actor_user_id = NULL`、ball_events も同様**、`source='auto_chain'` で識別 | 「人間の操作」と「システム自動連鎖」を改ざんログレベルで分離（DB CHECK で強制） |
+| 14 | system/匿名 actor（auto_chain）の監査記録（v1.1 / **#131 更新**） | **`audit_logs.actor_user_id = NULL`、ball_events も同様**、`source='auto_chain'` で識別。**#131：自動連鎖 TOSS は #117 で廃止したが、`auto_chain` source は共有リンク（非会員）の匿名操作記録に再利用** | 「人間の操作」と「system/匿名 actor」を改ざんログレベルで分離（DB CHECK で強制） |
 
 ---
 
@@ -988,3 +996,4 @@ Content-Security-Policy:
 | 2026-05-09 | **v1.0 確定** | §5.11 全10論点を AskUserQuestion で確定（全て推奨案＝たたき台どおり） |
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§5.1 で非会員URL共有を本章節（Phase 0）扱いに変更、§5.2 公開範囲・デフォルト非公開の Phase 区切りを更新、§5.4.5 非会員URL共有のセキュリティ実装を新設（トークン生成・保管・検証・スコープ判定・クローラ防止・期限失効優先順位）、§5.6.1 監査ログ Phase 0 必須に `share_*` 5アクションを追加、§5.12 Phase 1+ 持ち越しを組織レベル統制（Phase 2）のみに整理。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | §5.3.5 招待トークン × OAuth 組合せルール追記／§5.3.9 OAuth 認証セクション新規（フロー・PKCE/state・同一メール1認証制約・メール変更同期）／§5.4.3 IDOR にカンバン DnD toMemberId 検証 / successor_plan_id 検証 / oauth_identities 検証を追加／§5.6.1 監査ログに `auto_toss` を追加（system actor 識別）／§5.11 論点 11〜14 追加。 |
+| 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | §5.4.3 IDOR の役割 ID 検証を 3 役割へ更新／§5.4.4 状態遷移ガードを状態機械（request-review/approve/send-back/toss ほか）へ刷新／§5.4.5 共有スコープガードから「現 Ball Holder のみ」制限を撤廃（scope 内かつ状態機械が許す限り可、TOSS は共有不可）／§5.6.1 監査ログに会員 5 種・共有 3 種を追加、`auto_toss`・`share_toss`・`share_complete` を廃止扱いに／§5.6.2 呼び出し場所を ballActions/shareAccess へ更新／§5.11 論点 14 を #131 反映（auto_chain を共有匿名記録へ再利用）。共有画面の閲覧専用（#59）撤回。 |

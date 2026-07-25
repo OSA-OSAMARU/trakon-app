@@ -226,9 +226,9 @@ flowchart LR
     ProjectEdit --> ShareAdmin[SC-16 非会員URL 発行・管理<br/>v1.1 Phase 0 前倒し]
     ShareAdmin -.発行.-> GuestEntry[非会員URL]
     GuestEntry --> GuestShare[GuestSharePage<br/>非会員URL閲覧]
-    GuestShare -. TOSS／完了／差し戻し .-> GuestShare
-    BallDetail -. TOSS/完了 .-> ItemSchedule
-    MemberKanban -. DnD=TOSS/完了 .-> MemberKanban
+    GuestShare -. 確認依頼／承認／差し戻し（#131・TOSS不可） .-> GuestShare
+    BallDetail -. 確認依頼／承認／差し戻し／TOSS（#131） .-> ItemSchedule
+    MemberKanban -. DnD=状態機械操作（#131） .-> MemberKanban
 ```
 
 ---
@@ -483,16 +483,17 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 | 予定種別 | Radio | × | Phase 0 は「TOSS予定」固定表示・選択不要（Phase 1 で3種選択） |
 | 予定名 | Text | ✅ | 1〜255 文字 |
 | **カテゴリ** | **Select** | **✅** | **6種固定（wireframe / design / coding / review / meeting / other、v1.1、FR-SCH-18）** |
-| FROM | Select | ✅ | プロジェクト参加メンバーから |
-| TO | Select | ✅ | FROM と異なる必須 |
+| **実施者（executor）** | **Select** | **✅** | **#131：作業/確認を行う。プロジェクト参加メンバーから** |
+| **承認者（approver）** | **Select** | **×** | **#131：任意。実施者の成果を承認する。空欄なら実施者が直接承認** |
+| **進行責任者（progress_manager）** | **Select** | **×** | **#131：承認済みを後続へ TOSS する。未指定ならプロジェクト既定（`projects.progress_manager_member_id`）を採用** |
 | 開始日（旧 予定日） | Date | ✅ | 起動時の日付がプリセット（プロトタイプに合わせ「開始日」表記） |
 | 終了日 | Date | ✅ | 開始日以降。プロトタイプでは必須扱い |
-| **次の予定** | **Select** | **×** | **任意。同制作物の他予定から選択、`successor_plan_id` に設定（v1.1、FR-SCH-17）**。空欄なら紐付けなし。説明文「TOSS 完了時に自動的に次の予定が開始されます」 |
+| **次の予定** | **Select** | **×** | **任意。同制作物の他予定から選択、`successor_plan_id` に設定（v1.1、FR-SCH-17）**。空欄なら紐付けなし。説明文「承認後、進行責任者が TOSS すると次の予定へボールが渡ります」（**#131：~~自動開始~~ ではなく明示 TOSS**） |
 | メモ | Textarea | × | 任意（プロトタイプには未実装、Phase 0 で追加検討） |
 
 **フォーム実装**：
 - React Hook Form + Zod（`packages/shared/schemas/plans.ts` を流用）
-- FROM = TO の場合、TO 側にエラー表示
+- **#131：役割は任意項目で 1 人が複数役割を兼任可（FROM≠TO のような相違チェックは無い）**
 
 **API**：`POST /api/v1/projects/:projectId/items/:itemId/plans`
 
@@ -511,7 +512,7 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 ### 4.4.7. SC-08 ボール詳細モーダル
 
-**目的**：ボールの内容確認・TOSS 実行・完了（Phase 0、UC-08, UC-12）。
+**目的**：ボールの内容確認と状態機械操作（確認依頼・承認・差し戻し・TOSS、#131、UC-08, UC-10, UC-12）。
 
 **起動**：SC-06 のボールチップクリック。`openModal('ball-detail', { planId })` → URL が `?modal=ball-detail&planId=01J...` に更新される。**この URL を共有すれば直接該当ボールが開く**（Phase 1 でメール通知からの直リンクに活用）。
 
@@ -520,42 +521,33 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 | セクション | 内容 |
 |---|---|
 | ヘッダー | 予定名／予定日／期日 |
-| Ball Holder | `BallHolderBadge`：現在のホルダー |
-| 関係者 | FROM、TO（所属名＋表示名） |
+| Ball Holder | `BallHolderBadge`：現在のホルダー（ballState に応じたロール） |
+| 関係者 | **#131：実施者 / 承認者 / 進行責任者（所属名＋表示名）。TOSS 済なら FROM/TO 履歴も表示** |
 | メモ | 予定のメモ |
-| 履歴 | `ball_events` の時系列表示（TOSS 済か、完了済か） |
+| 履歴 | `ball_events` の時系列表示（確認依頼／承認／差し戻し／TOSS 等。共有由来は匿名表示） |
 
-**状態別ボタン出し分け**（PRD SC-08 表）：
+**状態別ボタン出し分け**（#131 状態機械。現ホルダー or ディレクターに操作ボタンを出す）：
 
-| 状態 | 表示ボタン |
+| ballState（保持者） | 表示ボタン |
 |---|---|
-| Ready（TOSS 未実行） | 閉じる / 編集 / **TOSS する** |
-| Tossed（TOSS 済） | 閉じる / 履歴を見る / **完了する**（Ball Holder = 自分の場合）|
-| Completed | 閉じる / 履歴を見る |
+| `in_progress` / `sent_back`（実施者） | 閉じる / 編集 / **確認依頼**（承認者あり）または **承認**（承認者なし＝実施者が直接承認） |
+| `review_pending`（承認者） | 閉じる / **承認** / **差し戻し** / 確認依頼を取り消す |
+| `approved`（進行責任者） | 閉じる / **TOSS する**（後続あり）／承認を取り消す。後続なしは承認時点で完了 |
+| `tossed`（後続実施者） | 閉じる / 履歴を見る / **TOSS を取り消す**（誤TOSS救済 #50） |
+| `completed` | 閉じる / 履歴を見る |
 
-> Phase 0 は「TOSS する」「完了する」のみ。「TOSS を取り消す」「差し戻し」は Phase 1。
+> **#131**：状態機械（確認依頼 → 承認 → TOSS、差し戻し、各取消）を Phase 0 で実装済み。承認と TOSS は分離され、~~完了時の自動連鎖 TOSS~~ は #117 で廃止。「完了する」は承認（approve）に対応（後方互換で `complete` エイリアスあり）。
 
-**TOSS 実行フロー**（PRD SC-08「TOSS実行：確認ダイアログ挟まず、モーダル内で TOSSする→TOSS中…→相手にTOSSしました→自動クローズ」）：
-
-1. 「TOSS する」ボタン押下
-2. ボタン → ローディング表示「TOSS 中…」
-3. `POST /api/v1/projects/:projectId/items/:itemId/plans/:planId/toss`
-4. **楽観更新**：ローカル `setQueryData` で plan の ballHolder を to_member に切替（§4.7）
-5. 成功時：「相手に TOSS しました」表示 → 1〜2 秒後に自動クローズ
-6. ヘッダー Ball Holder バッジが即時切り替わる（楽観更新の効果）
-7. 失敗時：楽観更新ロールバック、エラーバナー
-
-**完了フロー**：
-1. 「完了する」ボタン押下 → 確認ダイアログ「この予定を完了しますか？」
-2. `POST /api/v1/projects/:projectId/items/:itemId/plans/:planId/complete`
-3. 成功時：「完了しました」トースト、モーダル自動クローズ
+**操作フロー（共通）**：各ボタンは対応する Ball Action API（§3.6.8）を呼ぶ。TOSS は PRD SC-08 の「確認ダイアログ挟まず、TOSS中…→相手にTOSSしました→自動クローズ」体験を踏襲し、`setQueryData` で楽観更新（§4.7）。差し戻しは理由入力（note）を伴う。
 
 **API**：
 - 詳細：`GET /api/v1/projects/:projectId/items/:itemId/plans/:planId`
-- TOSS：`POST .../toss`
-- 完了：`POST .../complete`
-- 編集：`PATCH .../`（編集モード時、別フォーム）
-- 削除：`DELETE .../`（編集モードの「削除」ボタン、Phase 0 物理削除＋確認モーダル必須・FE 側）
+- 確認依頼：`POST .../request-review`（取消 `.../request-review-undo`）
+- 承認：`POST .../approve`（取消 `.../approve-undo`。`.../complete` は後方互換エイリアス）
+- 差し戻し：`POST .../send-back { note? }`
+- TOSS：`POST .../toss`（取消 `.../toss-undo`）
+- 編集：`PATCH .../`（編集モード時、別フォーム。役割は ball の進み具合でロック §3.6.7）
+- 削除：`DELETE .../`（#131：ディレクターのみ・ball_events 無しのみ物理削除）
 
 **A11Y**：
 - TOSS 成功時に `aria-live="polite"` でメッセージ読み上げ
@@ -675,7 +667,7 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 ### 4.4.11. SC-17 メンバーかんばん（`/projects/:projectId/members`、v1.1 新規、Phase 0 必須）
 
-**目的**：プロジェクト参加メンバーごとに、担当している予定を準備中／TOSS済／完了の状態で並べたかんばんビュー。DnD で TOSS・完了を実行（UC-26、FR-BALL-02, 03, 08, 11）。
+**目的**：プロジェクト参加メンバーごとに、担当している予定を状態別（#131：実施中／確認待ち／承認済み／TOSS済／差し戻し／完了）に並べたかんばんビュー。DnD で状態機械の各操作（確認依頼／承認／差し戻し／TOSS）を実行（UC-26、FR-BALL-02, 03, 08, 11）。
 
 **URL**：`/projects/:projectId/members`（既定タブ、SC-11 参加者管理は `?tab=manage` で切替）
 
@@ -706,15 +698,17 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 **DnD ライブラリ**：react-dnd（プロトタイプと同じ）
 
-**DnD 操作のドメインマッピング**（章 §4.7.4 と整合）：
+**DnD 操作のドメインマッピング**（#131 状態機械。章 §4.7.4 と整合）：
+
+> **#131**：かんばんの状態列は 6 状態（実施中 / 確認待ち / 承認済み / TOSS済 / 差し戻し / 完了）に対応し、状態列間の DnD は状態機械の各アクションを呼ぶ。~~メンバー列間 DnD で任意の相手へ TOSS~~／~~自動連鎖~~ は廃止（TOSS 先は `successor_plan_id` の後続実施者に固定）。
 
 | DnD 操作 | API 呼び出し | event_type |
 |---|---|---|
-| メンバー A 列 → メンバー B 列（同状態） | `POST .../plans/:planId/toss { toMemberId: B }` | tossed (source='human') |
-| 準備中 → TOSS済（同メンバー、自分 = currentMember） | `POST .../plans/:planId/toss { toMemberId: currentMemberId }` | 同上 |
-| TOSS済 → 完了（同メンバー） | `POST .../plans/:planId/complete` | completed (source='human') |
-| 完了 → TOSS済（Phase 1 取消） | `POST .../plans/:planId/cancel-toss` | canceled |
-| メンバー＋状態を同時に動かす | 2 つの API を順次（FE 側で sequential mutation） | 各イベント |
+| 実施中/差し戻し → 確認待ち | `POST .../plans/:planId/request-review` | review_requested |
+| 確認待ち → 承認済み（or 実施中→承認済み、承認者なし） | `POST .../plans/:planId/approve` | approved |
+| 確認待ち → 差し戻し | `POST .../plans/:planId/send-back { note? }` | sent_back |
+| 承認済み → TOSS済（進行責任者、後続あり） | `POST .../plans/:planId/toss` | tossed |
+| TOSS済 → 承認済み（取消） | `POST .../plans/:planId/toss-undo` | approved（再追記） |
 
 **認可・エラー処理**：
 - すべての DnD 操作は既存 API のミドルウェアで認可される（Ball Holder でない／状態遷移不可なら 403/422）
@@ -778,12 +772,12 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 **処理フロー**：
 1. URL アクセス → `GET /api/v1/share/:token` でスコープ・対象データ取得
 2. トークン無効（404）→ 「失効ページ」を表示（「このリンクは無効になりました。発行者にお問い合わせください」）
-3. 有効 → スコープに応じた閲覧画面：
+3. 有効 → スコープに応じた画面（**#131：閲覧専用ではなく操作可能。#59 の閲覧専用方針は撤回**）：
    - `scope='project'`：プロジェクトTOP相当（Phase 0 では各制作物画面の簡易版＋ヘッダ）
-   - `scope='item'`：SC-06 縦型スケジュールのリードオンリー版＋自分が Ball Holder のボール操作
+   - `scope='item'`：SC-06 縦型スケジュール＋状態機械のボール操作
    - `scope='plan'`：SC-08 ボール詳細モーダル相当の単一画面
-4. ボール操作（TOSS／完了／差し戻し）：
-   - SC-08 と同じ UI（ただしクライアントロール相当の操作のみ表示：SR-AUTHZ-02）
+4. ボール操作（**#131：確認依頼／承認／差し戻し**。TOSS は共有リンク不可＝進行責任者=会員のみ）：
+   - SC-08 と同じ UI。**保持者の種別を問わず、scope 内かつ状態機械が許す限り操作可**
    - 操作前に表示名（ハンドル）または受領メールアドレスを任意入力（FR-SHARE-06）
    - 入力値は localStorage に保存して再入力を省く（同一ブラウザ内）
 
@@ -793,14 +787,16 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 - `GuestActionInputDialog`（FR-SHARE-06：表示名／メールの確認入力）
 - `ShareLinkExpiredPage`（404 時の失効表示）
 
-**API**：
+**API**（#131）：
 - 取得：`GET /api/v1/share/:token`
-- TOSS：`POST /api/v1/share/:token/plans/:planId/toss`
-- 完了：`POST /api/v1/share/:token/plans/:planId/complete`
+- 確認依頼：`POST /api/v1/share/:token/plans/:planId/request-review`
+- 承認：`POST /api/v1/share/:token/plans/:planId/approve`
+- 差し戻し：`POST /api/v1/share/:token/plans/:planId/send-back`
+- （TOSS・完了の旧共有エンドポイントは廃止）
 
 **SEO 対策**：`<meta name="robots" content="noindex, nofollow">` を `/share/:token` 配下のページに必ず付与（章5 §5.x のクローラ防止と整合）。
 
-**楽観更新**：Phase 0 では非会員URL経由の TOSS／完了は **楽観更新を実装しない**（管理画面相当でレアケース、`/dashboard` 等の一覧キャッシュとの整合が複雑）。サーバ確定後に画面更新する素直な実装にとどめる。Phase 1 で利用頻度が見えたら再評価。
+**楽観更新**：Phase 0 では非会員URL経由の操作は **楽観更新を実装しない**（管理画面相当でレアケース、`/dashboard` 等の一覧キャッシュとの整合が複雑）。サーバ確定後に画面更新する素直な実装にとどめる。Phase 1 で利用頻度が見えたら再評価。
 
 **フォントと文言**：認証画面と同一トーン（NFR-UX-01「煽らず濁さず逃げない」）。「このリンクは TRAKON 上で発行された短期共有URLです」のサブ説明をフッタに常時表示。
 
@@ -921,66 +917,22 @@ const tossMutation = useMutation({
 
 これにより、**FE と BE で同じロジックが Ball Holder を導出**するため、楽観更新の表示と API 確定後の表示が一致する。
 
-### 4.7.3a. 自動 TOSS 連鎖（auto_chain）の楽観更新（v1.1 新規）
+### 4.7.3a. ~~自動 TOSS 連鎖（auto_chain）の楽観更新~~（#117 で廃止）
 
-`complete` API は v1.1 で **successor_plan_id が設定されていれば同一トランザクションで後続自動 TOSS を実行**（章3 §3.6.8、UC-25、FR-BALL-13）。レスポンスに `autoTossed: { plan, event }` が含まれる。
+> **#131 改訂**：自動連鎖 TOSS（`complete` 時に後続へ自動 TOSS）は **#117 で廃止**された。承認（approve）と TOSS は分離され、進行責任者が明示的に TOSS するため、レスポンスの `autoTossed` は常に `null`。各操作（confirm-review / approve / send-back / toss）はそれぞれ独立した mutation として §4.7.2 と同じパターンで楽観更新する（対象 plan の `ballState` / `ballHolder` を `deriveBallHolder` の結果で差し替え、`onError` でロールバック）。
 
-FE の `useCompleteMutation` は以下のように扱う：
+### 4.7.4. カンバン DnD の楽観更新（v1.1 / #131 改訂、SC-17）
 
-```typescript
-const completeMutation = useMutation({
-  mutationFn: () => api.complete({ projectId, itemId, planId }),
-  onMutate: async () => {
-    // 自分の plan を completed に楽観更新
-    queryClient.setQueryData(planKey, (old) => /* ... ballState: 'completed' */);
-    // 後続 plan のキャッシュも先読みで更新（plan.successorPlanId があれば）
-    if (currentPlan.successorPlanId) {
-      const successorKey = ['projects', projectId, 'items', itemId, 'plans', currentPlan.successorPlanId];
-      queryClient.setQueryData(successorKey, (old) => {
-        if (!old || old.plan.status !== 'active') return old;
-        const optimisticEvent = { eventType: 'tossed', actorMemberId: null, source: 'auto_chain' };
-        const newHolder = deriveBallHolder(old.plan, optimisticEvent);
-        return { ...old, plan: { ...old.plan, ballHolder: newHolder, ballState: 'tossed' } };
-      });
-    }
-  },
-  onSuccess: (data) => {
-    // サーバが auto_chain を行ったらトースト表示
-    if (data.autoTossed) {
-      toast.success(`次の予定「${data.autoTossed.plan.title}」に自動 TOSS しました`);
-    }
-  },
-  onSettled: () => {
-    // 両 plan を invalidate
-    queryClient.invalidateQueries({ queryKey: planKey });
-    if (currentPlan.successorPlanId) {
-      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'items', itemId, 'plans', currentPlan.successorPlanId] });
-    }
-    queryClient.invalidateQueries({ queryKey: plansKey });  // 一覧
-  },
-});
-```
+SC-17 メンバーかんばんでの DnD 操作は、内部的に状態機械の各 mutation（request-review / approve / send-back / toss / toss-undo）を呼ぶ。
 
-**UI 表現**：
-- 自動 TOSS の結果のイベントは `source: 'auto_chain'` で識別。SC-08 ボール詳細モーダルの履歴に「🔗 自動連鎖」アイコンを表示
-- ダッシュボード（SC-09）でも、auto_chain で TOSS された予定の Ball Holder 表示は通常 TOSS と区別なし（責任は移動済み）
-
-### 4.7.4. カンバン DnD の楽観更新（v1.1 新規、SC-17）
-
-SC-17 メンバーかんばんでの DnD 操作は、内部的に `useTossMutation` / `useCompleteMutation` を呼ぶ。
-
-**DnD ハンドラの実装イメージ**：
+**DnD ハンドラの実装イメージ**（#131：状態列間の遷移をアクションにマップ）：
 
 ```typescript
-function handleCardDrop(planId: string, fromMemberId: string, toMemberId: string, fromState: string, toState: string) {
-  if (fromMemberId !== toMemberId) {
-    // メンバー間移動 → toss with toMemberId
-    tossMutation.mutate({ planId, toMemberId });
-  }
-  if (fromState !== toState && toState === 'completed') {
-    completeMutation.mutate({ planId });
-  }
-  // 両方同時の場合は順次（toss → complete）
+function handleCardDrop(planId: string, fromState: string, toState: string) {
+  // 状態列間の遷移を状態機械アクションへマップ（§4.4.11 SC-17 の表と一致）
+  const action = resolveBallAction(fromState, toState);  // 'request-review' | 'approve' | 'send-back' | 'toss' | 'toss-undo' | null
+  if (!action) return;               // 許可されない遷移は無視（カードは元位置へ）
+  ballActionMutation.mutate({ planId, action });
 }
 ```
 
@@ -1132,7 +1084,7 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 | 8 | 楽観更新 | **Phase 0 から実装**（TOSS / 完了、`packages/shared/domain/ball-holder.ts` を共有） | PRD SC-08「TOSS中…→相手にTOSSしました→自動クローズ」体験の確保 |
 | 9 | ブランドカラー（accent） | **仮確定 #1F6FEB（青系）** | 実装を止めない。デザイン確定後にトークン1点更新で全体反映 |
 | 10 | 国際化（i18n） | **`packages/shared/i18n/messages.ja.ts` に集約、ライブラリは未導入** | Phase 0 は日本語固定、文字列定数化のみで将来 EN 化への下地 |
-| 11 | カンバン DnD の意味論（v1.1、SC-17） | **既存 TOSS / 完了 API に集約、専用 EP なし** | UC-26 と整合。メンバー列移動 = `POST .../toss { toMemberId }`、状態列移動 = `POST .../complete` 等。認可・監査ログが既存ガードに乗る |
+| 11 | カンバン DnD の意味論（v1.1 / **#131 改訂**、SC-17） | **既存 Ball Action API に集約、専用 EP なし** | UC-26 と整合。**#131：状態列移動 = 状態機械の各アクション（request-review / approve / send-back / toss / toss-undo）**。~~メンバー列移動での任意 TOSS~~ は廃止（TOSS 先は後続予定に固定）。認可・監査ログが既存ガードに乗る |
 | 12 | 「次の予定」選択肢の範囲（v1.1） | **同制作物内に限定**（Phase 0、プロトタイプ仕様と一致） | 異なる制作物・プロジェクトを跨ぐ後続は Phase 1+ で検討（議論ポイントとして残置） |
 | 13 | カンバンのメンバー多数時の UX（v1.1） | **横スクロール許容 + Sticky 状態カラム見出し**（Phase 0） | 5〜10 名は横スクロールなしで収まる前提。Phase 1 でグルーピング・フィルタを追加検討 |
 | 14 | カテゴリの導入範囲（v1.1） | **Phase 0 から必須項目、6 値固定**（FR-SCH-18） | 中立色の `other` を用意することで全予定に必ず1つ割当可能 |
@@ -1163,7 +1115,7 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 - SC-13 コメント／ファイル共有パネル
 - SC-14 通知設定
 - SC-07 の予定種別3種対応（共同予定／単独予定）
-- SC-08 の TOSS 取消／差し戻し／再 TOSS
+- ~~SC-08 の TOSS 取消／差し戻し～~~ → **#131 で実装済み**（差し戻し send-back、TOSS 取消 toss-undo、確認依頼/承認取消）。「再 TOSS」は状態機械では toss-undo→再 approve/toss で表現
 - SC-17 メンバーかんばんのフィルタ・グルーピング（メンバー多数時 UX）
 - ダッシュボードのモバイル最適化（NFR-MOBILE-01 本格対応）
 - 異プロジェクト間の successor 紐付け
@@ -1182,3 +1134,4 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 | 2026-05-09 | **v1.0 確定** | §4.10 全10論点を AskUserQuestion で確定。モーダル管理は推奨案「Zustand ベース」から **「URL 同期方式」に変更**、他9項目は推奨案どおり。§4.2.4 / §4.4.6 SC-07 / §4.4.7 SC-08 / §4.8.1 を URL 同期方式に書き換え。 |
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§4.3.1 URL 構造に `/share/:token` と `/projects/:projectId/share-links` を追加、§4.3.2 ルートツリーを更新、§4.3.3 画面遷移図に SC-16 と GuestEntry / GuestSharePage を追加、§4.4.12 SC-16 非会員URL 発行・管理／§4.4.13 非会員URL 閲覧画面を新設、§4.11 Phase 1+ 持ち越しから SC-16 を除外。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | SC-01 改訂（Magic-link + OAuth、7状態統合）／SC-07 改訂（カテゴリ + 次の予定）／SC-09 改訂（階層ビュー、Phase 0 必須化）／SC-11 改訂（タブ分離）／SC-17 新規（メンバーかんばん DnD = TOSS）／§4.3 ルーティング更新（/dashboard 必須化、/login 7状態統合、members タブ切替）／§4.7.3a 自動 TOSS 楽観更新／§4.7.4 カンバン DnD 楽観更新／§4.10 論点 11〜15 追加。 |
+| 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | SC-07 予定作成フォームを FROM/TO から 3 役割（実施者/承認者/進行責任者）へ／SC-08 ボール詳細を 6 状態の状態機械（確認依頼/承認/差し戻し/TOSS＋各取消）へ／SC-17 かんばん DnD マッピングを状態機械アクションへ／非会員URL閲覧画面を確認依頼/承認/差し戻し操作可能に（**#59 閲覧専用を撤回**、TOSS は共有不可）／§4.7.3a 自動 TOSS 楽観更新を #117 廃止として撤去／Phase 1+ 持ち越しから差し戻し・TOSS 取消を「#131 実装済み」に更新。 |
