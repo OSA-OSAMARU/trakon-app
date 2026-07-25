@@ -301,6 +301,76 @@ export async function sendBackPlan(input: {
 }
 
 // -----------------------------------------------------------------------------
+// 前工程へ差し戻し (#131 §13)。後続予定の実施中/確認待ちから、先行予定(自分を
+// successor に指す予定)を再開する。新しい予定カードは作らない。
+//   - 先行予定: sent_back を追記し status=active・完了/TOSS履歴を解除 → 実施者にボール。
+//   - 後続予定(この予定): 実施中にリセット(確認依頼済みなら取り消し)。ボールは先行へ移る。
+//   - 認可: 現ボール保持者 or director (会員のみ。共有リンクからは不可)。
+// -----------------------------------------------------------------------------
+export async function sendBackToPredecessorPlan(input: {
+  itemId: string;
+  planId: string;
+  note?: string | null;
+  currentUserId: string;
+  currentMemberId: string;
+  isDirector: boolean;
+}): Promise<{ plan: PlanDTO; predecessor: PlanDTO }> {
+  const result = await prisma.$transaction(async (tx) => {
+    const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+    assertActive(plan);
+    const state = currentBallState(plan);
+    if (state !== 'in_progress' && state !== 'review_pending') {
+      throw new ApiException('INVALID_STATE', 409, '実施中または確認待ちの予定のみ前工程へ差し戻せます。');
+    }
+    // 認可: 後続予定の現ボール保持者 (実施者/承認者) または director。
+    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+
+    // 先行予定 = この予定を successor に指す予定 (successorPlanId は UNIQUE のため最大1件)。
+    const predecessor = await tx.plan.findFirst({
+      where: { successorPlanId: plan.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (!predecessor) {
+      throw new ApiException('NO_PREDECESSOR', 422, '前工程(先行予定)がありません。');
+    }
+
+    // 先行予定を再開: sent_back を追記し、完了/TOSS履歴を解除 → 実施者にボールが戻る。
+    await createEvent({
+      tx,
+      planId: predecessor.id,
+      eventType: 'sent_back',
+      currentMemberId: input.currentMemberId,
+      currentUserId: input.currentUserId,
+      note: input.note ?? null,
+    });
+    await tx.plan.update({
+      where: { id: predecessor.id },
+      data: { status: 'active', completedAt: null, fromMemberId: null, toMemberId: null },
+    });
+
+    // 後続予定(この予定)を実施中にリセット。確認待ちなら確認依頼を取り消す。
+    if (state === 'review_pending') {
+      await createEvent({
+        tx,
+        planId: plan.id,
+        eventType: 'review_request_undone',
+        currentMemberId: input.currentMemberId,
+        currentUserId: input.currentUserId,
+      });
+    }
+
+    // 監査は「先行予定が差し戻された」として先行予定に記録する。
+    await recordAudit({ tx, actorUserId: input.currentUserId, action: 'send_back', planId: predecessor.id });
+
+    return {
+      plan: await loadPlanWithIncludes(tx, plan.id, input.itemId),
+      predecessor: await loadPlanWithIncludes(tx, predecessor.id, input.itemId),
+    };
+  });
+  return { plan: toPlanDTO(result.plan), predecessor: toPlanDTO(result.predecessor) };
+}
+
+// -----------------------------------------------------------------------------
 // TOSS (承認済み → TOSS済み)。進行責任者が後続予定へボールを渡す。
 //   FROM=進行責任者 / TO=後続予定の実施者 を履歴として書き込む (#131 §14)。
 //   先行予定は status=completed になる (承認=完了扱い、後続あり版)。

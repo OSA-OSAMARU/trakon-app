@@ -170,6 +170,50 @@ describe('plans routes (integration, #131)', () => {
       expect(approved.body.data.plan.status).toBe('completed');
     });
 
+    it('前工程へ差し戻し (§13): 後続の実施中から先行(デザイン作成)を再開する', async () => {
+      const clientId = (await createMember({ projectId: ctx.project.id, memberType: 'client' })).id;
+      // 後続: デザイン確認 (実施者=クライアント)
+      const review = await createPlanViaApi({
+        title: 'デザイン確認',
+        category: 'review',
+        scheduledDate: '2026-07-20',
+        executorMemberId: clientId,
+        progressManagerMemberId: pmId,
+      });
+      // 先行: デザイン作成 (実施者=execId)、後続=デザイン確認
+      const design = await createPlanViaApi({
+        title: 'デザイン作成',
+        category: 'design',
+        scheduledDate: '2026-07-10',
+        executorMemberId: execId,
+        progressManagerMemberId: pmId,
+        successorPlanId: review.body.data.id,
+      });
+      // デザイン作成を承認→TOSS (先行完了、ボールはデザイン確認の実施者=クライアントへ)
+      await act(design.body.data.id, 'approve');
+      await act(design.body.data.id, 'toss');
+      const reviewAfterToss = await getPlan(review.body.data.id);
+      expect(reviewAfterToss.body.data.plan.ballState).toBe('in_progress');
+
+      // デザイン確認(実施中)から前工程へ差し戻し
+      const res = await api<{ data: { plan: PlanDTO; predecessor: PlanDTO } }>(
+        `${base}/${review.body.data.id}/send-back-to-predecessor`,
+        { method: 'POST', token: ctx.token, body: { note: '色を修正してください' } },
+      );
+      expect(res.status).toBe(200);
+      // 先行(デザイン作成)が再開: 実施者にボール、active、FROM/TO 履歴は解除
+      expect(res.body.data.predecessor.ballState).toBe('sent_back');
+      expect(res.body.data.predecessor.ballHolder?.id).toBe(execId);
+      expect(res.body.data.predecessor.status).toBe('active');
+      expect(res.body.data.predecessor.fromMember).toBeNull();
+      // 後続(デザイン確認)は実施中のまま (新カードは作られない)
+      expect(res.body.data.plan.ballState).toBe('in_progress');
+
+      // ライン保持者は先行の実施者へ戻る
+      const design2 = await getPlan(design.body.data.id);
+      expect(design2.body.data.plan.status).toBe('active');
+    });
+
     it('同一予定内の差し戻し: 確認待ち→差し戻し→実施中 (新カードを作らない)', async () => {
       const created = await createPlanViaApi({
         title: 'デザイン作成',

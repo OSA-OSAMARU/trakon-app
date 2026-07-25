@@ -10,6 +10,7 @@ import {
   Link2Off,
   Loader2,
   Pencil,
+  Rewind,
   Send,
   Trash2,
   Undo2,
@@ -48,6 +49,7 @@ import {
   useApprovePlan,
   useRequestReviewPlan,
   useSendBackPlan,
+  useSendBackToPredecessorPlan,
   useSetSuccessor,
   useTossPlan,
   useUndoApprovePlan,
@@ -111,6 +113,7 @@ export function BallDetailModal({
   const approveMut = useApprovePlan({ projectId, itemId, planId });
   const undoApproveMut = useUndoApprovePlan({ projectId, itemId, planId });
   const sendBackMut = useSendBackPlan({ projectId, itemId, planId });
+  const sendBackToPredecessorMut = useSendBackToPredecessorPlan({ projectId, itemId, planId });
   const tossMut = useTossPlan({ projectId, itemId, planId });
   const undoTossMut = useUndoTossPlan({ projectId, itemId, planId });
   const successorMut = useSetSuccessor(projectId);
@@ -144,6 +147,7 @@ export function BallDetailModal({
     approveMut.isPending ||
     undoApproveMut.isPending ||
     sendBackMut.isPending ||
+    sendBackToPredecessorMut.isPending ||
     tossMut.isPending ||
     undoTossMut.isPending;
 
@@ -173,6 +177,9 @@ export function BallDetailModal({
             const isExecutor = !!myMember && plan.executor?.id === myMember.id;
             const isApprover = !!myMember && plan.approver?.id === myMember.id;
             const isProgressManager = !!myMember && plan.progressManager?.id === myMember.id;
+            const isBallHolder = !!myMember && plan.ballHolder?.id === myMember.id;
+            // 先行予定 = この予定を後続に指す予定 (successorPlanId は UNIQUE のため最大1件)。
+            const hasPredecessor = plans.some((p) => p.successorPlanId === plan.id);
 
             // 操作の可否 (役割 + 状態)
             const inProgress = s === 'in_progress' || s === 'sent_back';
@@ -187,6 +194,12 @@ export function BallDetailModal({
             // 承認=完了 (後続なし) の取り消し
             const canUndoCompleted =
               plan.status === 'completed' && s !== 'tossed' && (isApprover || isProgressManager || isDirector);
+            // 前工程へ差し戻し (§13): 後続予定の実施中/確認待ちから先行予定を再開。
+            const canSendBackToPredecessor =
+              active &&
+              (s === 'in_progress' || s === 'review_pending') &&
+              hasPredecessor &&
+              (isBallHolder || isDirector);
             const executorMissingHint =
               active && inProgress && !hasExecutor && (isExecutor || isDirector || myMember == null);
 
@@ -326,6 +339,16 @@ export function BallDetailModal({
                         disabled={anyPending}
                         icon={<CornerUpLeft className="size-4" />}
                         label="差し戻す"
+                      />
+                    )}
+                    {canSendBackToPredecessor && (
+                      <ActionButton
+                        variant="outline"
+                        onClick={() => sendBackToPredecessorMut.mutate()}
+                        pending={sendBackToPredecessorMut.isPending}
+                        disabled={anyPending}
+                        icon={<Rewind className="size-4" />}
+                        label="前工程へ差し戻す"
                       />
                     )}
                     {canApprove && (

@@ -27,6 +27,7 @@ import {
   completePlan,
   requestReviewPlan,
   sendBackPlan,
+  sendBackToPredecessorPlan,
   tossPlan,
   undoApprovePlan,
   undoCompletePlan,
@@ -50,6 +51,7 @@ import {
  *  - POST   /:planId/approve             承認 (→ 承認済み) #131
  *  - POST   /:planId/approve-undo        承認の取り消し
  *  - POST   /:planId/send-back           差し戻し (承認者 → 実施者) #131
+ *  - POST   /:planId/send-back-to-predecessor 前工程へ差し戻し (先行予定を再開) #131 §13
  *  - POST   /:planId/toss                TOSS 実行 (進行責任者 → 後続実施者)
  *  - POST   /:planId/toss-undo           TOSS の取り消し
  *  - POST   /:planId/complete            完了 (= approve のエイリアス, 後方互換)
@@ -187,6 +189,22 @@ export const plansRoute = new Hono()
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
     const body = sendBackBodySchema.parse(await c.req.json().catch(() => ({})));
     const result = await sendBackPlan({
+      itemId: c.get('itemId'),
+      planId,
+      note: body?.note ?? null,
+      currentUserId: c.get('currentUserId'),
+      currentMemberId: project.memberId,
+      isDirector: project.isDirector,
+    });
+    return c.json({ data: result });
+  })
+
+  .post('/:planId/send-back-to-predecessor', async (c) => {
+    const project = c.get('project');
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const body = sendBackBodySchema.parse(await c.req.json().catch(() => ({})));
+    const result = await sendBackToPredecessorPlan({
       itemId: c.get('itemId'),
       planId,
       note: body?.note ?? null,

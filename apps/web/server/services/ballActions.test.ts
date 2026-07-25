@@ -5,6 +5,7 @@ import type {
   completePlan as CompletePlanType,
   requestReviewPlan as RequestReviewPlanType,
   sendBackPlan as SendBackPlanType,
+  sendBackToPredecessorPlan as SendBackToPredecessorPlanType,
   tossPlan as TossPlanType,
   undoApprovePlan as UndoApprovePlanType,
   undoCompletePlan as UndoCompletePlanType,
@@ -122,6 +123,7 @@ type FindFirstArgs = {
     id?: string;
     itemId?: string;
     projectId?: string;
+    successorPlanId?: string;
     deletedAt?: null;
   };
   include?: unknown;
@@ -131,12 +133,14 @@ type FindFirstArgs = {
 const txClient = {
   plan: {
     // select 指定でも生 plan (+ hydrate) を返す。ballActions が読むのは
-    // .executorMemberId (toss の successor) と .status/.ballEvents (undoToss の successor) のみ。
+    // .executorMemberId (toss の successor) と .status/.ballEvents (undoToss の successor)、
+    // sendBackToPredecessor は successorPlanId で先行予定を引く。
     findFirst: vi.fn(async ({ where }: FindFirstArgs) => {
       const plan = Object.values(planStore).find(
         (p) =>
           (where.id === undefined || p.id === where.id) &&
           (where.itemId === undefined || p.itemId === where.itemId) &&
+          (where.successorPlanId === undefined || p.successorPlanId === where.successorPlanId) &&
           (where.deletedAt === undefined || p.deletedAt === where.deletedAt),
       );
       if (!plan) return null;
@@ -269,6 +273,7 @@ let undoRequestReviewPlan: typeof UndoRequestReviewPlanType;
 let approvePlan: typeof ApprovePlanType;
 let undoApprovePlan: typeof UndoApprovePlanType;
 let sendBackPlan: typeof SendBackPlanType;
+let sendBackToPredecessorPlan: typeof SendBackToPredecessorPlanType;
 let tossPlan: typeof TossPlanType;
 let undoTossPlan: typeof UndoTossPlanType;
 let completePlan: typeof CompletePlanType;
@@ -281,6 +286,7 @@ beforeAll(async () => {
     approvePlan,
     undoApprovePlan,
     sendBackPlan,
+    sendBackToPredecessorPlan,
     tossPlan,
     undoTossPlan,
     completePlan,
@@ -872,6 +878,123 @@ describe('sendBackPlan', () => {
         isDirector: false,
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// sendBackToPredecessorPlan (§13 前工程へ差し戻し)
+// -----------------------------------------------------------------------------
+describe('sendBackToPredecessorPlan', () => {
+  /** 先行(デザイン作成) → 後続(デザイン確認) を連結。先行は TOSS 済み(完了)状態にする。 */
+  function setupChain() {
+    const { executor, approver, pm } = makeRoles();
+    const client = makeMember({ name: 'クライアント' });
+    const successor = makePlan({
+      title: 'デザイン確認',
+      executorMemberId: client.id,
+      approverMemberId: client.id,
+      progressManagerMemberId: pm.id,
+    });
+    const predecessor = makePlan({
+      title: 'デザイン作成',
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: pm.id,
+      successorPlanId: successor.id,
+      // TOSS 済み(完了)を再現: from=進行責任者/to=後続実施者、status=completed、tossed イベント
+      fromMemberId: pm.id,
+      toMemberId: client.id,
+      status: 'completed',
+      completedAt: new Date('2026-05-02T00:00:00Z'),
+    });
+    addEvent(predecessor.id, 'tossed');
+    return { executor, approver, pm, client, successor, predecessor };
+  }
+
+  it('後続の実施中から前工程を再開する: 先行に sent_back・status=active・FROM/TO解除、監査は先行に記録', async () => {
+    const { executor, client, successor, predecessor } = setupChain();
+
+    const res = await sendBackToPredecessorPlan({
+      itemId: 'item-1',
+      planId: successor.id,
+      note: '色を修正してください',
+      currentUserId: 'user-1',
+      currentMemberId: client.id, // 後続の実施者=現ボール保持者
+      isDirector: false,
+    });
+
+    // 先行予定(デザイン作成)が再開: 実施者にボール
+    expect(res.predecessor.ballState).toBe('sent_back');
+    expect(res.predecessor.ballHolder?.id).toBe(executor.id);
+    expect(res.predecessor.status).toBe('active');
+    expect(res.predecessor.fromMember).toBeNull();
+    expect(res.predecessor.toMember).toBeNull();
+    expect(eventTypesFor(predecessor.id)).toEqual(['tossed', 'sent_back']);
+    // 差し戻し理由が履歴に引き継がれる
+    const sb = ballEventStore.find((e) => e.planId === predecessor.id && e.eventType === 'sent_back');
+    expect(sb?.note).toBe('色を修正してください');
+    // 後続(デザイン確認)は実施中のまま
+    expect(res.plan.ballState).toBe('in_progress');
+    // 監査は先行予定に対して記録
+    expect(auditStore.some((a) => a.action === 'send_back' && a.resourceId === predecessor.id)).toBe(true);
+  });
+
+  it('後続が確認待ちなら確認依頼を取り消して実施中へリセットする', async () => {
+    const { client, successor } = setupChain();
+    addEvent(successor.id, 'review_requested'); // 後続を確認待ちにする
+
+    const res = await sendBackToPredecessorPlan({
+      itemId: 'item-1',
+      planId: successor.id,
+      currentUserId: 'user-1',
+      currentMemberId: client.id, // 確認待ちの holder = approver(=client)
+      isDirector: false,
+    });
+    expect(res.plan.ballState).toBe('in_progress');
+    expect(eventTypesFor(successor.id)).toEqual(['review_requested', 'review_request_undone']);
+  });
+
+  it('先行予定(前工程)が無ければ NO_PREDECESSOR 422', async () => {
+    const { executor } = makeRoles();
+    const plan = makePlan({ executorMemberId: executor.id });
+    await expect(
+      sendBackToPredecessorPlan({
+        itemId: 'item-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: executor.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'NO_PREDECESSOR', status: 422 });
+  });
+
+  it('後続が承認済み(TOSS待ち)だと INVALID_STATE 409', async () => {
+    const { pm, client, successor } = setupChain();
+    addEvent(successor.id, 'approved'); // 承認済みにする
+    await expect(
+      sendBackToPredecessorPlan({
+        itemId: 'item-1',
+        planId: successor.id,
+        currentUserId: 'user-1',
+        currentMemberId: pm.id,
+        isDirector: true,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
+    void client;
+  });
+
+  it('現ボール保持者でもディレクターでもなければ FORBIDDEN 403', async () => {
+    const { successor } = setupChain();
+    const stranger = makeMember();
+    await expect(
+      sendBackToPredecessorPlan({
+        itemId: 'item-1',
+        planId: successor.id,
+        currentUserId: 'user-1',
+        currentMemberId: stranger.id,
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
 });
 
