@@ -406,6 +406,40 @@ describe('BallDetailModal (integration)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // 前工程へ差し戻し (§13)
+  // ---------------------------------------------------------------------------
+  it('前工程がある実施中の予定に「前工程へ差し戻す」を表示し、クリックでAPIを呼ぶ', async () => {
+    setupReads({ plan: makePlan({ ballState: 'in_progress' }), events: [] });
+    let called = false;
+    server.use(
+      http.post(
+        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/send-back-to-predecessor`,
+        () => {
+          called = true;
+          return HttpResponse.json({
+            data: { plan: makePlan(), predecessor: makePlan({ id: 'pred-1' }) },
+          });
+        },
+      ),
+    );
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    // 先行予定 = この予定を後続に指す予定
+    renderModal({ plans: [makePlan({ id: 'pred-1', successorPlanId: PLAN_ID })] });
+
+    const btn = await screen.findByRole('button', { name: '前工程へ差し戻す' });
+    await user.click(btn);
+    await waitFor(() => expect(called).toBe(true));
+  });
+
+  it('前工程が無ければ「前工程へ差し戻す」は表示しない', async () => {
+    setupReads({ plan: makePlan({ ballState: 'in_progress' }), events: [] });
+    renderModal({ plans: [] });
+    // 詳細描画を待つ
+    expect(await screen.findByText('デザインカンプ作成')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '前工程へ差し戻す' })).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
   // 承認 mutation (承認者なし → 実施者が承認 = 完了)
   // ---------------------------------------------------------------------------
   it('承認 成功: 承認者なしの実施中で「完了」ボタンを押すと approve へ POST する', async () => {

@@ -168,6 +168,30 @@ export function useUndoTossPlan(input: { projectId: string; itemId: string; plan
 }
 
 /**
+ * 前工程へ差し戻し (#131 §13)。後続予定と先行予定の両方が変化するため楽観更新はせず、
+ * onSuccess で一覧/詳細を再フェッチする。
+ */
+export function useSendBackToPredecessorPlan(input: {
+  projectId: string;
+  itemId: string;
+  planId: string;
+}) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      plansApi.sendBackToPredecessor(input.projectId, input.itemId, input.planId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(input.projectId, input.itemId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.detail(input.projectId, input.itemId, input.planId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(input.projectId) });
+      toast.success('前工程へ差し戻しました');
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiClientError ? err.message : '前工程への差し戻しに失敗しました'),
+  });
+}
+
+/**
  * 後続予定 (successorPlanId) の紐づけ / 解除。
  * - スケジュールのドラッグ紐づけ・モーダルの解除で共用するため projectId のみ固定し、
  *   itemId / planId / successorPlanId は mutate 引数で受ける。

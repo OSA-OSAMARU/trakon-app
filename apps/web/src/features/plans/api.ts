@@ -177,6 +177,12 @@ export const plansApi = {
       method: 'POST',
       body: note ? { note } : {},
     }),
+  /** 前工程へ差し戻し (#131 §13)。後続予定から先行予定を再開する。 */
+  sendBackToPredecessor: (projectId: string, itemId: string, planId: string, note?: string) =>
+    apiRequest<{ plan: Plan; predecessor: Plan }>(
+      `${basePath(projectId, itemId)}/${planId}/send-back-to-predecessor`,
+      { method: 'POST', body: note ? { note } : {} },
+    ),
   /** TOSS (承認済み → TOSS済み)。進行責任者が後続予定へボールを渡す。 */
   toss: (projectId: string, itemId: string, planId: string) =>
     apiRequest<BallActionResult>(`${basePath(projectId, itemId)}/${planId}/toss`, {
