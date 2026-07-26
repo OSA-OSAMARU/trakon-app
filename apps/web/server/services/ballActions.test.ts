@@ -939,19 +939,37 @@ describe('sendBackToPredecessorPlan', () => {
     expect(auditStore.some((a) => a.action === 'send_back' && a.resourceId === predecessor.id)).toBe(true);
   });
 
-  it('後続が確認待ちなら確認依頼を取り消して実施中へリセットする', async () => {
-    const { client, successor } = setupChain();
-    addEvent(successor.id, 'review_requested'); // 後続を確認待ちにする
+  it('後続が差し戻し中(sent_back)からも前工程を再開できる', async () => {
+    const { executor, client, successor, predecessor } = setupChain();
+    addEvent(successor.id, 'sent_back'); // 後続を差し戻し中にする (ball=実施者=client)
 
     const res = await sendBackToPredecessorPlan({
       itemId: 'item-1',
       planId: successor.id,
       currentUserId: 'user-1',
-      currentMemberId: client.id, // 確認待ちの holder = approver(=client)
+      currentMemberId: client.id, // 差し戻し中の holder = 実施者(=client)
       isDirector: false,
     });
-    expect(res.plan.ballState).toBe('in_progress');
-    expect(eventTypesFor(successor.id)).toEqual(['review_requested', 'review_request_undone']);
+    // 先行が再開し、後続は差し戻し中のまま (確認依頼は無いので取り消しイベントは追加しない)
+    expect(res.predecessor.ballState).toBe('sent_back');
+    expect(res.predecessor.ballHolder?.id).toBe(executor.id);
+    expect(res.plan.ballState).toBe('sent_back');
+    expect(eventTypesFor(successor.id)).toEqual(['sent_back']);
+    void predecessor;
+  });
+
+  it('後続が確認待ち(review_pending)だと INVALID_STATE 409 (確認依頼前のみ許可)', async () => {
+    const { client, successor } = setupChain();
+    addEvent(successor.id, 'review_requested'); // 後続を確認待ちにする
+    await expect(
+      sendBackToPredecessorPlan({
+        itemId: 'item-1',
+        planId: successor.id,
+        currentUserId: 'user-1',
+        currentMemberId: client.id, // 確認待ちの holder = approver(=client)
+        isDirector: false,
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
   });
 
   it('先行予定(前工程)が無ければ NO_PREDECESSOR 422', async () => {
