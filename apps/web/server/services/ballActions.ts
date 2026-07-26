@@ -301,10 +301,10 @@ export async function sendBackPlan(input: {
 }
 
 // -----------------------------------------------------------------------------
-// 前工程へ差し戻し (#131 §13)。後続予定の実施中/確認待ちから、先行予定(自分を
-// successor に指す予定)を再開する。新しい予定カードは作らない。
+// 前工程へ差し戻し (#131 §13)。後続予定の実施中/差し戻し中(=確認依頼前)から、先行予定
+// (自分を successor に指す予定)を再開する。新しい予定カードは作らない。
 //   - 先行予定: sent_back を追記し status=active・完了/TOSS履歴を解除 → 実施者にボール。
-//   - 後続予定(この予定): 実施中にリセット(確認依頼済みなら取り消し)。ボールは先行へ移る。
+//   - 後続予定(この予定): 状態はそのまま(実施者にボールがある)。ボールは先行へ移る。
 //   - 認可: 現ボール保持者 or director (会員のみ。共有リンクからは不可)。
 // -----------------------------------------------------------------------------
 export async function sendBackToPredecessorPlan(input: {
@@ -319,8 +319,8 @@ export async function sendBackToPredecessorPlan(input: {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
     assertActive(plan);
     const state = currentBallState(plan);
-    if (state !== 'in_progress' && state !== 'review_pending') {
-      throw new ApiException('INVALID_STATE', 409, '実施中または確認待ちの予定のみ前工程へ差し戻せます。');
+    if (state !== 'in_progress' && state !== 'sent_back') {
+      throw new ApiException('INVALID_STATE', 409, '実施中または差し戻し中の予定のみ前工程へ差し戻せます。');
     }
     // 認可: 後続予定の現ボール保持者 (実施者/承認者) または director。
     assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
@@ -347,17 +347,6 @@ export async function sendBackToPredecessorPlan(input: {
       where: { id: predecessor.id },
       data: { status: 'active', completedAt: null, fromMemberId: null, toMemberId: null },
     });
-
-    // 後続予定(この予定)を実施中にリセット。確認待ちなら確認依頼を取り消す。
-    if (state === 'review_pending') {
-      await createEvent({
-        tx,
-        planId: plan.id,
-        eventType: 'review_request_undone',
-        currentMemberId: input.currentMemberId,
-        currentUserId: input.currentUserId,
-      });
-    }
 
     // 監査は「先行予定が差し戻された」として先行予定に記録する。
     await recordAudit({ tx, actorUserId: input.currentUserId, action: 'send_back', planId: predecessor.id });

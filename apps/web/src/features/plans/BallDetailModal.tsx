@@ -48,7 +48,6 @@ import { CATEGORY_STYLE } from './categoryColor';
 import {
   useApprovePlan,
   useRequestReviewPlan,
-  useSendBackPlan,
   useSendBackToPredecessorPlan,
   useSetSuccessor,
   useTossPlan,
@@ -112,7 +111,6 @@ export function BallDetailModal({
   const undoRequestReviewMut = useUndoRequestReviewPlan({ projectId, itemId, planId });
   const approveMut = useApprovePlan({ projectId, itemId, planId });
   const undoApproveMut = useUndoApprovePlan({ projectId, itemId, planId });
-  const sendBackMut = useSendBackPlan({ projectId, itemId, planId });
   const sendBackToPredecessorMut = useSendBackToPredecessorPlan({ projectId, itemId, planId });
   const tossMut = useTossPlan({ projectId, itemId, planId });
   const undoTossMut = useUndoTossPlan({ projectId, itemId, planId });
@@ -146,7 +144,6 @@ export function BallDetailModal({
     undoRequestReviewMut.isPending ||
     approveMut.isPending ||
     undoApproveMut.isPending ||
-    sendBackMut.isPending ||
     sendBackToPredecessorMut.isPending ||
     tossMut.isPending ||
     undoTossMut.isPending;
@@ -186,7 +183,9 @@ export function BallDetailModal({
             const canRequestReview = active && inProgress && hasApprover && hasExecutor && (isExecutor || isDirector);
             const canApproveByExecutor = active && inProgress && !hasApprover && hasExecutor && (isExecutor || isDirector);
             const canApprove = active && s === 'review_pending' && (isApprover || isDirector);
-            const canSendBack = active && s === 'review_pending' && (isApprover || isDirector);
+            // 差し戻し=確認依頼の取り消しに集約。承認者/実施者/director が実施者へ戻せる。
+            const canUndoReview =
+              active && s === 'review_pending' && (isApprover || isExecutor || isDirector);
             const canToss = active && s === 'approved' && hasSuccessor && (isProgressManager || isDirector);
             const canUndoApprove = active && s === 'approved' && (isApprover || isProgressManager || isDirector);
             // TOSS 済み → 誰でも取り消せる (誤TOSS救済 #50)
@@ -194,12 +193,9 @@ export function BallDetailModal({
             // 承認=完了 (後続なし) の取り消し
             const canUndoCompleted =
               plan.status === 'completed' && s !== 'tossed' && (isApprover || isProgressManager || isDirector);
-            // 前工程へ差し戻し (§13): 後続予定の実施中/確認待ちから先行予定を再開。
+            // 前工程へ差し戻し (§13): 確認依頼前 (実施中/差し戻し中) のみ、先行予定を再開できる。
             const canSendBackToPredecessor =
-              active &&
-              (s === 'in_progress' || s === 'review_pending') &&
-              hasPredecessor &&
-              (isBallHolder || isDirector);
+              active && inProgress && hasPredecessor && (isBallHolder || isDirector);
             const executorMissingHint =
               active && inProgress && !hasExecutor && (isExecutor || isDirector || myMember == null);
 
@@ -331,16 +327,6 @@ export function BallDetailModal({
                         label={hasSuccessor ? '承認' : '完了'}
                       />
                     )}
-                    {canSendBack && (
-                      <ActionButton
-                        variant="outline"
-                        onClick={() => sendBackMut.mutate()}
-                        pending={sendBackMut.isPending}
-                        disabled={anyPending}
-                        icon={<CornerUpLeft className="size-4" />}
-                        label="差し戻す"
-                      />
-                    )}
                     {canSendBackToPredecessor && (
                       <ActionButton
                         variant="outline"
@@ -366,7 +352,7 @@ export function BallDetailModal({
                         pending={tossMut.isPending}
                         disabled={anyPending}
                         icon={<Send className="size-4" />}
-                        label="TOSS"
+                        label="TOSS（次の予定を開始する）"
                       />
                     )}
                     {canUndoApprove && (
@@ -379,8 +365,8 @@ export function BallDetailModal({
                         label="承認を取り消す"
                       />
                     )}
-                    {/* 確認待ちで実施者/director が誤依頼を取り消す */}
-                    {active && s === 'review_pending' && (isExecutor || isDirector) && (
+                    {/* 確認待ちで実施者/承認者/director が実施者へ戻す (差し戻しをここに集約) */}
+                    {canUndoReview && (
                       <ActionButton
                         variant="outline"
                         onClick={() => undoRequestReviewMut.mutate()}

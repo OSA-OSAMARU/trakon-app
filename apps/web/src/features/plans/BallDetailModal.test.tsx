@@ -278,7 +278,7 @@ describe('BallDetailModal (integration)', () => {
     // 状態バッジ (承認済み・TOSS待ち)。
     expect(await screen.findByText('承認済み・TOSS待ち')).toBeInTheDocument();
     // 進行責任者 (=本人) なので TOSS ボタンが出る。
-    expect(screen.getByRole('button', { name: /^TOSS$/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^TOSS（/ })).toBeInTheDocument();
   });
 
   it('completed 状態: 完了済みバナーを表示し TOSS/完了ボタンを出さない', async () => {
@@ -312,7 +312,7 @@ describe('BallDetailModal (integration)', () => {
 
     // 詳細が描画されるまで待つ
     expect(await screen.findByText('承認済み・TOSS待ち')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^TOSS$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^TOSS（/ })).not.toBeInTheDocument();
   });
 
   it('認可: 進行責任者でなくてもディレクターなら TOSS できる', async () => {
@@ -330,7 +330,7 @@ describe('BallDetailModal (integration)', () => {
     );
     renderModal();
 
-    expect(await screen.findByRole('button', { name: /^TOSS$/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^TOSS（/ })).toBeInTheDocument();
   });
 
   it('認可: 実施者が未設定なら操作の代わりに案内文を表示する (director)', async () => {
@@ -369,7 +369,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: /^TOSS$/ });
+    const btn = await screen.findByRole('button', { name: /^TOSS（/ });
     await user.click(btn);
 
     await waitFor(() => expect(tossCalled).toBe(true));
@@ -397,7 +397,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: /^TOSS$/ });
+    const btn = await screen.findByRole('button', { name: /^TOSS（/ });
     await user.click(btn);
 
     // mutation が呼ばれ、onError でトースト表示 (UI は維持される)
@@ -435,6 +435,16 @@ describe('BallDetailModal (integration)', () => {
     setupReads({ plan: makePlan({ ballState: 'in_progress' }), events: [] });
     renderModal({ plans: [] });
     // 詳細描画を待つ
+    expect(await screen.findByText('デザインカンプ作成')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '前工程へ差し戻す' })).not.toBeInTheDocument();
+  });
+
+  it('確認待ちでは前工程があっても「前工程へ差し戻す」は表示しない (確認依頼前のみ)', async () => {
+    setupReads({
+      plan: makePlan({ ballState: 'review_pending', approver: memberRef(meMember) }),
+      events: [makeEvent({ eventType: 'review_requested' })],
+    });
+    renderModal({ plans: [makePlan({ id: 'pred-1', successorPlanId: PLAN_ID })] });
     expect(await screen.findByText('デザインカンプ作成')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '前工程へ差し戻す' })).not.toBeInTheDocument();
   });
@@ -516,10 +526,10 @@ describe('BallDetailModal (integration)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 差し戻し (send-back) : 確認待ち状態で承認者が実施者へ戻す
+  // 差し戻し集約: 確認待ちでは「差し戻す」を廃止し「確認依頼を取り消す」に集約
   // ---------------------------------------------------------------------------
-  it('差し戻し: 確認待ち状態の「差し戻す」ボタンで send-back へ POST する', async () => {
-    // 承認者=本人。確認待ちで承認者/director が差し戻せる。
+  it('確認待ち: 承認者=本人でも「差し戻す」は表示せず「確認依頼を取り消す」で request-review-undo へ POST する', async () => {
+    // 承認者=本人。確認待ちで承認者/実施者/director が実施者へ戻せる (集約後)。
     setupReads({
       plan: makePlan({
         ballState: 'review_pending',
@@ -528,13 +538,13 @@ describe('BallDetailModal (integration)', () => {
       }),
       events: [makeEvent({ eventType: 'review_requested' })],
     });
-    let sendBackCalled = false;
+    let undoCalled = false;
     server.use(
       http.post(
-        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/send-back`,
+        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/request-review-undo`,
         () => {
-          sendBackCalled = true;
-          return HttpResponse.json({ data: { plan: makePlan({ ballState: 'sent_back' }) } });
+          undoCalled = true;
+          return HttpResponse.json({ data: { plan: makePlan({ ballState: 'in_progress' }) } });
         },
       ),
     );
@@ -542,10 +552,12 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: '差し戻す' });
+    const btn = await screen.findByRole('button', { name: '確認依頼を取り消す' });
+    // 「差し戻す」ボタンは廃止済み。
+    expect(screen.queryByRole('button', { name: '差し戻す' })).not.toBeInTheDocument();
     await user.click(btn);
 
-    await waitFor(() => expect(sendBackCalled).toBe(true));
+    await waitFor(() => expect(undoCalled).toBe(true));
   });
 
   // ---------------------------------------------------------------------------
