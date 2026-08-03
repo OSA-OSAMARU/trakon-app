@@ -10,6 +10,9 @@
       "maxDuration": 30
     }
   },
+  "redirects": [
+    { "source": "/storybook", "destination": "/storybook/", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/((?!api/|storybook/).*)", "destination": "/index.html" }
