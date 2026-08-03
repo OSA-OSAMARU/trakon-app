@@ -34,5 +34,15 @@ module.exports = {
         'react-refresh/only-export-components': 'off',
       },
     },
+    {
+      // Storybook 設定はコンポーネントでないオブジェクトを export する
+      files: ['.storybook/**/*.{ts,tsx}'],
+      rules: { 'react-refresh/only-export-components': 'off' },
+    },
+    {
+      // Story ファイルは meta と複数の Story オブジェクトを export する
+      files: ['**/*.stories.tsx'],
+      rules: { 'react-refresh/only-export-components': 'off' },
+    },
   ],
 };
