@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, ArrowRight, AlertCircle, Pencil, Archive, ArchiveRestore } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,6 +27,10 @@ import { projectsApi, projectsQueryKey, type ProjectSummary } from './api';
 const dateFmt = new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' });
 
 export function ProjectListPage() {
+  // タブを URL に載せる。サイドバーの「アーカイブ済み」導線から直接開けるようにするため。
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') === 'archived' ? 'archived' : 'active';
+
   return (
     <>
       <PageHeader
@@ -43,7 +47,12 @@ export function ProjectListPage() {
         }
       />
       <PageContainer width="lg">
-        <Tabs defaultValue="active">
+        <Tabs
+          value={tab}
+          onValueChange={(v) =>
+            setSearchParams(v === 'archived' ? { tab: 'archived' } : {}, { replace: true })
+          }
+        >
           <TabsList>
             <TabsTrigger value="active">進行中</TabsTrigger>
             <TabsTrigger value="archived">アーカイブ済み</TabsTrigger>

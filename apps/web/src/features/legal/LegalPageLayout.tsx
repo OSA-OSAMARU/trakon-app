@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 
 import { LEGAL_NAV } from './companyInfo';
+import { Wordmark } from '@/components/trakon/Wordmark';
 
 // =============================================================================
 // 法務ページ (利用規約 / プライバシーポリシー / 特定商取引法に基づく表記) 共通レイアウト。
@@ -31,8 +32,8 @@ export function LegalPageLayout({
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-card/80 backdrop-blur">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-5 gap-y-2 px-6 py-3">
-          <Link to="/login" className="text-lg font-extrabold tracking-[0.2em]">
-            TRAKON
+          <Link to="/login">
+            <Wordmark size="sm" />
           </Link>
           <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             {LEGAL_NAV.map((item) => (
