@@ -1024,51 +1024,111 @@ new QueryClient({
 
 ---
 
-## 4.9. デザインシステム（最低限）
+## 4.9. デザインシステム
 
-PRD §4.4 UXR-04「派手さ・色数・動きで強さを演出しない」、NFR-UX-01「静かな強さ」を尊重し、最小トークンで構成する。
+PRD §4.4 UXR-04「派手さ・色数・動きで強さを演出しない」、NFR-UX-01「静かな強さ」を尊重する。
 
-### 4.9.1. カラー（Tailwind config）
+**v1.2（#XXX）で Figma「TRAKON｜Landing Page」(fileKey `6juEDpIueDBvcfYvOmPJ3w`) を正とするデザインシステムへ全面改訂。** 実装は `apps/web/src/styles/globals.css` の CSS 変数に集約し、Storybook の `foundation/Design Tokens` で一覧確認できる。
 
-```
-tokens:
-  colors:
-    surface:        #FFFFFF / dark: #0A0A0A
-    surface-muted:  #F8F8F8 / dark: #161616
-    border:         #E5E5E5 / dark: #2A2A2A
-    text:           #1A1A1A / dark: #F0F0F0
-    text-muted:     #6B6B6B / dark: #9A9A9A
-    accent:         #1F6FEB （TRAKON ブランドカラー：仮）
-    success:        #2D8659（要確認3日以内バッジで使用）
-    warning:        #B7791F（CAUTION 表示で使用）
-    danger:         #C62828（遅延・エラーで使用）
-    holiday-bg:     #FFF7F7（祝日背景、極淡）
-    weekend-bg:     #F8FAFB（土日背景、極淡）
-```
+基調は **暖色ニュートラル + ブランドオレンジ**。v1.1 までの無彩色グレー基調（Figma Make プロトタイプ由来）は廃止した。
 
-> ブランドカラー（accent）は仮置き。確定はブランド／デザイン側との合意後（章末議論ポイント §4.10-9）。
+### 4.9.1. カラー
 
-### 4.9.2. タイポグラフィ
+shadcn の標準トークン名（`--background` / `--foreground` / `--primary` …）は据え置き、値のみ TRAKON 配色に差し替える。加えて、それまでコード中に生の Tailwind パレット（`sky-500` / `rose-50` 等）で散在していたドメイン意味づけをセマンティックトークンとして定義する。
 
-| 用途 | サイズ | weight |
+**基本（Figma node 8:3）**
+
+| トークン | 値 | 用途 |
 |---|---|---|
-| 画面タイトル | 24px | 600 |
-| セクション見出し | 18px | 600 |
-| 本文 | 14px | 400 |
-| 補助テキスト | 12px | 400 |
-| データ密度高（カレンダー） | 12〜13px | 400 |
+| `--content` | `#F7F6F2` | アプリ本体の背景 |
+| `--sidebar` | `#FCFBF8` | サイドバー |
+| `--background` / `--card` | `#FFFFFF` | カード・ヘッダー帯 |
+| `--surface-muted` | `#F7F5F1` | 週末行など控えめな面 |
+| `--surface-subtle` | `#F9F8F5` | 見出し帯 |
+| `--border` | `#E6E2DB` | 標準の罫線 |
+| `--grid-border` | `#E8E5DF` | カレンダー罫線（一段淡い） |
+| `--input` | `#DED8CE` | 入力・ボタン輪郭 |
+| `--foreground` / `--primary` | `#23231F` | 本文・主要ボタン背景 |
+| `--text-secondary` | `#676862` | 補助テキスト |
+| `--text-tertiary` | `#908F87` | プレースホルダ・ラベル |
 
-フォント：システムフォント（`Inter`、`-apple-system`、Hiragino Sans、Yu Gothic UI）。Web フォントは Phase 1 以降に検討（バンドル軽量化優先）。
+**ブランド（accent 確定）**
 
-### 4.9.3. スペーシング
+| トークン | 値 | 用途 |
+|---|---|---|
+| `--brand` | **`#E7672C`** | ブランドカラー。今日マーカー、「次の工程へトス」 |
+| `--brand-strong` | `#E05224` | ブランド文字色 |
+| `--brand-subtle` | `#F8EFE8` | 選択中のナビ項目 |
+| `--brand-badge` | `#FCE8DB` | プランバッジ背景 |
+
+> v1.1 まで暫定だったブランドカラー `#1F6FEB` は **`#E7672C` に確定**（§4.10-9 の議論ポイントをクローズ）。
+
+**状態・カレンダー**
+
+| トークン | 値 | 用途 |
+|---|---|---|
+| `--success` / `--success-subtle` | `#2E7D4F` / `#E8F6EC` | FIX・承認済み |
+| `--warning` / `--warning-subtle` | `#C88718` / `#FFF5DE` | 進行中 |
+| `--danger` / `--danger-subtle` | `#B14E41` / `#FEF7F5` | 遅延・エラー |
+| `--today-bg` / `--today-marker` | `#FFF8E3` / `#E7672C` | 本日行（FR-SCH-05） |
+| `--weekend-bg` | `#F7F5F1` | 土日背景（FR-SCH-03） |
+| `--holiday-bg` / `--holiday-foreground` | `#FEF7F5` / `#B14E41` | 祝日（FR-SCH-04） |
+
+### 4.9.2. スケジュールカードのカラーテーマ（Figma node 54:2）
+
+10 テーマ。文字色は全テーマ共通 `#22211F`（`--plan-foreground`）で、背景とのコントラストは 13:1 以上を確保する。
+
+| テーマ | Surface | Accent |
+|---|---|---|
+| Warm Gray | `#EEEAE2` | `#665F57` |
+| Rose | `#FDEFF2` | `#D95B78` |
+| Coral | `#FFE6DC` | `#D94A20` |
+| Amber | `#FFF5DE` | `#C88718` |
+| Lime | `#F4F8E5` | `#7E9D28` |
+| Green | `#EAF7EE` | `#2F9A5B` |
+| Teal | `#E8F7F4` | `#248F83` |
+| Cyan | `#EAF6FA` | `#2589A6` |
+| Blue | `#DDEEFF` | `#1D6FD1` |
+| Violet | `#F3E0F8` | `#9A3EAA` |
+
+**配色ポリシー**：色は「状態」を表すものではなく、**ユーザーがスケジュールを視覚整理するために選ぶもの**（Figma 54:2 の明記事項）。状態は色ではなくステータス pill とボール保持者の表示で伝える。
+
+段階移行とする。
+
+1. 現段階：`plans.category`（6 値）から既定テーマを導出する。
+2. 最終形：`plans` に色テーマ列を追加し、ユーザーが予定ごとに選択する（未設定時はカテゴリ由来の既定にフォールバック）。
+
+### 4.9.3. タイポグラフィ
+
+| 用途 | フォント | サイズ | weight |
+|---|---|---|---|
+| ワードマーク | **Sora** | 32px | 600 |
+| 画面タイトル | Noto Sans JP | 22px | 700 |
+| セクション・月見出し | Noto Sans JP | 20px | 700 |
+| カード見出し | Noto Sans JP | 14–16px | 700 |
+| 本文 | Noto Sans JP | 13–14px | 400/500 |
+| 補助テキスト | Noto Sans JP | 12px | 400 |
+| データ密度高（カレンダー） | Noto Sans JP | 9–11px | 400/500 |
+
+行間は本文 1.5、高密度領域 1.45。Tailwind 既定の `text-xs`〜`text-base` に加え、Figma に出現する 9 / 10 / 11 / 13 / 22px を `text-micro` / `text-mini` / `text-tiny` / `text-body` / `text-title` として定義する。
+
+**フォント配信**：`@fontsource-variable/sora` と `@fontsource-variable/noto-sans-jp` を **セルフホスト**する（CDN 依存なし＝ §5 の CSP を緩めずに済む）。いずれも可変フォント（wght 軸）を採用し、Regular / Medium / Bold を 1 セットの `@font-face` で賄う。Noto Sans JP は `unicode-range` で 124 分割されており、描画に必要なサブセットだけが遅延ダウンロードされる。
+
+> v1.1 までの「システムフォント（Inter スタック）／Web フォントは Phase 1 以降」という方針は、ブランド確立を優先して撤回した。
+
+### 4.9.4. 角丸・影・寸法
+
+- 角丸：`rounded-sm` 6px / `rounded-md` 8px / `rounded-lg` 10px（カード・ナビ・入力の基準） / `rounded-xl` 12px / `rounded-2xl` 14px。pill は `rounded-full`。
+- 影：`shadow-card` = `0 4px 12px rgb(35 35 31 / 0.06)`、`shadow-float` = `0 6px 18px rgb(35 35 31 / 0.10)`。
+- ボタン高さ：36px（副次） / 40px（ヘッダー主要） / 42px（ボール操作） / 44px（フォーム標準）。左右余白は通常 18px 以上、主要操作 24px 以上、アイコンとラベルの間隔 12px（Figma node 78:18 の実装ノート）。
+
+### 4.9.5. スペーシング
 
 Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、コンポーネント内は 8〜16px。
 
-### 4.9.4. ダークモード
+### 4.9.6. ダークモード
 
-Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）。Phase 1 以降でユーザー設定に追加検討。
-
----
+**実装しない。** Figma のデザインはライトテーマのみで、ダーク用の指定が存在しない。`index.html` の `color-scheme` は `light` 固定とし、v1.1 まで存在した `.dark` ブロックと `dark:` ユーティリティ（一度も有効化されていなかった）は削除した。将来的に対応する場合も、全トークンが CSS 変数化されているため差し替えで対応できる。
 
 ## 4.10. 議論ポイントの確定結果
 
@@ -1082,7 +1142,7 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 | 6 | アイコンライブラリ | **Lucide React** | shadcn/ui ドキュメントとサンプルが Lucide 前提、tree-shakable |
 | 7 | 祝日データ取得（FR-SCH-04） | **Phase 0 は FE 直接フェッチ + localStorage キャッシュ** | サーバ口不要・実装シンプル。Phase 1 で BE 経由に移行 |
 | 8 | 楽観更新 | **Phase 0 から実装**（TOSS / 完了、`packages/shared/domain/ball-holder.ts` を共有） | PRD SC-08「TOSS中…→相手にTOSSしました→自動クローズ」体験の確保 |
-| 9 | ブランドカラー（accent） | **仮確定 #1F6FEB（青系）** | 実装を止めない。デザイン確定後にトークン1点更新で全体反映 |
+| 9 | ブランドカラー（accent） | **確定 #E7672C（オレンジ）**／~~仮確定 #1F6FEB（青系）~~ | Figma「TRAKON｜Landing Page」でブランドが確定。§4.9.1 に反映済み |
 | 10 | 国際化（i18n） | **`packages/shared/i18n/messages.ja.ts` に集約、ライブラリは未導入** | Phase 0 は日本語固定、文字列定数化のみで将来 EN 化への下地 |
 | 11 | カンバン DnD の意味論（v1.1 / **#131 改訂**、SC-17） | **既存 Ball Action API に集約、専用 EP なし** | UC-26 と整合。**#131：状態列移動 = 状態機械の各アクション（request-review / approve / send-back / toss / toss-undo）**。~~メンバー列移動での任意 TOSS~~ は廃止（TOSS 先は後続予定に固定）。認可・監査ログが既存ガードに乗る |
 | 12 | 「次の予定」選択肢の範囲（v1.1） | **同制作物内に限定**（Phase 0、プロトタイプ仕様と一致） | 異なる制作物・プロジェクトを跨ぐ後続は Phase 1+ で検討（議論ポイントとして残置） |
@@ -1135,3 +1195,4 @@ Phase 0 では実装しない（CSS 変数化の素地は §4.9.1 で確保）�
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§4.3.1 URL 構造に `/share/:token` と `/projects/:projectId/share-links` を追加、§4.3.2 ルートツリーを更新、§4.3.3 画面遷移図に SC-16 と GuestEntry / GuestSharePage を追加、§4.4.12 SC-16 非会員URL 発行・管理／§4.4.13 非会員URL 閲覧画面を新設、§4.11 Phase 1+ 持ち越しから SC-16 を除外。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | SC-01 改訂（Magic-link + OAuth、7状態統合）／SC-07 改訂（カテゴリ + 次の予定）／SC-09 改訂（階層ビュー、Phase 0 必須化）／SC-11 改訂（タブ分離）／SC-17 新規（メンバーかんばん DnD = TOSS）／§4.3 ルーティング更新（/dashboard 必須化、/login 7状態統合、members タブ切替）／§4.7.3a 自動 TOSS 楽観更新／§4.7.4 カンバン DnD 楽観更新／§4.10 論点 11〜15 追加。 |
 | 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | SC-07 予定作成フォームを FROM/TO から 3 役割（実施者/承認者/進行責任者）へ／SC-08 ボール詳細を 6 状態の状態機械（確認依頼/承認/差し戻し/TOSS＋各取消）へ／SC-17 かんばん DnD マッピングを状態機械アクションへ／非会員URL閲覧画面を確認依頼/承認/差し戻し操作可能に（**#59 閲覧専用を撤回**、TOSS は共有不可）／§4.7.3a 自動 TOSS 楽観更新を #117 廃止として撤去／Phase 1+ 持ち越しから差し戻し・TOSS 取消を「#131 実装済み」に更新。 |
+| 2026-08-22 | **#140 反映**（Figma デザインシステム 第1段：基盤） | ブランドカラーを **#E7672C** に確定し §4.10-9 をクローズ／配色基調を無彩色グレーから**暖色ニュートラル**へ全面差し替え、ドメイン配色をセマンティックトークン化／スケジュールカードの **10 カラーテーマ**と「色は状態ではなくユーザーの視覚整理の道具」という配色ポリシーを §4.9.2 に新設／フォントを **Sora + Noto Sans JP のセルフホスト**に確定（システムフォント方針を撤回）／**ダークモード非対応**を明記し `.dark` 実装を削除。§4.9 を全面改訂。 |

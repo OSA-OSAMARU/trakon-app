@@ -1,0 +1,18 @@
+/* =============================================================================
+ * Web フォント (セルフホスト / @fontsource)
+ *
+ * - Sora        : ロゴ・ワードマーク用ディスプレイ書体 (Figma 33:19 で採用決定)
+ * - Noto Sans JP: UI 本文書体 (Figma 全画面)
+ *
+ * どちらも可変フォント (wght 軸) を採用している。
+ * Figma では Regular / Medium / Bold の 3 ウェイトを使うが、静的ウェイト版は
+ * weight ごとに @font-face を持つため CSS が 3 倍に膨らむ (unicode-range の
+ * 定義だけで 1 ウェイトあたり約 110KB)。可変フォントなら 1 セットで済む。
+ *
+ * Noto Sans JP は unicode-range で 124 分割されており、実際に描画される文字を
+ * 含むサブセットだけがダウンロードされる。一括版 (japanese.css) は約 1MB を
+ * 無条件に読み込むため使わない。
+ * ============================================================================= */
+
+@import '@fontsource-variable/sora/wght.css';
+@import '@fontsource-variable/noto-sans-jp/wght.css';

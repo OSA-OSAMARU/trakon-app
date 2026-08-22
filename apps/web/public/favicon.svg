@@ -1,0 +1,13 @@
+<!--
+  TRAKON favicon
+  ロゴタイプは Figma「Logo type exploration」(node 33:19) で Sora / SemiBold に確定。
+  Figma に独立したロゴマークは存在しないため、そのワードマークの頭文字「T」の
+  アウトラインをそのまま切り出して角丸スクエアに載せている。
+  正式なシンボルマークが支給された場合はこのファイルを差し替える。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#23231F"/>
+  <g transform="translate(20.4115 16.1371) scale(0.642123)" fill="#FFFFFF">
+    <path d="M13.504 48.064V8.064H22.592V48.064H13.504ZM0 9.34399V1.34399H36.096V9.34399H0Z"/>
+  </g>
+</svg>
