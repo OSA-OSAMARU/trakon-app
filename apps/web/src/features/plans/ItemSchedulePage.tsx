@@ -23,7 +23,7 @@ import { projectsApi, projectsQueryKey, type ProjectItem } from '@/features/proj
 import { membersApi, membersQueryKey } from '@/features/projects/membersApi';
 import { deriveLineBallHolders } from '@trakon/shared';
 import { plansApi, plansQueryKey, type Plan, type MemberRef } from './api';
-import { CATEGORY_STYLE } from './categoryColor';
+import { CATEGORY_STYLE } from './planTheme';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PlanModalsHost } from './PlanModalsHost';
 import { DateChangeConfirmModal } from './DateChangeConfirmModal';

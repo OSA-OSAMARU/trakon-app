@@ -33,7 +33,7 @@ function SheetContent({
         onInteractOutside={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => e.preventDefault()}
         className={cn(
-          'bg-background fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[420px] flex-col gap-4 border-l p-6 shadow-xl',
+          'bg-background fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-[480px] flex-col gap-4 border-l p-6 shadow-xl',
           'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right duration-200',
           className,
         )}

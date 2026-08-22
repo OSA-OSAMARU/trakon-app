@@ -41,7 +41,7 @@
   --destructive-foreground: #ffffff;
   --border: #e6e2db;
   --input: #ded8ce;
-  --input-background: #fcfbf8;
+  --input-background: #faf8f4;
   --switch-background: #ded8ce;
   --ring: #e7672c;
   --radius: 0.625rem; /* 10px: カード・ナビ・入力の基準 */
@@ -80,6 +80,11 @@
   --warning-subtle: #fff5de;
   --danger: #b14e41;
   --danger-subtle: #fef7f5;
+
+  /* 予定の 3 役割 (#131)。カード内の役割アバターで使う (Figma 25:2) */
+  --role-executor: #2e6ea6;
+  --role-approver: #d66333;
+  --role-manager: #333330;
 
   /* カレンダー日付軸 */
   --today-bg: #fff8e3;
@@ -201,6 +206,10 @@
   --color-warning-subtle: var(--warning-subtle);
   --color-danger: var(--danger);
   --color-danger-subtle: var(--danger-subtle);
+
+  --color-role-executor: var(--role-executor);
+  --color-role-approver: var(--role-approver);
+  --color-role-manager: var(--role-manager);
 
   --color-today-bg: var(--today-bg);
   --color-today-marker: var(--today-marker);

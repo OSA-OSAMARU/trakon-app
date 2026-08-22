@@ -10,6 +10,7 @@ const config: StorybookConfig = {
   stories: [
     '../src/components/ui/**/*.stories.@(ts|tsx)',
     '../src/components/layout/**/*.stories.@(ts|tsx)',
+    '../src/components/trakon/**/*.stories.@(ts|tsx)',
     '../src/styles/**/*.stories.@(ts|tsx)',
   ],
   framework: {

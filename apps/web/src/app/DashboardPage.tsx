@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/components/ui/utils';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { CATEGORY_STYLE } from '@/features/plans/categoryColor';
+import { CATEGORY_STYLE } from '@/features/plans/planTheme';
 import {
   dashboardApi,
   dashboardQueryKey,

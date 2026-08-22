@@ -18,7 +18,7 @@ import { cn } from '@/components/ui/utils';
 import { projectsApi, projectsQueryKey, type ProjectItem } from '@/features/projects/api';
 import type { ProjectMember } from '@/features/projects/membersApi';
 import { plansApi, plansQueryKey, type Plan } from './api';
-import { CATEGORY_STYLE } from './categoryColor';
+import { CATEGORY_STYLE } from './planTheme';
 import { PlanModalsHost } from './PlanModalsHost';
 
 const ALL = '__all__';
