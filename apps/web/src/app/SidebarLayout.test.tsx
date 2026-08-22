@@ -109,8 +109,22 @@ describe('SidebarLayout', () => {
 
     // プロジェクト一覧 (API 応答) が描画される
     expect(await screen.findByRole('link', { name: /サンプル制作案件/ })).toBeInTheDocument();
-    // 「全て」導線
-    expect(screen.getByRole('link', { name: '全て →' })).toBeInTheDocument();
+    // セクション見出しの操作アイコン (一覧 / アーカイブ / 作成)。
+    // プロジェクトが増えても隠れないようスクロール領域の外に置いている (#54)。
+    expect(screen.getByRole('link', { name: 'プロジェクト一覧' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'アーカイブ済みプロジェクト' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'プロジェクトを作成' })).toBeInTheDocument();
+  });
+
+  it('プロジェクト行の「⋯」から設定系の画面へ辿れる', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stubEndpoints();
+    renderLayout();
+
+    await user.click(await screen.findByRole('button', { name: 'サンプル制作案件 の操作' }));
+    expect(await screen.findByRole('menuitem', { name: 'プロジェクト情報' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'メンバー' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '共有リンク' })).toBeInTheDocument();
   });
 
   it('プロフィール完了済みならユーザー情報ボタンを表示し、開くとサインアウトできる', async () => {
@@ -144,8 +158,8 @@ describe('SidebarLayout', () => {
   it('アクティブなルートのナビリンクに active スタイルが付く', async () => {
     stubEndpoints();
     renderLayout();
-    // 現在 /dashboard なのでダッシュボードリンクが active
+    // 現在 /dashboard なのでダッシュボードリンクが active (ブランドの淡色で塗る)
     const dash = screen.getByRole('link', { name: 'ダッシュボード' });
-    expect(dash.className).toContain('text-primary');
+    expect(dash.className).toContain('bg-brand-subtle');
   });
 });

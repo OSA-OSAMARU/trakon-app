@@ -8,15 +8,18 @@ const WIDTHS = {
 } as const;
 
 /**
- * 全ページ共通のページヘッダ。プロトタイプ準拠で「白いヘッダ帯」として描画する
- * (本文のグレー領域に対しコントラストを付ける)。内側は PageContainer と同じ
- * 最大幅で中央寄せし、タイトル/説明/パンくず/アクションをページごとに出し分ける。
+ * 全ページ共通のページヘッダ (Figma node 9:31)。
+ *
+ * 白い帯として描画し、本文のグレー領域 (--content) に対してコントラストを付ける。
+ * 上段はパンくず / タイトル / 補足 と右のアクション、下段は任意のツールバー行
+ * (スケジュール画面の月ピッカー・「今日」・メンバーなど) の 2 段構成。
  */
 export function PageHeader({
   title,
   description,
   breadcrumb,
   actions,
+  toolbar,
   width = 'lg',
   sticky = true,
   className,
@@ -25,35 +28,39 @@ export function PageHeader({
   description?: React.ReactNode;
   breadcrumb?: React.ReactNode;
   actions?: React.ReactNode;
+  /** タイトル行の下に敷く操作行。指定したときだけ描画する */
+  toolbar?: React.ReactNode;
   width?: keyof typeof WIDTHS;
   sticky?: boolean;
   className?: string;
 }) {
   return (
-    <header
-      className={cn(
-        'border-b border-border bg-card',
-        sticky && 'sticky top-0 z-20',
-        className,
-      )}
-    >
+    <header className={cn('border-border bg-card border-b', sticky && 'sticky top-0 z-20', className)}>
       <div
         className={cn(
-          'mx-auto flex w-full flex-wrap items-start justify-between gap-3 px-6 py-4',
+          'mx-auto flex w-full flex-wrap items-start justify-between gap-4 px-7 pt-5 pb-4',
           WIDTHS[width],
         )}
       >
-        <div className="space-y-1">
+        <div className="flex min-w-0 flex-col gap-1">
           {breadcrumb && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              {breadcrumb}
-            </div>
+            <div className="text-text-tertiary flex items-center gap-2 text-tiny">{breadcrumb}</div>
           )}
-          <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+          <h1 className="text-title font-bold">{title}</h1>
+          {description && <p className="text-text-secondary text-body">{description}</p>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
+      {toolbar && (
+        <div
+          className={cn(
+            'mx-auto flex w-full flex-wrap items-center gap-3 px-7 pb-3',
+            WIDTHS[width],
+          )}
+        >
+          {toolbar}
+        </div>
+      )}
     </header>
   );
 }

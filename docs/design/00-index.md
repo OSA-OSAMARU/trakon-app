@@ -29,6 +29,7 @@
 | #131 | 2026-07-24 | **確認者付き予定・進行責任者の追加（issue #131）**。① 予定に 3 役割（実施者 executor / 承認者 approver / 進行責任者 progress_manager）を追加、projects に既定進行責任者列。② ボール状態機械を 6 値（in_progress / review_pending / approved / tossed / sent_back / completed）へ拡張、承認と TOSS を分離。③ **自動連鎖 TOSS を廃止（#117）**。④ from/to を TOSS 履歴スナップショット（FROM=進行責任者 / TO=後続実施者）へ意味変更、`ck_plans_toss_members` 撤去。⑤ 共有リンクに確認依頼/承認/差し戻しを許可（**#59 の閲覧専用を撤回**、TOSS は共有不可）。⑥ ball_events/audit_logs の許可値拡張（マイグレーション 20260724000001 / 20260724000002）。02-database・03-api・05-security を全面更新、00/01/04/06 を整合修正。 | — |
 | #140 | 2026-08-22 | **Figma デザインシステム反映（第1段：基盤）**。ブランドカラーを暫定 #1F6FEB から **#E7672C（オレンジ）** に確定。配色基調を無彩色グレーから**暖色ニュートラル**へ全面差し替え、コード中に散在していたドメイン配色をセマンティックトークン化。スケジュールカードの **10 カラーテーマ**を定義し「色は状態ではなくユーザーの視覚整理の道具」という配色ポリシーを明記。フォントを **Sora（ワードマーク）+ Noto Sans JP（本文）のセルフホスト**に確定。**ダークモードは非対応**として実装を削除。04-frontend §4.9 を全面改訂。 | — |
 | #141 | 2026-08-22 | **Figma デザインシステム反映（第2段：UI 部品）**。shadcn プリミティブ（button / badge / input / select / label / sheet）を Figma 実測へ更新し、ボタンに次の工程へトス用の `accent` を追加。`dropdown-menu` / `popover` / `tooltip` を新規追加。TRAKON 固有コンポーネント（WorkflowButton / StatusPill / RoleRow / ScheduleThemeSwatch）を新設し 04-frontend §4.5.1 に記載。`categoryColor.ts` を `planTheme.ts` へ移行し、カテゴリ配色を 10 テーマへ集約。 | — |
+| #142 | 2026-08-23 | **Figma デザインシステム反映（第3段：アプリシェル）**。サイドバーを Figma へ全面更新し、表示部分を `AppSidebar` として切り出し。`PageHeader` に 2 段目のツールバー行スロットを追加。ワードマークを `Wordmark` コンポーネントへ集約。プロジェクト一覧のタブを URL 同期。04-frontend §4.2.2 のレイアウト構造の記述を実態に合わせて改訂。 | — |
 
 ---
 
