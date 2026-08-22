@@ -14,7 +14,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { ApiClientError } from '@/lib/api';
-import { CATEGORY_STYLE } from '@/features/plans/categoryColor';
+import { CATEGORY_STYLE } from '@/features/plans/planTheme';
 import type { MemberRef, Plan, PlanState } from '@/features/plans/api';
 import { shareAccessApi } from './api';
 

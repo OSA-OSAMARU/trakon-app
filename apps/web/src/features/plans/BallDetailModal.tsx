@@ -44,7 +44,7 @@ import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import type { ProjectMember } from '@/features/projects/membersApi';
 import { projectsApi, projectsQueryKey } from '@/features/projects/api';
 import { plansApi, plansQueryKey, type BallEvent, type MemberRef, type Plan, type PlanState } from './api';
-import { CATEGORY_STYLE } from './categoryColor';
+import { CATEGORY_STYLE } from './planTheme';
 import {
   useApprovePlan,
   useRequestReviewPlan,

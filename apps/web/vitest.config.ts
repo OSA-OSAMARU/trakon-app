@@ -16,6 +16,7 @@ export default defineConfig({
         'src/test/**',
         'server/test/**',
         'src/components/ui/**', // shadcn/ui 取り込み（一部 lint 免除対象）
+        '**/*.stories.tsx', // Storybook の表示用フィクスチャ（アプリのコードではない）
         'src/main.tsx',
         'server/vercel.ts',
         'server/dev.ts',

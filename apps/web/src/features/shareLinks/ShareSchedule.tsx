@@ -6,7 +6,7 @@ import { CheckCircle2, ZoomIn, ZoomOut } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/components/ui/utils';
-import { CATEGORY_STYLE } from '@/features/plans/categoryColor';
+import { CATEGORY_STYLE } from '@/features/plans/planTheme';
 import type { Plan } from '@/features/plans/api';
 import {
   assignLanes,
