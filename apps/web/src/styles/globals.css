@@ -1,96 +1,156 @@
 @import 'tailwindcss';
-
-@custom-variant dark (&:is(.dark *));
+@import './fonts.css';
 
 /* =============================================================================
- * デザイントークン (プロトタイプ prototype/src/styles/theme.css 準拠)
- * 無彩色グレー基調・primary #2b2b2b・border #e5e5e5・radius 0.5rem。
- * --input のみ、入力枠を視認できるよう薄グレー (#d4d4d4) に折衷。
+ * TRAKON デザイントークン
+ *
+ * 出典: Figma「TRAKON｜Landing Page」(fileKey 6juEDpIueDBvcfYvOmPJ3w)
+ *   - 画面全般      : node 8:3 (Schedule / Desktop / 1440)
+ *   - カード配色     : node 54:2 (Color Palette / Schedule Card / 10 themes)
+ *   - 操作ボタン     : node 42:4 (Components / Workflow Button)
+ *
+ * 基調は暖色ニュートラル + ブランドオレンジ (#E7672C)。
+ * 設計書 §4.9 の暫定 accent (#1F6FEB) はここで #E7672C に確定した。
+ * ダークモードは実装しない (設計書 §4.9.4 / Phase 0 方針)。
  * ============================================================================= */
 
 :root {
   --font-size: 16px;
-  --background: #ffffff;
-  --foreground: #1f1f1f;
-  --card: #ffffff;
-  --card-foreground: #1f1f1f;
-  --popover: #ffffff;
-  --popover-foreground: #1f1f1f;
-  --primary: #2b2b2b;
-  --primary-foreground: #ffffff;
-  --secondary: #f7f7f7;
-  --secondary-foreground: #2b2b2b;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --accent: #f0f0f0;
-  --accent-foreground: #2b2b2b;
-  --destructive: #dc2626;
-  --destructive-foreground: #ffffff;
-  --border: #e5e5e5;
-  /* proto は transparent だが、入力枠の視認性のため薄グレーに */
-  --input: #d4d4d4;
-  --input-background: #fafafa;
-  --switch-background: #d4d4d4;
-  --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #737373;
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.5rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1f1f1f;
-  --sidebar-primary: #2b2b2b;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f5f5f5;
-  --sidebar-accent-foreground: #2b2b2b;
-  --sidebar-border: #e5e5e5;
-  --sidebar-ring: #737373;
-  /* 本文領域の淡いグレー背景 (白ヘッダ帯/白カードと対比) */
-  --content: #fafafa;
-}
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.34 0 0);
-  --ring: oklch(0.439 0 0);
-  --font-weight-medium: 500;
-  --font-weight-normal: 400;
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
-  --content: oklch(0.185 0 0);
+  /* --- shadcn 標準トークン (名前は据え置き、値のみ TRAKON 配色へ) --------- */
+  --background: #ffffff;
+  --foreground: #23231f;
+  --card: #ffffff;
+  --card-foreground: #23231f;
+  --popover: #ffffff;
+  --popover-foreground: #23231f;
+  /* 主要ボタン・ワードマークの「強い黒」 */
+  --primary: #23231f;
+  --primary-foreground: #ffffff;
+  --secondary: #f7f5f1;
+  --secondary-foreground: #23231f;
+  --muted: #f9f8f5;
+  --muted-foreground: #676862;
+  /* ホバー等の中立サーフェス (ブランドオレンジ系は --brand-* を使う) */
+  --accent: #f2efe9;
+  --accent-foreground: #23231f;
+  --destructive: #b14e41;
+  --destructive-foreground: #ffffff;
+  --border: #e6e2db;
+  --input: #ded8ce;
+  --input-background: #fcfbf8;
+  --switch-background: #ded8ce;
+  --ring: #e7672c;
+  --radius: 0.625rem; /* 10px: カード・ナビ・入力の基準 */
+
+  --sidebar: #fcfbf8;
+  --sidebar-foreground: #23231f;
+  --sidebar-primary: #23231f;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f8efe8;
+  --sidebar-accent-foreground: #23231f;
+  --sidebar-border: #e6e2db;
+  --sidebar-ring: #e7672c;
+
+  /* --- TRAKON 独自セマンティックトークン --------------------------------- */
+  /* アプリ本体の背景 (白ヘッダ帯・白カードと対比させる暖色グレー) */
+  --content: #f7f6f2;
+  /* 週末行・セクション見出し帯などの控えめなサーフェス */
+  --surface-muted: #f7f5f1;
+  --surface-subtle: #f9f8f5;
+  /* カレンダー罫線 (--border より一段淡い) */
+  --grid-border: #e8e5df;
+  --text-secondary: #676862;
+  --text-tertiary: #908f87;
+
+  /* ブランドオレンジ */
+  --brand: #e7672c;
+  --brand-foreground: #ffffff;
+  --brand-strong: #e05224;
+  --brand-subtle: #f8efe8;
+  --brand-badge: #fce8db;
+
+  /* 状態色 (FIX・承認済み / 進行中 / 遅延・祝日) */
+  --success: #2e7d4f;
+  --success-subtle: #e8f6ec;
+  --warning: #c88718;
+  --warning-subtle: #fff5de;
+  --danger: #b14e41;
+  --danger-subtle: #fef7f5;
+
+  /* カレンダー日付軸 */
+  --today-bg: #fff8e3;
+  --today-marker: #e7672c;
+  --weekend-bg: #f7f5f1;
+  --holiday-bg: #fef7f5;
+  --holiday-foreground: #b14e41;
+
+  /* --- スケジュールカード 10 テーマ (Figma 54:2) -------------------------
+   * 文字色は全テーマ共通 (--plan-foreground)。背景とのコントラスト 13:1 以上。
+   * 色は「状態」ではなく、ユーザーがスケジュールを視覚整理するために使う。
+   * -------------------------------------------------------------------- */
+  --plan-foreground: #22211f;
+  --plan-warm-gray-surface: #eeeae2;
+  --plan-warm-gray-accent: #665f57;
+  --plan-rose-surface: #fdeff2;
+  --plan-rose-accent: #d95b78;
+  --plan-coral-surface: #ffe6dc;
+  --plan-coral-accent: #d94a20;
+  --plan-amber-surface: #fff5de;
+  --plan-amber-accent: #c88718;
+  --plan-lime-surface: #f4f8e5;
+  --plan-lime-accent: #7e9d28;
+  --plan-green-surface: #eaf7ee;
+  --plan-green-accent: #2f9a5b;
+  --plan-teal-surface: #e8f7f4;
+  --plan-teal-accent: #248f83;
+  --plan-cyan-surface: #eaf6fa;
+  --plan-cyan-accent: #2589a6;
+  --plan-blue-surface: #ddeeff;
+  --plan-blue-accent: #1d6fd1;
+  --plan-violet-surface: #f3e0f8;
+  --plan-violet-accent: #9a3eaa;
 }
 
 @theme inline {
+  /* --- フォント --------------------------------------------------------- */
+  --font-sans:
+    'Noto Sans JP Variable', -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Yu Gothic',
+    sans-serif;
+  --font-display: 'Sora Variable', 'Sora', var(--font-sans);
+
+  /* --- タイポグラフィスケール (Figma 実測) -------------------------------
+   * Tailwind 既定 (text-xs=12 / text-sm=14 / text-base=16 ...) はそのまま残し、
+   * Figma に出現する 9 / 10 / 11 / 13 / 22 px を独自名で追加する。
+   * -------------------------------------------------------------------- */
+  --text-micro: 0.5625rem; /* 9px  : カード内ロールラベル */
+  --text-micro--line-height: 1.45;
+  --text-mini: 0.625rem; /* 10px : 高密度カレンダー */
+  --text-mini--line-height: 1.45;
+  --text-tiny: 0.6875rem; /* 11px : 日付軸・補助ラベル */
+  --text-tiny--line-height: 1.45;
+  --text-body: 0.8125rem; /* 13px : 本文・ボタン */
+  --text-body--line-height: 1.5;
+  --text-title: 1.375rem; /* 22px : 画面タイトル */
+  --text-title--line-height: 1.5;
+  --text-wordmark: 2rem; /* 32px : TRAKON ワードマーク */
+  --text-wordmark--line-height: 1.5;
+
+  /* --- 角丸 (Figma 実測: 6 / 8 / 10 / 12 / 14) --------------------------- */
+  --radius-sm: 0.375rem; /* 6px  */
+  --radius-md: 0.5rem; /* 8px  */
+  --radius-lg: 0.625rem; /* 10px */
+  --radius-xl: 0.75rem; /* 12px */
+  --radius-2xl: 0.875rem; /* 14px */
+
+  /* --- 影 --------------------------------------------------------------- */
+  --shadow-card: 0 4px 12px 0 rgb(35 35 31 / 0.06);
+  --shadow-float: 0 6px 18px 0 rgb(35 35 31 / 0.1);
+
+  /* --- 色 (shadcn 標準) -------------------------------------------------- */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -112,16 +172,6 @@
   --color-input-background: var(--input-background);
   --color-switch-background: var(--switch-background);
   --color-ring: var(--ring);
-  --color-content: var(--content);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -130,12 +180,64 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* --- 色 (TRAKON 独自) -------------------------------------------------- */
+  --color-content: var(--content);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-grid-border: var(--grid-border);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-brand-badge: var(--brand-badge);
+
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+
+  --color-today-bg: var(--today-bg);
+  --color-today-marker: var(--today-marker);
+  --color-weekend-bg: var(--weekend-bg);
+  --color-holiday-bg: var(--holiday-bg);
+  --color-holiday-foreground: var(--holiday-foreground);
+
+  /* --- 色 (スケジュールカード 10 テーマ) --------------------------------- */
+  --color-plan-foreground: var(--plan-foreground);
+  --color-plan-warm-gray-surface: var(--plan-warm-gray-surface);
+  --color-plan-warm-gray-accent: var(--plan-warm-gray-accent);
+  --color-plan-rose-surface: var(--plan-rose-surface);
+  --color-plan-rose-accent: var(--plan-rose-accent);
+  --color-plan-coral-surface: var(--plan-coral-surface);
+  --color-plan-coral-accent: var(--plan-coral-accent);
+  --color-plan-amber-surface: var(--plan-amber-surface);
+  --color-plan-amber-accent: var(--plan-amber-accent);
+  --color-plan-lime-surface: var(--plan-lime-surface);
+  --color-plan-lime-accent: var(--plan-lime-accent);
+  --color-plan-green-surface: var(--plan-green-surface);
+  --color-plan-green-accent: var(--plan-green-accent);
+  --color-plan-teal-surface: var(--plan-teal-surface);
+  --color-plan-teal-accent: var(--plan-teal-accent);
+  --color-plan-cyan-surface: var(--plan-cyan-surface);
+  --color-plan-cyan-accent: var(--plan-cyan-accent);
+  --color-plan-blue-surface: var(--plan-blue-surface);
+  --color-plan-blue-accent: var(--plan-blue-accent);
+  --color-plan-violet-surface: var(--plan-violet-surface);
+  --color-plan-violet-accent: var(--plan-violet-accent);
 }
 
 /* =============================================================================
- * base レイヤー (プロトタイプ準拠のタイポグラフィ)
- * Tailwind ユーティリティ (text-sm 等) で個別に上書き可能。
- * フォントは可読性のため Inter スタックを採用 (proto はシステム既定)。
+ * base レイヤー
+ *
+ * 裸の要素セレクタでのスタイリングは最小限に留める。
+ * 実際に依存しているのは CardTitle (<h4>) のみで、他の見出しは
+ * すべて呼び出し側でユーティリティクラスを指定している。
  * ============================================================================= */
 
 @layer base {
@@ -143,60 +245,55 @@
     @apply border-border outline-ring/50;
   }
 
-  body {
-    @apply bg-background text-foreground;
-    font-family:
-      'Inter',
-      -apple-system,
-      BlinkMacSystemFont,
-      'Hiragino Kaku Gothic ProN',
-      'Yu Gothic',
-      sans-serif;
-  }
-
   html {
     font-size: var(--font-size);
   }
 
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+  }
+
   h1 {
-    font-size: 1.875rem;
-    font-weight: var(--font-weight-medium);
-    line-height: 1.4;
+    font-size: 1.375rem; /* 22px */
+    font-weight: var(--font-weight-bold);
+    line-height: 1.5;
   }
 
   h2 {
-    font-size: 1.5rem;
-    font-weight: var(--font-weight-medium);
-    line-height: 1.4;
+    font-size: 1.25rem; /* 20px */
+    font-weight: var(--font-weight-bold);
+    line-height: 1.5;
   }
 
   h3 {
-    font-size: 1.125rem;
-    font-weight: var(--font-weight-medium);
+    font-size: 1rem; /* 16px */
+    font-weight: var(--font-weight-bold);
     line-height: 1.5;
   }
 
   h4 {
-    font-size: 1rem;
-    font-weight: var(--font-weight-medium);
+    font-size: 1rem; /* 16px */
+    font-weight: var(--font-weight-bold);
     line-height: 1.5;
   }
 
   label {
-    font-size: 0.875rem;
+    font-size: 0.8125rem; /* 13px */
     font-weight: var(--font-weight-medium);
     line-height: 1.5;
   }
 
   button {
-    font-size: 0.9375rem;
+    font-size: 0.8125rem; /* 13px */
     font-weight: var(--font-weight-medium);
     line-height: 1.5;
   }
 
   input,
-  select {
-    font-size: 0.9375rem;
+  select,
+  textarea {
+    font-size: 0.875rem; /* 14px */
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
