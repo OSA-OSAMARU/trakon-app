@@ -30,6 +30,7 @@
 | #140 | 2026-08-22 | **Figma デザインシステム反映（第1段：基盤）**。ブランドカラーを暫定 #1F6FEB から **#E7672C（オレンジ）** に確定。配色基調を無彩色グレーから**暖色ニュートラル**へ全面差し替え、コード中に散在していたドメイン配色をセマンティックトークン化。スケジュールカードの **10 カラーテーマ**を定義し「色は状態ではなくユーザーの視覚整理の道具」という配色ポリシーを明記。フォントを **Sora（ワードマーク）+ Noto Sans JP（本文）のセルフホスト**に確定。**ダークモードは非対応**として実装を削除。04-frontend §4.9 を全面改訂。 | — |
 | #141 | 2026-08-22 | **Figma デザインシステム反映（第2段：UI 部品）**。shadcn プリミティブ（button / badge / input / select / label / sheet）を Figma 実測へ更新し、ボタンに次の工程へトス用の `accent` を追加。`dropdown-menu` / `popover` / `tooltip` を新規追加。TRAKON 固有コンポーネント（WorkflowButton / StatusPill / RoleRow / ScheduleThemeSwatch）を新設し 04-frontend §4.5.1 に記載。`categoryColor.ts` を `planTheme.ts` へ移行し、カテゴリ配色を 10 テーマへ集約。 | — |
 | #142 | 2026-08-23 | **Figma デザインシステム反映（第3段：アプリシェル）**。サイドバーを Figma へ全面更新し、表示部分を `AppSidebar` として切り出し。`PageHeader` に 2 段目のツールバー行スロットを追加。ワードマークを `Wordmark` コンポーネントへ集約。プロジェクト一覧のタブを URL 同期。04-frontend §4.2.2 のレイアウト構造の記述を実態に合わせて改訂。 | — |
+| #143 | 2026-08-23 | **スケジュール描画の共通化（Figma 反映 第4段の準備）**。`ItemSchedulePage` からボード描画を `features/plans/schedule/` へ切り出し、フォーク複製だった `ShareSchedule` を同じ `ScheduleBoard` の閲覧専用モードへ統合。見た目は変えず、共有画面のボール保持者導出とカード座標のずれ・SVG marker id の重複を解消。 | — |
 
 ---
 
