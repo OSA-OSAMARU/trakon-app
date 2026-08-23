@@ -1,3 +1,5 @@
+import type { MemberType } from '@trakon/shared';
+
 import type { BallEventType, PlanState } from '@trakon/shared';
 
 import { apiRequest } from '@/lib/api';
@@ -29,7 +31,7 @@ export type MemberRef = {
   id: string;
   name: string;
   organizationName: string;
-  memberType: 'client' | 'production';
+  memberType: MemberType;
 };
 
 export type BallEvent = {

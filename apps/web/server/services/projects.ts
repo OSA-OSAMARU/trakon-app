@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from '@trakon/db';
+import { pickLatestBallEvent, type BallEventType } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import type { CreateProjectBody, UpdateProjectBody } from '../schemas/projects.js';
@@ -6,6 +7,8 @@ import type { CreateProjectBody, UpdateProjectBody } from '../schemas/projects.j
 export type ProjectSummaryDTO = {
   id: string;
   name: string;
+  /** クライアント名 (#147)。一覧・ヘッダーの表示に使う */
+  clientName: string | null;
   startDate: string;
   endDate: string;
   status: 'active' | 'closed';
@@ -15,6 +18,13 @@ export type ProjectSummaryDTO = {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** 予定作成時の進行責任者の既定値 (#131)。一覧の「進行責任者」列に出す */
+  progressManager: { id: string; name: string } | null;
+  /**
+   * 期限超過しているボールの数 (#147)。一覧で遅延しているプロジェクトを見分けるのに使う。
+   * TOSS 済み・完了は「対応待ち」ではないため数えない (ダッシュボードの isOverdue と同じ判定)。
+   */
+  overdueCount: number;
 };
 
 export type ProjectDetailDTO = ProjectSummaryDTO & {
@@ -33,6 +43,7 @@ function toSummary(
   p: {
     id: string;
     name: string;
+    clientName: string | null;
     startDate: Date;
     endDate: Date;
     status: string;
@@ -40,12 +51,15 @@ function toSummary(
     createdBy: string;
     createdAt: Date;
     updatedAt: Date;
+    progressManager?: { id: string; name: string } | null;
   },
   currentUserId: string,
+  overdueCount = 0,
 ): ProjectSummaryDTO {
   return {
     id: p.id,
     name: p.name,
+    clientName: p.clientName,
     startDate: toDateString(p.startDate),
     endDate: toDateString(p.endDate),
     status: p.status as 'active' | 'closed',
@@ -54,6 +68,10 @@ function toSummary(
     createdBy: p.createdBy,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
+    progressManager: p.progressManager
+      ? { id: p.progressManager.id, name: p.progressManager.name }
+      : null,
+    overdueCount,
   };
 }
 
@@ -77,10 +95,63 @@ export async function listProjects(
       orderBy: q.archived ? { archivedAt: 'desc' } : { updatedAt: 'desc' },
       take: q.limit,
       skip: q.offset,
+      include: { progressManager: { select: { id: true, name: true } } },
     }),
     prisma.project.count({ where }),
   ]);
-  return { items: rows.map((p) => toSummary(p, userId)), total };
+  const overdueByProject = await countOverdueBalls(rows.map((p) => p.id));
+  return {
+    items: rows.map((p) => toSummary(p, userId, overdueByProject.get(p.id) ?? 0)),
+    total,
+  };
+}
+
+/**
+ * プロジェクトごとの期限超過ボール数を数える (#147)。
+ *
+ * 「期限超過」の判定はダッシュボードの isOverdue と揃える。
+ *   - active な予定で 終了日 (due_date) が今日より前
+ *   - ただし TOSS 済み・完了は「対応待ち」ではないため除外する
+ * ボール状態は最新の ball_event から導出する。
+ */
+async function countOverdueBalls(projectIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (projectIds.length === 0) return result;
+
+  const today = new Date(`${todayInJst()}T00:00:00Z`);
+  const plans = await prisma.plan.findMany({
+    where: {
+      deletedAt: null,
+      status: 'active',
+      dueDate: { lt: today },
+      item: { deletedAt: null, projectId: { in: projectIds } },
+    },
+    select: {
+      item: { select: { projectId: true } },
+      ballEvents: { orderBy: { occurredAt: 'desc' }, take: 1 },
+    },
+  });
+
+  for (const plan of plans) {
+    const latest = pickLatestBallEvent(
+      plan.ballEvents.map((e) => ({
+        eventType: e.eventType as BallEventType,
+        source: e.source as 'human' | 'auto_chain',
+        occurredAt: e.occurredAt,
+      })),
+    );
+    const state = latest?.eventType;
+    if (state === 'tossed' || state === 'completed') continue;
+    const pid = plan.item.projectId;
+    result.set(pid, (result.get(pid) ?? 0) + 1);
+  }
+  return result;
+}
+
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function todayInJst(): string {
+  return new Date(Date.now() + JST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 export async function getProjectDetail(
@@ -90,6 +161,7 @@ export async function getProjectDetail(
   const p = await prisma.project.findFirst({
     where: { id: projectId, deletedAt: null },
     include: {
+      progressManager: { select: { id: true, name: true } },
       _count: {
         select: {
           members: { where: { deletedAt: null } },
@@ -101,8 +173,9 @@ export async function getProjectDetail(
   if (!p) {
     throw new ApiException('NOT_FOUND', 404, 'Project not found.');
   }
+  const overdue = await countOverdueBalls([p.id]);
   return {
-    ...toSummary(p, currentUserId),
+    ...toSummary(p, currentUserId, overdue.get(p.id) ?? 0),
     counts: { memberCount: p._count.members, itemCount: p._count.items },
   };
 }
@@ -136,6 +209,7 @@ export async function createProject(input: {
     const project = await tx.project.create({
       data: {
         name: body.name,
+        clientName: body.clientName ?? null,
         startDate: new Date(`${body.startDate}T00:00:00Z`),
         endDate: new Date(`${body.endDate}T00:00:00Z`),
         createdBy: currentUserId,
@@ -173,6 +247,7 @@ export async function createProject(input: {
           email: m.email ?? null,
           organizationName: m.organizationName,
           memberType: m.memberType,
+          jobTitle: m.jobTitle ?? null,
           sortOrder: idx + 1,
         })),
       });
@@ -191,6 +266,7 @@ export async function updateProject(input: {
 }): Promise<{ project: ProjectDetailDTO; warnings: Array<{ code: string; message: string }> }> {
   const data: Prisma.ProjectUpdateInput = {};
   if (input.body.name !== undefined) data.name = input.body.name;
+  if (input.body.clientName !== undefined) data.clientName = input.body.clientName;
   if (input.body.startDate !== undefined)
     data.startDate = new Date(`${input.body.startDate}T00:00:00Z`);
   if (input.body.endDate !== undefined)

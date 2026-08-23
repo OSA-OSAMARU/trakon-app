@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { JOB_TITLES, MEMBER_TYPES } from '@trakon/shared';
+
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.');
@@ -10,11 +12,19 @@ const optionalEmail = z.preprocess(
   z.string().trim().toLowerCase().email().max(320).optional(),
 );
 
+// 空文字は「未設定」= undefined に正規化する (フォームの未選択が '' で届くため)。
+const optionalJobTitle = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+  z.enum(JOB_TITLES).optional(),
+);
+
 const memberInput = z.object({
   name: z.string().trim().min(1).max(100),
+  /** 通知先メール。確認TOSS / コメントRETURN など対応が必要なときにだけ送る (#147) */
   email: optionalEmail,
   organizationName: z.string().trim().max(255).default(''),
-  memberType: z.enum(['client', 'production']),
+  memberType: z.enum(MEMBER_TYPES),
+  jobTitle: optionalJobTitle,
 });
 
 const itemInput = z.object({
@@ -24,6 +34,10 @@ const itemInput = z.object({
 export const createProjectBodySchema = z
   .object({
     name: z.string().trim().min(1).max(255),
+    clientName: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+      z.string().trim().max(255).optional(),
+    ),
     startDate: isoDate,
     endDate: isoDate,
     items: z.array(itemInput).min(1).max(50),
@@ -52,6 +66,8 @@ export type CreateProjectBody = z.infer<typeof createProjectBodySchema>;
 export const updateProjectBodySchema = z
   .object({
     name: z.string().trim().min(1).max(255).optional(),
+    // null で明示的にクリアできる
+    clientName: z.string().trim().max(255).nullable().optional(),
     startDate: isoDate.optional(),
     endDate: isoDate.optional(),
     status: z.enum(['active', 'closed']).optional(),

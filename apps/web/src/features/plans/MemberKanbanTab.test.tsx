@@ -66,6 +66,7 @@ const member = (over: Partial<ProjectMember> = {}): ProjectMember => ({
   email: 'taro@example.com',
   organizationName: 'Acme',
   memberType: 'production',
+  jobTitle: null,
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',

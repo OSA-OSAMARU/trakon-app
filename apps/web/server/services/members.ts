@@ -1,4 +1,5 @@
 import { prisma } from '@trakon/db';
+import type { JobTitle, MemberType } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import { assertExactIdSet } from './items.js';
@@ -11,7 +12,9 @@ export type MemberDTO = {
   /** スケジュール担当者としての登録ではメールは任意 (未登録は null) */
   email: string | null;
   organizationName: string;
-  memberType: 'client' | 'production';
+  memberType: MemberType;
+  /** 職種 (#147)。表示用で権限には影響しない */
+  jobTitle: JobTitle | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -24,6 +27,7 @@ function toDTO(m: {
   email: string | null;
   organizationName: string;
   memberType: string;
+  jobTitle: string | null;
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
@@ -34,7 +38,8 @@ function toDTO(m: {
     name: m.name,
     email: m.email,
     organizationName: m.organizationName,
-    memberType: m.memberType as MemberDTO['memberType'],
+    memberType: m.memberType as MemberType,
+    jobTitle: (m.jobTitle as JobTitle | null) ?? null,
     sortOrder: m.sortOrder,
     createdAt: m.createdAt.toISOString(),
     updatedAt: m.updatedAt.toISOString(),
@@ -96,6 +101,7 @@ export async function addMembers(input: {
           email: m.email ?? null,
           organizationName: m.organizationName,
           memberType: m.memberType,
+          jobTitle: m.jobTitle ?? null,
           sortOrder: baseOrder + idx,
         },
       });
@@ -144,6 +150,8 @@ export async function updateMember(input: {
       name: input.body.name ?? undefined,
       organizationName: input.body.organizationName ?? undefined,
       memberType: input.body.memberType ?? undefined,
+      // null は「クリアする」意味なのでそのまま渡す
+      jobTitle: input.body.jobTitle === undefined ? undefined : input.body.jobTitle,
       sortOrder: input.body.sortOrder ?? undefined,
     },
   });
