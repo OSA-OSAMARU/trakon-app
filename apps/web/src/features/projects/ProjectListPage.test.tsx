@@ -90,17 +90,12 @@ describe('ProjectListPage (integration)', () => {
     expect(await screen.findByText('サンプル制作案件')).toBeInTheDocument();
     expect(screen.getByText('二つ目の案件')).toBeInTheDocument();
 
-    // カード一覧内に限定して評価する ("進行中" などはタブ名と重複するため)。
-    const list = screen.getByRole('list');
-    // ロールラベル。
-    expect(within(list).getByText('ディレクター')).toBeInTheDocument();
-    expect(within(list).getByText('メンバー')).toBeInTheDocument();
-    // ステータスバッジ (進行中 / 終了)。
-    expect(within(list).getByText('進行中')).toBeInTheDocument();
-    expect(within(list).getByText('終了')).toBeInTheDocument();
-    // スケジュールリンク。
-    const scheduleLinks = within(list).getAllByRole('link', { name: /スケジュール/ });
-    expect(scheduleLinks[0]).toHaveAttribute('href', '/projects/p1');
+    // 行全体がスケジュールへのリンクになっている。
+    expect(
+      screen.getByRole('link', { name: 'サンプル制作案件 のスケジュールを開く' }),
+    ).toHaveAttribute('href', '/projects/p1');
+    // 件数表示。
+    expect(screen.getByText('進行中 2件')).toBeInTheDocument();
   });
 
   it('プロジェクトが無い場合は空状態を表示する', async () => {
@@ -142,12 +137,10 @@ describe('ProjectListPage (integration)', () => {
 
     await screen.findByText('サンプル制作案件');
 
-    await user.click(screen.getByRole('tab', { name: 'アーカイブ済み' }));
+    await user.click(screen.getByRole('button', { name: 'アーカイブ済みを見る' }));
 
     expect(await screen.findByText('アーカイブ案件')).toBeInTheDocument();
-    // バッジの「アーカイブ済み」はタブ名と重複するためカード一覧内で評価する。
-    const list = screen.getByRole('list');
-    expect(within(list).getByText('アーカイブ済み')).toBeInTheDocument();
+    expect(screen.getByText('アーカイブ済み 1件')).toBeInTheDocument();
   });
 
   it('アーカイブ済みタブが空のとき専用メッセージを表示する', async () => {
@@ -157,7 +150,7 @@ describe('ProjectListPage (integration)', () => {
     renderWithProviders(<ProjectListPage />, { route: '/projects' });
 
     await screen.findByText('サンプル制作案件');
-    await user.click(screen.getByRole('tab', { name: 'アーカイブ済み' }));
+    await user.click(screen.getByRole('button', { name: 'アーカイブ済みを見る' }));
 
     expect(
       await screen.findByText('アーカイブされたプロジェクトはありません。'),
@@ -181,7 +174,9 @@ describe('ProjectListPage (integration)', () => {
 
     await screen.findByText('サンプル制作案件');
 
-    await user.click(screen.getByRole('button', { name: /アーカイブ/ }));
+    // アーカイブは行の「⋯」メニューへ移動した。
+    await user.click(screen.getByRole('button', { name: 'サンプル制作案件 の操作' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'アーカイブ' }));
 
     // 確認ダイアログが開く。
     const dialog = await screen.findByRole('alertdialog');
@@ -200,11 +195,7 @@ describe('ProjectListPage (integration)', () => {
     renderWithProviders(<ProjectListPage />, { route: '/projects' });
 
     await screen.findByText('二つ目の案件');
-    expect(screen.queryByRole('button', { name: /アーカイブ/ })).not.toBeInTheDocument();
-    // 編集リンクは出る (未アーカイブのため)。
-    expect(screen.getByRole('link', { name: '編集' })).toHaveAttribute(
-      'href',
-      '/projects/p2/edit',
-    );
+    // 操作メニュー自体が出ない。
+    expect(screen.queryByRole('button', { name: /の操作$/ })).not.toBeInTheDocument();
   });
 });

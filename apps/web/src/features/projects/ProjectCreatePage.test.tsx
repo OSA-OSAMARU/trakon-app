@@ -48,14 +48,14 @@ function setup() {
 
 /** 制作物 (items) の入力欄を全て取得する。 */
 function getItemInputs(): HTMLInputElement[] {
-  return screen
-    .getAllByLabelText(/^制作物 \d+$/)
-    .filter((el): el is HTMLInputElement => el instanceof HTMLInputElement);
+  return Array.from(
+    document.querySelectorAll<HTMLInputElement>('input[name^="items."][name$=".name"]'),
+  );
 }
 
 /** 基本情報 (名前・日付) を埋める。 */
 async function fillBasics(user: ReturnType<typeof setup>, name = 'サイトリニューアル') {
-  await user.type(screen.getByPlaceholderText('例: 自社サイトリニューアル'), name);
+  await user.type(screen.getByPlaceholderText('例：ブランドサイト制作'), name);
   // DateField のラベルは htmlFor 紐付けがないため name 属性で取得する。
   const start = document.querySelector<HTMLInputElement>('input[name="startDate"]')!;
   const end = document.querySelector<HTMLInputElement>('input[name="endDate"]')!;
@@ -71,7 +71,8 @@ describe('ProjectCreatePage (integration)', () => {
 
     // 基本情報
     expect(screen.getByText('基本情報')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('例: 自社サイトリニューアル')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('例：ブランドサイト制作')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('例：株式会社灯和食品')).toBeInTheDocument();
     expect(screen.getByText('開始日')).toBeInTheDocument();
     expect(screen.getByText('終了日')).toBeInTheDocument();
     expect(document.querySelector('input[name="startDate"]')).toBeInTheDocument();
@@ -81,11 +82,14 @@ describe('ProjectCreatePage (integration)', () => {
     expect(screen.getByText('制作物')).toBeInTheDocument();
     expect(getItemInputs()).toHaveLength(1);
     // 初期行が 1 件のとき削除ボタンは disabled
-    expect(screen.getByRole('button', { name: '制作物を削除' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '制作物 1 を削除' })).toBeDisabled();
 
     // 参加者: 初期 1 行
-    expect(screen.getByText('参加者（任意）')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '参加者を削除' })).toBeInTheDocument();
+    expect(screen.getByText('参加者')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '参加者 1 を削除' })).toBeDisabled();
+    // 職種・区分の選択欄
+    expect(screen.getByLabelText('参加者 1 の職種')).toBeInTheDocument();
+    expect(screen.getByLabelText('参加者 1 の区分')).toBeInTheDocument();
 
     // 送信ボタン
     expect(screen.getByRole('button', { name: 'プロジェクトを作成' })).toBeInTheDocument();
@@ -101,9 +105,8 @@ describe('ProjectCreatePage (integration)', () => {
     expect(getItemInputs()).toHaveLength(2);
 
     // 2 行になると削除ボタンが有効化される
-    const removeButtons = screen.getAllByRole('button', { name: '制作物を削除' });
-    expect(removeButtons).toHaveLength(2);
-    await user.click(removeButtons[1]!);
+    expect(screen.getByRole('button', { name: '制作物 1 を削除' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '制作物 2 を削除' }));
     expect(getItemInputs()).toHaveLength(1);
   });
 
@@ -111,13 +114,13 @@ describe('ProjectCreatePage (integration)', () => {
     const user = setup();
     renderWithProviders(<ProjectCreatePage />, { route: '/projects/new' });
 
-    expect(screen.getAllByRole('button', { name: '参加者を削除' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /^参加者 \d+ を削除$/ })).toHaveLength(1);
 
     await user.click(screen.getByRole('button', { name: '参加者を追加' }));
-    expect(screen.getAllByRole('button', { name: '参加者を削除' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /^参加者 \d+ を削除$/ })).toHaveLength(2);
 
-    await user.click(screen.getAllByRole('button', { name: '参加者を削除' })[1]!);
-    expect(screen.getAllByRole('button', { name: '参加者を削除' })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: '参加者 2 を削除' }));
+    expect(screen.getAllByRole('button', { name: /^参加者 \d+ を削除$/ })).toHaveLength(1);
   });
 
   it('バリデーション: 必須・空の制作物は送信をブロックしエラーを表示する', async () => {
@@ -158,6 +161,9 @@ describe('ProjectCreatePage (integration)', () => {
               status: 'active',
               archivedAt: null,
               role: 'director',
+              clientName: null,
+              progressManager: null,
+              overdueCount: 0,
               createdBy: 'u1',
               createdAt: '2026-01-01T00:00:00.000Z',
               updatedAt: '2026-01-01T00:00:00.000Z',
@@ -182,6 +188,10 @@ describe('ProjectCreatePage (integration)', () => {
     await user.type(nameField, '山田 太郎');
     await user.type(emailField, 'taro@example.com');
 
+    // 進行責任者は入力済み参加者から選ぶ (Figma node 78:18 で必須)
+    await user.click(screen.getByLabelText('進行責任者'));
+    await user.click(await screen.findByRole('option', { name: /山田 太郎/ }));
+
     await user.click(screen.getByRole('button', { name: 'プロジェクトを作成' }));
 
     await waitFor(() => expect(captured).not.toBeNull());
@@ -199,6 +209,7 @@ describe('ProjectCreatePage (integration)', () => {
           memberType: 'production',
         },
       ],
+      progressManagerIndex: 0,
     });
 
     // onSuccess で編集画面へ遷移する

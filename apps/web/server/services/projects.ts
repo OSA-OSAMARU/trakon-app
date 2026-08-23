@@ -200,10 +200,11 @@ export async function createProject(input: {
   }
 
   // 作成者のメールがメンバー入力に被ると uq_pm_project_email 違反になるため除外
-  // (メール未登録の参加者は衝突しないためそのまま残す)
-  const filteredMembers = body.members.filter(
-    (m) => !m.email || m.email.toLowerCase() !== creator.email.toLowerCase(),
-  );
+  // (メール未登録の参加者は衝突しないためそのまま残す)。
+  // 進行責任者は入力順 (index) で指されるため、元の位置も控えておく。
+  const filteredMembers = body.members
+    .map((m, index) => ({ m, index }))
+    .filter(({ m }) => !m.email || m.email.toLowerCase() !== creator.email.toLowerCase());
 
   const created = await prisma.$transaction(async (tx) => {
     const project = await tx.project.create({
@@ -227,7 +228,7 @@ export async function createProject(input: {
     }
 
     // 仮メンバー: 作成者本人 (受諾済み) + 招待先 (userId NULL)
-    await tx.projectMember.create({
+    const creatorMember = await tx.projectMember.create({
       data: {
         projectId: project.id,
         userId: currentUserId,
@@ -238,9 +239,11 @@ export async function createProject(input: {
         sortOrder: 0,
       },
     });
-    if (filteredMembers.length > 0) {
-      await tx.projectMember.createMany({
-        data: filteredMembers.map((m, idx) => ({
+    // 進行責任者に据える参加者の id を拾うため 1 件ずつ作る (最大 50 件)
+    let progressManagerMemberId: string | null = null;
+    for (const [idx, { m, index }] of filteredMembers.entries()) {
+      const row = await tx.projectMember.create({
+        data: {
           projectId: project.id,
           userId: null,
           name: m.name,
@@ -249,9 +252,16 @@ export async function createProject(input: {
           memberType: m.memberType,
           jobTitle: m.jobTitle ?? null,
           sortOrder: idx + 1,
-        })),
+        },
       });
+      if (body.progressManagerIndex === index) progressManagerMemberId = row.id;
     }
+
+    // 進行責任者。未指定 (または除外された参加者を指していた) 場合は作成者本人にする。
+    await tx.project.update({
+      where: { id: project.id },
+      data: { progressManagerMemberId: progressManagerMemberId ?? creatorMember.id },
+    });
 
     return project;
   });

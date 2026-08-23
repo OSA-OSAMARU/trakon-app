@@ -1,3 +1,5 @@
+import type { JobTitle, MemberType } from '@trakon/shared';
+
 import { apiRequest } from '@/lib/api';
 
 export type ProjectSummary = {
@@ -38,6 +40,7 @@ export type ProjectItem = {
 
 export type CreateProjectInput = {
   name: string;
+  clientName?: string;
   startDate: string;
   endDate: string;
   items: Array<{ name: string }>;
@@ -45,12 +48,16 @@ export type CreateProjectInput = {
     name: string;
     email?: string;
     organizationName: string;
-    memberType: 'client' | 'production';
+    memberType: MemberType;
+    jobTitle?: JobTitle;
   }>;
+  /** 進行責任者に据える参加者。members のインデックスで指す (#147) */
+  progressManagerIndex?: number;
 };
 
 export type UpdateProjectInput = Partial<{
   name: string;
+  clientName: string | null;
   startDate: string;
   endDate: string;
   status: 'active' | 'closed';

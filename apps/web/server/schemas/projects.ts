@@ -42,6 +42,12 @@ export const createProjectBodySchema = z
     endDate: isoDate,
     items: z.array(itemInput).min(1).max(50),
     members: z.array(memberInput).max(50).default([]),
+    /**
+     * 進行責任者に据える参加者。members 配列のインデックスで指す (#147)。
+     * 作成時点では参加者の id が無いため、id ではなく入力順で受ける。
+     * 省略時は作成者本人が進行責任者になる。
+     */
+    progressManagerIndex: z.number().int().min(0).max(49).optional(),
   })
   .refine((v) => v.endDate >= v.startDate, {
     path: ['endDate'],
@@ -59,7 +65,11 @@ export const createProjectBodySchema = z
       return true;
     },
     { path: ['members'], message: 'members must have unique emails.' },
-  );
+  )
+  .refine((v) => v.progressManagerIndex === undefined || v.progressManagerIndex < v.members.length, {
+    path: ['progressManagerIndex'],
+    message: 'progressManagerIndex must point to a member.',
+  });
 
 export type CreateProjectBody = z.infer<typeof createProjectBodySchema>;
 
