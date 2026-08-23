@@ -1,6 +1,6 @@
 export { BallChip } from './BallChip';
 export { ColumnHeader } from './ColumnHeader';
-export { DATE_AXIS_WIDTH, DateAxis } from './DateAxis';
+export { COLUMN_HEADER_HEIGHT, DATE_AXIS_WIDTH, DateAxis } from './DateAxis';
 export { LinkArrowDefs, LinkLayer, SUCC_ARROW_ID } from './LinkLayer';
 export { ScheduleBoard } from './ScheduleBoard';
 export { ZoomControl } from './ZoomControl';

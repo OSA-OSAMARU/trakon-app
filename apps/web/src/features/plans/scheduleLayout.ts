@@ -135,26 +135,3 @@ export function isActiveNow(plan: Plan, today: Date): boolean {
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
-
-/**
- * 制作物 id から決定的に色クラスを割り当てる (BE に色フィールドが無いため)。
- * ヘッダーのドット / 列アクセントに使用。
- */
-const ITEM_PALETTE = [
-  { dot: 'bg-violet-500', accent: 'border-t-violet-400' },
-  { dot: 'bg-sky-500', accent: 'border-t-sky-400' },
-  { dot: 'bg-emerald-500', accent: 'border-t-emerald-400' },
-  { dot: 'bg-amber-500', accent: 'border-t-amber-400' },
-  { dot: 'bg-rose-500', accent: 'border-t-rose-400' },
-  { dot: 'bg-cyan-500', accent: 'border-t-cyan-400' },
-  { dot: 'bg-fuchsia-500', accent: 'border-t-fuchsia-400' },
-  { dot: 'bg-lime-500', accent: 'border-t-lime-400' },
-] as const;
-
-export function itemColor(itemId: string): (typeof ITEM_PALETTE)[number] {
-  let hash = 0;
-  for (let i = 0; i < itemId.length; i++) {
-    hash = (hash * 31 + itemId.charCodeAt(i)) >>> 0;
-  }
-  return ITEM_PALETTE[hash % ITEM_PALETTE.length]!;
-}

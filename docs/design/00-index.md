@@ -31,6 +31,7 @@
 | #141 | 2026-08-22 | **Figma デザインシステム反映（第2段：UI 部品）**。shadcn プリミティブ（button / badge / input / select / label / sheet）を Figma 実測へ更新し、ボタンに次の工程へトス用の `accent` を追加。`dropdown-menu` / `popover` / `tooltip` を新規追加。TRAKON 固有コンポーネント（WorkflowButton / StatusPill / RoleRow / ScheduleThemeSwatch）を新設し 04-frontend §4.5.1 に記載。`categoryColor.ts` を `planTheme.ts` へ移行し、カテゴリ配色を 10 テーマへ集約。 | — |
 | #142 | 2026-08-23 | **Figma デザインシステム反映（第3段：アプリシェル）**。サイドバーを Figma へ全面更新し、表示部分を `AppSidebar` として切り出し。`PageHeader` に 2 段目のツールバー行スロットを追加。ワードマークを `Wordmark` コンポーネントへ集約。プロジェクト一覧のタブを URL 同期。04-frontend §4.2.2 のレイアウト構造の記述を実態に合わせて改訂。 | — |
 | #143 | 2026-08-23 | **スケジュール描画の共通化（Figma 反映 第4段の準備）**。`ItemSchedulePage` からボード描画を `features/plans/schedule/` へ切り出し、フォーク複製だった `ShareSchedule` を同じ `ScheduleBoard` の閲覧専用モードへ統合。見た目は変えず、共有画面のボール保持者導出とカード座標のずれ・SVG marker id の重複を解消。 | — |
+| #144 | 2026-08-23 | **Figma デザインシステム反映（第4段b：スケジュール画面）**。カード・日付軸・列ヘッダー・後続コネクト・ズームコントロールを Figma へ。カード配色を 10 テーマに統一し、**状態でテーマ色を差し替えない**配色ポリシー（04-frontend §4.9.2）を実装に反映。後続コネクトに「◯◯がTOSS」ラベルを追加。 | — |
 
 ---
 

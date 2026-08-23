@@ -86,6 +86,10 @@
   --role-approver: #d66333;
   --role-manager: #333330;
 
+  /* 後続 TOSS のコネクト線 (Figma node 32:5 / 32:10) */
+  --toss-line: #247dc9;
+  --toss-line-strong: #1f6cae;
+
   /* カレンダー日付軸 */
   --today-bg: #fff8e3;
   --today-marker: #e7672c;
@@ -210,6 +214,9 @@
   --color-role-executor: var(--role-executor);
   --color-role-approver: var(--role-approver);
   --color-role-manager: var(--role-manager);
+
+  --color-toss-line: var(--toss-line);
+  --color-toss-line-strong: var(--toss-line-strong);
 
   --color-today-bg: var(--today-bg);
   --color-today-marker: var(--today-marker);

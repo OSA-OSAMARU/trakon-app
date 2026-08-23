@@ -44,7 +44,7 @@ export function LinkArrowDefs() {
           refY="3.5"
           orient="auto"
         >
-          <path d="M0,0 L7,3.5 L0,7 Z" className="fill-sky-500" />
+          <path d="M0,0 L7,3.5 L0,7 Z" className="fill-toss-line" />
         </marker>
         <marker
           id={SUCC_ARROW_HL_ID}
@@ -54,7 +54,7 @@ export function LinkArrowDefs() {
           refY="4"
           orient="auto"
         >
-          <path d="M0,0 L8,4 L0,8 Z" className="fill-sky-600" />
+          <path d="M0,0 L8,4 L0,8 Z" className="fill-toss-line-strong" />
         </marker>
       </defs>
     </svg>
@@ -86,14 +86,29 @@ export function LinkLayer({
   dimOthers?: boolean;
 }) {
   const byId = new Map(plans.map((p) => [p.id, p]));
-  const links: { x1: number; y1: number; x2: number; y2: number; sourceId: string }[] = [];
+  const links: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    sourceId: string;
+    /** TOSS 済みなら「誰が渡したか」を線に添える (Figma node 32:10) */
+    tossedBy: string | null;
+  }[] = [];
   for (const p of plans) {
     if (!p.successorPlanId) continue;
     const succ = byId.get(p.successorPlanId);
     if (!succ) continue; // 別制作物 or 未ロード
     const a = chipCenters(p, days, rowHeight, laneWidth, laneOf);
     const b = chipCenters(succ, days, rowHeight, laneWidth, laneOf);
-    links.push({ x1: a.cx, y1: a.bottom, x2: b.cx, y2: b.top, sourceId: p.id });
+    links.push({
+      x1: a.cx,
+      y1: a.bottom,
+      x2: b.cx,
+      y2: b.top,
+      sourceId: p.id,
+      tossedBy: p.ballState === 'tossed' ? (p.fromMember?.name ?? null) : null,
+    });
   }
   if (links.length === 0) return null;
   return (
@@ -122,8 +137,19 @@ export function LinkLayer({
               strokeWidth={highlighted ? 2.5 : 2}
               strokeDasharray="4 3"
               markerEnd={`url(#${highlighted ? SUCC_ARROW_HL_ID : SUCC_ARROW_ID})`}
-              className={cn('fill-none', highlighted ? 'stroke-sky-600' : 'stroke-sky-500')}
+              className={cn('fill-none', highlighted ? 'stroke-toss-line-strong' : 'stroke-toss-line')}
             />
+            {/* 線が十分に伸びているときだけ「◯◯がTOSS」を添える */}
+            {l.tossedBy && l.y2 - l.y1 >= 32 && (
+              <text
+                x={l.x1 + 6}
+                y={midY}
+                className="fill-toss-line text-micro font-bold"
+                dominantBaseline="middle"
+              >
+                {l.tossedBy}がTOSS
+              </text>
+            )}
           </g>
         );
       })}

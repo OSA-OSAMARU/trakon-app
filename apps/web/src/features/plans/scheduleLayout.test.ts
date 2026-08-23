@@ -7,7 +7,6 @@ import {
   dayIndex,
   isActiveNow,
   isOverdue,
-  itemColor,
   planRange,
   zoomScale,
 } from './scheduleLayout';
@@ -128,12 +127,9 @@ describe('isActiveNow', () => {
   });
 });
 
-describe('zoomScale / itemColor', () => {
+describe('zoomScale', () => {
   it('zoomScale は既定 40 で 1.0', () => {
     expect(zoomScale(40)).toBe(1);
     expect(zoomScale(20)).toBe(0.5);
-  });
-  it('itemColor は同一 id で決定的', () => {
-    expect(itemColor('item-xyz')).toBe(itemColor('item-xyz'));
   });
 });

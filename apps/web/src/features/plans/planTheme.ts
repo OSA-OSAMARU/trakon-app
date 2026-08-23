@@ -37,6 +37,27 @@ export function planTheme(category: PlanCategory): ScheduleTheme {
 }
 
 /**
+ * スケジュールカードに載せるクラス束。
+ * Figma node 54:2 のとおり、文字色は全テーマ共通 (--plan-foreground) で、
+ * 淡色の面 + 濃色のアクセント (左ストライプ・枠線) で色を分ける。
+ */
+export function planCardStyle(category: PlanCategory): {
+  surface: string;
+  stripe: string;
+  border: string;
+  label: string;
+} {
+  const t = planTheme(category);
+  return {
+    surface: t.surface,
+    stripe: t.accent,
+    // 枠線はアクセントを薄めて面から浮きすぎないようにする
+    border: `${t.border}/25`,
+    label: CATEGORY_LABEL[category],
+  };
+}
+
+/**
  * 旧 CATEGORY_STYLE 互換のクラス束。
  * 画面側のデザイン刷新は後続フェーズで行うため、既存の呼び出し形を保ったまま
  * 参照する色だけを新パレットへ差し替える。
