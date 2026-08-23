@@ -6,8 +6,10 @@ export type DayTone = {
   weekend: boolean;
   holiday: boolean;
   today: boolean;
-  /** 背景色クラス */
+  /** 背景色クラス (Figma node 10:29 / 10:64 / 10:99) */
   tone: string;
+  /** 日付軸の文字色クラス */
+  text: string;
   /** 月初 (区切り線を引く) */
   first: boolean;
 };
@@ -19,12 +21,19 @@ export function computeDayTones(days: Date[], today: Date): DayTone[] {
     const holiday = isHoliday(d);
     const isToday = isSameDay(d, today);
     const tone = isToday
-      ? 'bg-amber-50'
+      ? 'bg-today-bg'
       : holiday
-        ? 'bg-rose-50/60'
+        ? 'bg-holiday-bg'
         : weekend
-          ? 'bg-slate-50'
+          ? 'bg-weekend-bg'
           : 'bg-background';
-    return { weekend, holiday, today: isToday, tone, first: d.getDate() === 1 };
+    const text = isToday
+      ? 'text-brand'
+      : holiday
+        ? 'text-holiday-foreground'
+        : weekend
+          ? 'text-text-secondary'
+          : 'text-foreground';
+    return { weekend, holiday, today: isToday, tone, text, first: d.getDate() === 1 };
   });
 }

@@ -307,7 +307,7 @@ describe('ItemSchedulePage (integration)', () => {
     expect(screen.getByText('デザインカンプ作成')).toBeInTheDocument();
     expect(screen.getByText('コーディング')).toBeInTheDocument();
     // ボール保持ラベル (列ヘッダ)
-    expect(screen.getAllByText('ボール保持:').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('ボール：').length).toBeGreaterThan(0);
   });
 
   // #117 ケース3: ワイヤー完了・後続デザイン未TOSS の列ヘッダはデザインの実施者(FROM)を表示する
@@ -345,7 +345,7 @@ describe('ItemSchedulePage (integration)', () => {
     renderPage();
 
     await screen.findByText('ワイヤー作成');
-    const holderRow = screen.getByText('ボール保持:').parentElement!;
+    const holderRow = screen.getByText('ボール：').parentElement!;
     // 代表保持者はデザインの FROM (デザイン実施)。ワイヤーの FROM は表示されない。
     expect(holderRow.textContent).toContain('デザイン実施');
     expect(holderRow.textContent).not.toContain(meMember.name);
@@ -356,11 +356,10 @@ describe('ItemSchedulePage (integration)', () => {
     renderPage();
 
     await screen.findByText('トップページ');
-    // 日付軸: 開始日 6/18 が出る
-    expect(screen.getAllByText('6/18').length).toBeGreaterThan(0);
-    // ズームコントロール (行の高さスライダーと px 表示)
+    // 日付軸: 開始日 6/18 の「18」が出る (Figma の日付軸は日にちのみ)
+    expect(screen.getAllByText('18').length).toBeGreaterThan(0);
+    // ズームコントロール (行の高さスライダー)
     expect(screen.getByLabelText('行の高さ')).toBeInTheDocument();
-    expect(screen.getByText(/px$/)).toBeInTheDocument();
     // 日付セル (クリックで作成) の aria-label
     expect(screen.getAllByLabelText(/に予定を作成$/).length).toBeGreaterThan(0);
   });
@@ -495,19 +494,19 @@ describe('ItemSchedulePage (integration)', () => {
     renderPage();
 
     await screen.findByText('トップページ');
-    // 初期 40px
-    expect(screen.getByText('40px')).toBeInTheDocument();
+    // 行高はスライダーの値で確認する (Figma のズームコントロールに px 表記は無い)。
+    const slider = () => screen.getByLabelText('行の高さ') as HTMLInputElement;
+    expect(slider().value).toBe('40');
 
     await user.click(screen.getByRole('button', { name: '拡大' }));
-    expect(await screen.findByText('45px')).toBeInTheDocument();
+    await waitFor(() => expect(slider().value).toBe('45'));
 
     await user.click(screen.getByRole('button', { name: '縮小' }));
-    expect(await screen.findByText('40px')).toBeInTheDocument();
+    await waitFor(() => expect(slider().value).toBe('40'));
 
     // スライダー (range) の onChange で rowHeight を直接変更する
-    const slider = screen.getByLabelText('行の高さ') as HTMLInputElement;
-    fireEvent.change(slider, { target: { value: '60' } });
-    expect(await screen.findByText('60px')).toBeInTheDocument();
+    fireEvent.change(slider(), { target: { value: '60' } });
+    await waitFor(() => expect(slider().value).toBe('60'));
   });
 
   // ---------------------------------------------------------------------------

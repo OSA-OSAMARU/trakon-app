@@ -1,11 +1,12 @@
 import { format, parseISO } from 'date-fns';
-import { CheckCircle2, Copy, Loader2 } from 'lucide-react';
+import { CalendarDays, Copy, Loader2 } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/components/ui/utils';
+import { RoleRow } from '@/components/trakon/RoleRow';
+import { StatusPill } from '@/components/trakon/StatusPill';
 
 import type { Plan } from '../api';
-import { CATEGORY_STYLE } from '../planTheme';
+import { planCardStyle } from '../planTheme';
 import {
   ballTier,
   chipVerticalBounds,
@@ -17,7 +18,13 @@ import {
 import type { DragState } from './types';
 
 /**
- * スケジュール上の 1 予定 (ボール)。
+ * スケジュール上の 1 予定 (ボール) — Figma node 11:2。
+ *
+ * 左の 4px ストライプ + 淡色の面でテーマ色を示し、文字色は全テーマ共通。
+ * 高さ (= 期間 × 行高) に応じて表示量を 3 段階に落とす。
+ *   mini    … タイトルのみ
+ *   compact … ＋カテゴリ・期間・状態
+ *   normal  … ＋3 役割
  *
  * mode='edit'  … 認証済みのスケジュール画面。移動 / 期間リサイズ / 複製 / 後続紐づけができる。
  * mode='view'  … 共有リンク (非会員) 画面。クリックで操作モーダルを開くだけ。
@@ -79,9 +86,8 @@ export function BallChip({
 
   const { top, height } = chipVerticalBounds(startIdx, endIdx, rowHeight);
   const tier = ballTier(height);
-  const style = CATEGORY_STYLE[plan.category];
+  const theme = planCardStyle(plan.category);
   const completed = plan.status === 'completed';
-  const tossed = plan.ballState === 'tossed';
   const overdue = isOverdue(plan, today);
   const active = isActiveNow(plan, today);
   const editing = mode === 'edit';
@@ -89,23 +95,27 @@ export function BallChip({
   const editable = editing && plan.status === 'active';
   const clickable = !!onActivate;
 
-  // TOSS 済みは「相手に渡し終えた＝自分の作業は完了」をグレーで表現
-  const cardClass = completed
-    ? 'border-slate-200 bg-slate-100/80 text-slate-500 opacity-60'
-    : overdue
-      ? 'border-red-400 bg-red-50 text-red-700'
-      : tossed
-        ? 'border-slate-300 bg-slate-100 text-slate-600'
-        : cn(style.bg, style.border, style.text);
+  // 配色ポリシー (Figma node 54:2): 色は「状態」ではなく、ユーザーがスケジュールを
+  // 視覚整理するために選ぶもの。したがって状態でテーマ色を差し替えない。
+  //   状態    → ステータス pill で伝える
+  //   完了    → テーマ色のまま少し退かせる (済みであることは pill と併せて分かる)
+  //   期限超過→ テーマ色は保ったまま赤い枠で警告する (ダッシュボードの扱いと揃える)
+  const surfaceClass = cn(theme.surface, 'text-plan-foreground', completed && 'opacity-70');
+  const borderClass = overdue ? 'border-danger' : theme.border;
+  const stripeClass = theme.stripe;
 
   // リング表現は排他にして色の衝突を避ける (紐づけ対象 > チェーン > 進行中)
   const ringClass = linkTarget
-    ? 'ring-2 ring-primary ring-offset-1'
+    ? 'ring-2 ring-ring ring-offset-1'
     : inChain
-      ? 'ring-2 ring-sky-500'
-      : active && !completed
-        ? 'ring-2 ring-primary/40'
-        : undefined;
+      ? 'ring-2 ring-toss-line'
+      : overdue
+        ? 'ring-1 ring-danger'
+        : active && !completed
+          ? 'ring-2 ring-ring/40'
+          : undefined;
+
+  const statusStatus = completed ? 'completed' : plan.ballState;
 
   return (
     <div
@@ -128,8 +138,9 @@ export function BallChip({
       onPointerEnter={editing ? () => onHoverChange?.(plan.id) : undefined}
       onPointerLeave={editing ? () => onHoverChange?.(null) : undefined}
       className={cn(
-        'group absolute overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm',
-        cardClass,
+        'shadow-card group absolute flex flex-col overflow-hidden rounded-lg border pt-[11px] pr-[15px] pb-[12px] pl-[15px]',
+        surfaceClass,
+        borderClass,
         ringClass,
         drag?.mode === 'move' && 'opacity-70',
         editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
@@ -142,6 +153,9 @@ export function BallChip({
         width: laneWidth - 12,
       }}
     >
+      {/* テーマ色の左ストライプ (Figma node 11:3) */}
+      <span className={cn('absolute inset-y-0 left-0 w-1 rounded-sm', stripeClass)} aria-hidden />
+
       {/* リサイズハンドル (上)。単日/短期の予定 (mini) でも掴んで期間変更できるよう
           tier に依らず表示する (#113)。 */}
       {editable && (
@@ -152,64 +166,57 @@ export function BallChip({
         />
       )}
 
-      {/* 複製ボタン (ホバー表示 #51)。カード右上に重ねる。 */}
-      {editing && (
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onCopy?.();
-          }}
-          disabled={copying}
-          className="absolute right-0.5 top-0.5 z-10 rounded bg-background/80 p-0.5 text-foreground/70 opacity-0 shadow-sm transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-          aria-label="複製"
-          title="複製"
-        >
-          {copying ? <Loader2 className="size-3 animate-spin" /> : <Copy className="size-3" />}
-        </button>
-      )}
-
       {/* 先行コネクトの受け口 (上端中央): 先行予定がある場合に常時表示する線の終点アンカー */}
       {hasPredecessor && (
         <div
-          className="pointer-events-none absolute left-1/2 top-0 z-10 size-2.5 -translate-x-1/2 rounded-full border-2 border-background bg-sky-500 shadow"
+          className="bg-toss-line pointer-events-none absolute top-0 left-1/2 z-10 size-2.5 -translate-x-1/2 rounded-full border-2 border-background shadow"
           aria-hidden
         />
       )}
 
-      <div className="flex items-center justify-between gap-1">
-        <span className="line-clamp-1 font-medium">{plan.title}</span>
-        {completed && <CheckCircle2 className="size-3 shrink-0 text-emerald-500" />}
+      <div className="flex items-start gap-1">
+        <span className="line-clamp-1 flex-1 text-sm font-bold">{plan.title}</span>
+        {/* 閲覧専用では操作が無いため、Figma の「⋯」位置には何も置かない */}
+        {editing && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCopy?.();
+            }}
+            disabled={copying}
+            className="-mt-0.5 shrink-0 rounded-sm p-0.5 opacity-0 transition-opacity group-hover:opacity-70 hover:opacity-100 focus-visible:opacity-100"
+            aria-label="複製"
+            title="複製"
+          >
+            {copying ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}
+          </button>
+        )}
       </div>
 
       {tier !== 'mini' && (
-        <div className="mt-0.5 flex items-center gap-1 text-[10px] opacity-90">
-          <span className="rounded bg-black/5 px-1">{style.label}</span>
-          <span className="line-clamp-1">
-            {format(parseISO(start), 'M/d')}
-            {start !== end && `〜${format(parseISO(end), 'M/d')}`}
+        <>
+          <span className="mt-[6px] text-mini font-medium opacity-80">{theme.label}</span>
+          <span className="mt-[6px] flex items-center gap-1.5 text-mini">
+            <CalendarDays className="size-3.5 shrink-0 opacity-70" aria-hidden />
+            {format(parseISO(start), 'M.d')}
+            {start !== end && ` – ${format(parseISO(end), 'M.d')}`}
           </span>
-        </div>
+          <div className="mt-[6px] flex justify-end">
+            <StatusPill status={statusStatus} className="bg-background/70" />
+          </div>
+        </>
       )}
 
+      {/* 3 役割はカード下端に寄せる (Figma node 25:2) */}
       {tier === 'normal' && (
-        <div className="mt-1 border-t border-current/10 pt-1 text-[10px] leading-tight">
-          <div className="flex items-center gap-1">
-            <span className="opacity-60">実施者</span>
-            <span className="line-clamp-1 font-medium">{plan.executor?.name ?? '—'}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="opacity-60">{plan.approver ? '承認者' : '進行責任者'}</span>
-            <span className="line-clamp-1 font-medium">
-              {(plan.approver ?? plan.progressManager)?.name ?? '—'}
-            </span>
-            {plan.ballHolder && (
-              <Badge variant="secondary" className="ml-auto px-1 py-0 text-[9px]">
-                {plan.ballHolder.name}
-              </Badge>
-            )}
-          </div>
+        <div className="mt-auto flex flex-col gap-1 pt-2">
+          <RoleRow role="executor" name={plan.executor?.name ?? '—'} />
+          {plan.approver && <RoleRow role="approver" name={plan.approver.name} />}
+          {plan.progressManager && (
+            <RoleRow role="manager" name={plan.progressManager.name} />
+          )}
         </div>
       )}
 
@@ -228,7 +235,7 @@ export function BallChip({
       {hasSuccessor && (
         <div
           className={cn(
-            'pointer-events-none absolute bottom-0 left-1/2 z-10 size-2.5 -translate-x-1/2 rounded-full border-2 border-background bg-sky-500 shadow',
+            'bg-toss-line pointer-events-none absolute bottom-0 left-1/2 z-10 size-2.5 -translate-x-1/2 rounded-full border-2 border-background shadow',
             editable && tier !== 'mini' && 'transition-opacity group-hover:opacity-0',
           )}
           aria-hidden
@@ -239,7 +246,7 @@ export function BallChip({
       {editable && tier !== 'mini' && (
         <div
           onPointerDown={onPointerDownConnector}
-          className="absolute bottom-0 left-1/2 z-20 size-3 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background bg-sky-500 opacity-0 shadow transition-opacity group-hover:opacity-100"
+          className="bg-toss-line absolute bottom-0 left-1/2 z-20 size-3 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background opacity-0 shadow transition-opacity group-hover:opacity-100"
           title={hasSuccessor ? 'ドラッグして後続予定を張り替え' : 'ドラッグして後続予定に紐づけ'}
           aria-hidden
         />

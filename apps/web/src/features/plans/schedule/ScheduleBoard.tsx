@@ -218,14 +218,16 @@ export function ScheduleBoard({
             return (
               <div
                 key={item.id}
-                className="shrink-0 border-r border-border"
+                className="border-grid-border shrink-0 border-r"
                 style={{ width: colWidth }}
               >
                 <ColumnHeader
-                  itemId={item.id}
                   name={item.name}
                   planCount={itemPlans.length}
                   holders={repHolders}
+                  allCompleted={
+                    itemPlans.length > 0 && itemPlans.every((p) => p.status === 'completed')
+                  }
                 />
 
                 {/* 本体 */}
@@ -239,7 +241,7 @@ export function ScheduleBoard({
                     drag?.mode === 'move' &&
                       drag.targetItemId === item.id &&
                       drag.plan.itemId !== item.id &&
-                      'bg-primary/10 ring-2 ring-inset ring-primary',
+                      'bg-brand-subtle ring-2 ring-brand ring-inset',
                   )}
                   style={{ height: totalHeight }}
                 >
@@ -252,9 +254,9 @@ export function ScheduleBoard({
                       i >= Math.min(createDrag.startIdx, createDrag.endIdx) &&
                       i <= Math.max(createDrag.startIdx, createDrag.endIdx);
                     const cellClass = cn(
-                      'absolute left-0 right-0 border-b border-border/70',
+                      'border-grid-border absolute right-0 left-0 border-b',
                       t.tone,
-                      t.first && 'border-t-2 border-t-foreground/20',
+                      t.first && 'border-t-grid-border border-t-2',
                     );
                     const cellStyle = { top: i * rowHeight, height: rowHeight };
                     if (!editing) {
@@ -283,7 +285,7 @@ export function ScheduleBoard({
                         className={cn(
                           cellClass,
                           'transition-colors hover:bg-accent/30',
-                          inRange && 'bg-primary/15',
+                          inRange && 'bg-brand-subtle',
                         )}
                         style={cellStyle}
                         aria-label={`${format(d, 'M/d')} に予定を作成`}
@@ -373,7 +375,7 @@ export function ScheduleBoard({
             y2={linkDrag.pointer.y}
             strokeWidth={2}
             strokeDasharray="4 3"
-            className={linkDrag.targetId ? 'stroke-primary' : 'stroke-muted-foreground'}
+            className={linkDrag.targetId ? 'stroke-toss-line' : 'stroke-text-tertiary'}
           />
         </svg>
       )}
