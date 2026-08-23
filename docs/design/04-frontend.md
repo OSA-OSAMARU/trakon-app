@@ -415,15 +415,19 @@ flowchart LR
 
 #### 4.4.5.2 主要コンポーネント
 
+実装は `apps/web/src/features/plans/schedule/` に置き、**認証済み画面（`ItemSchedulePage`）と共有リンク画面（`ShareSchedule`）で同じ描画を共有**する。`ScheduleBoard` に `editing` を渡すと編集モード、渡さなければ閲覧専用になる。
+
 | コンポーネント | 責務 | 主な props |
 |---|---|---|
-| `ProjectLayout` | プロジェクト全体のヘッダー＋サイドバーレイアウト | projectId |
-| `ItemListSidebar` | 同一プロジェクト内の制作物一覧、現在表示中をハイライト | projectId, currentItemId |
-| `ItemHeader` | 制作物名・期間・編集アクション・**Ball Holder バッジ** | item, ballHolder |
-| `ScheduleGrid` | 縦型カレンダー本体（§4.6） | items[], members[], plans[], dateRange |
-| `BallChip` | ボールチップ（FROM列〜TO列を跨ぐ視覚表現） | plan, ballHolder, onClick |
-| `BallHolderBadge` | 「<所属名> <表示名>」バッジ。Ball Holder 表示の統一コンポーネント | member |
-| `MemberColumnHeader` | 横軸ヘッダー（所属名グルーピング表示） | member |
+| `ScheduleBoard` | 縦型カレンダー本体（§4.6）。ドラッグ移動・期間リサイズ・後続紐づけ・チェーン強調を持つ | days, items, plansByItem, rowHeight, editing?, onSelectPlan? |
+| `DateAxis` | 縦軸（日付・曜日・週末/祝日/本日の色分け） | days, dayTones, rowHeight |
+| `ColumnHeader` | 制作物列のヘッダー（名前・件数・現在のボール保持者） | itemId, name, planCount, holders |
+| `BallChip` | ボールチップ。`mode='edit' \| 'view'` で操作可否を切り替える | plan, days, rowHeight, lane, mode, … |
+| `LinkLayer` | 列内の後続コネクトを描く SVG オーバーレイ | plans, laneOf, days, rowHeight |
+| `ZoomControl` | 行高（＝縦横ズーム）を変える浮遊コントロール | rowHeight, onChange |
+| `chain.ts` | 後続チェーンの探索・紐づけ可否判定・保持者解決（純粋関数） | — |
+
+> 横軸は**参加者列ではなく制作物列**（実装・Figma とも）。v1.1 までの「横軸＝参加者列」の記述は実態と乖離していたため、この節の図と併せて後続フェーズで整理する。
 
 #### 4.4.5.3 表示項目
 
@@ -1214,3 +1218,4 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 | 2026-08-22 | **#140 反映**（Figma デザインシステム 第1段：基盤） | ブランドカラーを **#E7672C** に確定し §4.10-9 をクローズ／配色基調を無彩色グレーから**暖色ニュートラル**へ全面差し替え、ドメイン配色をセマンティックトークン化／スケジュールカードの **10 カラーテーマ**と「色は状態ではなくユーザーの視覚整理の道具」という配色ポリシーを §4.9.2 に新設／フォントを **Sora + Noto Sans JP のセルフホスト**に確定（システムフォント方針を撤回）／**ダークモード非対応**を明記し `.dark` 実装を削除。§4.9 を全面改訂。 |
 | 2026-08-22 | **#141 反映**（Figma デザインシステム 第2段：UI 部品） | ボタンに `accent`（次の工程へトス）を追加し高さを 36/40/44 の 3 段へ整理／バッジを意味づけ（neutral / success / warning / danger / brand）× 形（角丸 / pill）× 3 サイズに再構成／入力・セレクト・ラベル・シート幅を Figma 実測へ／`dropdown-menu` / `popover` / `tooltip` を新規追加／§4.5.1 に TRAKON 固有コンポーネント（WorkflowButton / StatusPill / RoleRow / ScheduleThemeSwatch）を新設／`categoryColor.ts` を `planTheme.ts` へ移行し、生の Tailwind パレット参照を 10 テーマへ集約。 |
 | 2026-08-23 | **#142 反映**（Figma デザインシステム 第3段：アプリシェル） | サイドバーを Figma node 9:2 へ（幅 224px / Sora ワードマーク / セクション操作アイコン / プロジェクト行の「⋯」メニュー / ユーザー情報フッター）。表示部分を `AppSidebar` に切り出し Storybook で検証可能にした／`PageHeader` に 2 段目の `toolbar` スロットを追加し、タイポグラフィを Figma node 9:31 へ／ワードマークを `Wordmark` コンポーネントに集約（従来は 4 箇所に直書き）／プロジェクト一覧のタブを URL 同期し、サイドバーのアーカイブ導線から直接開けるようにした／§4.2.2 のレイアウト構造の記述を実装・Figma に合わせて改訂。 |
+| 2026-08-23 | **#143 反映**（Figma デザインシステム 第4段a：スケジュール描画の共通化） | `ItemSchedulePage`(1279行) からボード描画を `features/plans/schedule/` へ切り出し（388行に）／そのフォーク複製だった `ShareSchedule`(487行) を同じ `ScheduleBoard` の閲覧専用モードに載せ替え（69行に）／共有画面のボール保持者導出とカード座標が認証済み画面と揃った／列ごとに重複していた SVG 矢印 marker の id をボード 1 箇所へ集約。§4.4.5.2 を実装に合わせて改訂。 |

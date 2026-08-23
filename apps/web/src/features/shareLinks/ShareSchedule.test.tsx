@@ -121,17 +121,20 @@ describe('ShareSchedule (閲覧専用)', () => {
   });
 
   it('organizationName が空のボール保持者は氏名のみ表示する', () => {
+    // 列ヘッダーの保持者は ballState から導出する (in_progress → 実施者)。
     const p = plan({
       id: 'p1',
-      ballHolder: memberRef({ name: '田中 一郎', organizationName: '' }),
+      ballState: 'in_progress',
+      // 既定の memberRef は id が他役割と衝突するため別 id にする
+      executor: memberRef({ id: 'm9', name: '田中 一郎', organizationName: '' }),
     });
     renderWithProviders(<ShareSchedule project={project} items={[items[0]!]} plans={[p]} />);
     expect(screen.getByText('田中 一郎')).toBeInTheDocument();
   });
 
-  it('normal tier (長期間) のボールは実施者 / 保持者を表示する', () => {
+  it('normal tier (長期間) のボールは実施者 / 承認者 / 保持者を表示する', () => {
     // rowHeight=40, 4日span → height=157 ≥ 120 → normal tier。
-    // #131: FROM/TO は TOSS 履歴のため、カード表示は 実施者(executor) + 保持者(ballHolder)。
+    // #131: FROM/TO は TOSS 履歴のため、カード表示は 実施者 + 承認者(無ければ進行責任者) + 保持者バッジ。
     const p = plan({
       id: 'p1',
       title: '長期タスク',
@@ -145,9 +148,9 @@ describe('ShareSchedule (閲覧専用)', () => {
 
     expect(screen.getByText('長期タスク')).toBeInTheDocument();
     expect(screen.getByText('実施者')).toBeInTheDocument();
-    expect(screen.getByText('保持者')).toBeInTheDocument();
+    expect(screen.getByText('承認者')).toBeInTheDocument();
     expect(screen.getByText('実施 太郎')).toBeInTheDocument();
-    // 保持者名 (カード内 + 列ヘッダーのボール保持) で複数出る。
+    // ballHolder はカード右下のバッジに出る。
     expect(screen.getAllByText('確認 花子').length).toBeGreaterThanOrEqual(1);
     // カテゴリラベル (normal/compact tier で表示)。
     expect(screen.getByText('デザイン')).toBeInTheDocument();
@@ -220,8 +223,8 @@ describe('ShareSchedule (閲覧専用)', () => {
       <ShareSchedule project={project} items={[items[0]!]} plans={[a, b]} />,
     );
 
-    // LinkLayer の SVG marker (share-succ-arrow) が定義され、path が描画される。
-    expect(container.querySelector('#share-succ-arrow')).toBeTruthy();
+    // 矢印 marker はボード直下に 1 つだけ置き、各列の path から参照する。
+    expect(container.querySelectorAll('#trakon-succ-arrow')).toHaveLength(1);
     expect(container.querySelector('path[marker-end]')).toBeTruthy();
   });
 
@@ -235,8 +238,8 @@ describe('ShareSchedule (閲覧専用)', () => {
     const { container } = renderWithProviders(
       <ShareSchedule project={project} items={[items[0]!]} plans={[a]} />,
     );
-    // links が空なので LinkLayer は null を返し、矢印 marker は描画されない。
-    expect(container.querySelector('#share-succ-arrow')).toBeFalsy();
+    // links が空なので LinkLayer は null を返し、矢印を使う path は描画されない。
+    expect(container.querySelector('path[marker-end]')).toBeFalsy();
   });
 
   it('ズームコントロールで行の高さを拡大 / 縮小できる', async () => {
