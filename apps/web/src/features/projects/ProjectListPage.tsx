@@ -1,14 +1,37 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, ArrowRight, AlertCircle, Pencil, Archive, ArchiveRestore } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+import {
+  AlertCircle,
+  Archive,
+  ArchiveRestore,
+  ChevronRight,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Smile,
+  TriangleAlert,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,106 +42,157 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { PageContainer } from '@/components/layout/PageContainer';
+import { cn } from '@/components/ui/utils';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { ApiClientError } from '@/lib/api';
 import { projectsApi, projectsQueryKey, type ProjectSummary } from './api';
 
-const dateFmt = new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' });
+const SORTS = [
+  { value: 'updated', label: '更新日の新しい順' },
+  { value: 'start', label: '開始日の早い順' },
+  { value: 'name', label: '名前順' },
+  { value: 'overdue', label: '遅延の多い順' },
+] as const;
 
+type Sort = (typeof SORTS)[number]['value'];
+
+/** SC-03 プロジェクト一覧 (Figma node 84:2)。 */
 export function ProjectListPage() {
   // タブを URL に載せる。サイドバーの「アーカイブ済み」導線から直接開けるようにするため。
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get('tab') === 'archived' ? 'archived' : 'active';
+  const archived = searchParams.get('tab') === 'archived';
+  const [keyword, setKeyword] = useState('');
+  const [sort, setSort] = useState<Sort>('updated');
 
-  return (
-    <>
-      <PageHeader
-        width="lg"
-        title="プロジェクト"
-        description="参加中のプロジェクト一覧"
-        actions={
-          <Button asChild>
-            <Link to="/projects/new">
-              <Plus className="size-4" />
-              新規作成
-            </Link>
-          </Button>
-        }
-      />
-      <PageContainer width="lg">
-        <Tabs
-          value={tab}
-          onValueChange={(v) =>
-            setSearchParams(v === 'archived' ? { tab: 'archived' } : {}, { replace: true })
-          }
-        >
-          <TabsList>
-            <TabsTrigger value="active">進行中</TabsTrigger>
-            <TabsTrigger value="archived">アーカイブ済み</TabsTrigger>
-          </TabsList>
-          <TabsContent value="active" className="mt-4">
-            <ProjectList archived={false} />
-          </TabsContent>
-          <TabsContent value="archived" className="mt-4">
-            <ProjectList archived={true} />
-          </TabsContent>
-        </Tabs>
-      </PageContainer>
-    </>
-  );
-}
-
-function ProjectList({ archived }: { archived: boolean }) {
   const { data, isLoading, error } = useQuery({
     queryKey: archived ? projectsQueryKey.archived : projectsQueryKey.all,
     queryFn: () => projectsApi.list({ archived }),
   });
 
-  if (isLoading) return <ListSkeleton />;
-
-  if (error) {
-    return (
-      <Card>
-        <CardContent className="flex items-center gap-2 pt-6 text-sm text-destructive">
-          <AlertCircle className="size-4" />
-          プロジェクト一覧の取得に失敗しました。
-        </CardContent>
-      </Card>
+  const rows = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    const filtered = (data ?? []).filter(
+      (p) =>
+        kw === '' ||
+        p.name.toLowerCase().includes(kw) ||
+        (p.clientName ?? '').toLowerCase().includes(kw),
     );
-  }
-
-  if (data && data.length === 0) {
-    return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
-          <p className="text-sm text-muted-foreground">
-            {archived
-              ? 'アーカイブされたプロジェクトはありません。'
-              : 'まだプロジェクトがありません。'}
-          </p>
-          {!archived && (
-            <Button asChild size="sm">
-              <Link to="/projects/new">最初のプロジェクトを作成</Link>
-            </Button>
-          )}
-        </CardContent>
-      </Card>
-    );
-  }
+    const sorted = filtered.slice();
+    sorted.sort((a, b) => {
+      switch (sort) {
+        case 'start':
+          return a.startDate.localeCompare(b.startDate);
+        case 'name':
+          return a.name.localeCompare(b.name, 'ja');
+        case 'overdue':
+          return b.overdueCount - a.overdueCount;
+        default:
+          return b.updatedAt.localeCompare(a.updatedAt);
+      }
+    });
+    return sorted;
+  }, [data, keyword, sort]);
 
   return (
-    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {(data ?? []).map((p) => (
-        <li key={p.id}>
-          <ProjectCard project={p} />
-        </li>
-      ))}
-    </ul>
+    <div className="flex h-full flex-col">
+      <PageHeader
+        width="full"
+        breadcrumb={<span>PROJECTS</span>}
+        title="プロジェクト一覧"
+        description="進行中のプロジェクトと遅延状況を確認します"
+        actions={
+          <Button size="lg" asChild>
+            <Link to="/projects/new">
+              <Plus />
+              プロジェクトを作成
+            </Link>
+          </Button>
+        }
+      />
+
+      <div className="min-h-0 flex-1 overflow-auto px-12 py-8">
+        <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6">
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="relative w-90">
+              <Search
+                className="text-text-tertiary absolute top-1/2 left-3.5 size-4 -translate-y-1/2"
+                aria-hidden
+              />
+              <Input
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="プロジェクト名・クライアント名で検索"
+                aria-label="プロジェクトを検索"
+                className="bg-content pl-10"
+              />
+            </div>
+            <span className="text-text-secondary text-body">
+              {archived ? 'アーカイブ済み' : '進行中'} {rows.length}件
+            </span>
+            <span className="flex-1" />
+            <Button
+              variant="ghost"
+              onClick={() =>
+                setSearchParams(archived ? {} : { tab: 'archived' }, { replace: true })
+              }
+            >
+              {archived ? '進行中を見る' : 'アーカイブ済みを見る'}
+            </Button>
+            <Select value={sort} onValueChange={(v) => setSort(v as Sort)}>
+              <SelectTrigger className="w-49">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORTS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {isLoading ? (
+            <TableSkeleton />
+          ) : error ? (
+            <p className="text-destructive flex items-center justify-center gap-2 py-12 text-body">
+              <AlertCircle className="size-4" />
+              プロジェクト一覧の取得に失敗しました。
+            </p>
+          ) : rows.length === 0 ? (
+            <EmptyState archived={archived} filtered={keyword.trim() !== ''} />
+          ) : (
+            <ProjectTable rows={rows} />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
-function ProjectCard({ project: p }: { project: ProjectSummary }) {
+/** テーブル本体 (Figma node 84:78)。行全体がスケジュールへのリンクになる。 */
+export function ProjectTable({ rows }: { rows: ProjectSummary[] }) {
+  return (
+    <div className="border-border overflow-hidden rounded-2xl border bg-background">
+      <div className="border-border bg-surface-subtle text-text-secondary grid h-13 grid-cols-[72px_1fr_200px_180px_56px] items-center border-b text-xs font-medium">
+        <span />
+        <span>プロジェクト</span>
+        <span>期間</span>
+        <span>進行責任者</span>
+        <span />
+      </div>
+      <ul>
+        {rows.map((p) => (
+          <li key={p.id}>
+            <ProjectRow project={p} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ProjectRow({ project: p }: { project: ProjectSummary }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const isArchived = p.archivedAt !== null;
@@ -138,84 +212,65 @@ function ProjectCard({ project: p }: { project: ProjectSummary }) {
   });
 
   return (
-    <Card className="hover:border-foreground/30 transition-colors">
-      <CardHeader>
-        <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base">{p.name}</CardTitle>
-          <div className="flex shrink-0 items-center gap-1">
-            {isArchived ? (
-              <Badge variant="outline">アーカイブ済み</Badge>
-            ) : (
-              <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
-                {p.status === 'active' ? '進行中' : '終了'}
-              </Badge>
-            )}
-            {!isArchived && (
-              <Button variant="ghost" size="icon" className="size-7" asChild>
-                <Link to={`/projects/${p.id}/edit`} aria-label="編集">
-                  <Pencil className="size-4" />
+    <div className="border-border hover:bg-accent group/row relative grid h-[86px] grid-cols-[72px_1fr_200px_180px_56px] items-center border-b transition-colors last:border-b-0">
+      <Link
+        to={`/projects/${p.id}`}
+        className="absolute inset-0"
+        aria-label={`${p.name} のスケジュールを開く`}
+      />
+      <span className="flex justify-center">
+        <DelayStatusIcon overdueCount={p.overdueCount} />
+      </span>
+      <span className="flex min-w-0 flex-col gap-1 pr-4">
+        <span className="truncate text-sm font-bold">{p.name}</span>
+        <span className="text-text-secondary truncate text-xs">{p.clientName ?? '—'}</span>
+      </span>
+      <span className="text-text-secondary text-body">
+        {format(parseISO(p.startDate), 'yyyy.M.d')} – {format(parseISO(p.endDate), 'M.d')}
+      </span>
+      <span className="text-text-secondary truncate pr-4 text-body">
+        {p.progressManager?.name ?? '—'}
+      </span>
+      <span className="relative flex items-center justify-center gap-1">
+        {isDirector && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`${p.name} の操作`}
+                className="opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
+              >
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <Link to={`/projects/${p.id}/edit`}>
+                  <Pencil />
+                  プロジェクト情報
                 </Link>
-              </Button>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
-        <div className="text-muted-foreground">
-          {dateFmt.format(new Date(p.startDate))} — {dateFmt.format(new Date(p.endDate))}
-        </div>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{p.role === 'director' ? 'ディレクター' : 'メンバー'}</span>
-          <span>
-            {isArchived && p.archivedAt
-              ? `アーカイブ ${dateFmt.format(new Date(p.archivedAt))}`
-              : `更新 ${dateFmt.format(new Date(p.updatedAt))}`}
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link to={`/projects/${p.id}`}>
-              スケジュール
-              <ArrowRight className="size-3.5" />
-            </Link>
-          </Button>
-          {isDirector &&
-            (isArchived ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setConfirming(true)}
-                disabled={mutation.isPending}
-              >
-                <ArchiveRestore className="size-3.5" />
-                復元
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setConfirming(true)}
-                disabled={mutation.isPending}
-              >
-                <Archive className="size-3.5" />
-                アーカイブ
-              </Button>
-            ))}
-        </div>
-      </CardContent>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setConfirming(true)}>
+                {isArchived ? <ArchiveRestore /> : <Archive />}
+                {isArchived ? '復元' : 'アーカイブ'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <ChevronRight className="text-text-tertiary size-5 shrink-0" aria-hidden />
+      </span>
 
       <AlertDialog open={confirming} onOpenChange={(o) => !o && setConfirming(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {isArchived
-                ? `「${p.name}」を復元しますか？`
-                : `「${p.name}」をアーカイブしますか？`}
+              {isArchived ? `「${p.name}」を復元しますか？` : `「${p.name}」をアーカイブしますか？`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {isArchived
                 ? 'アーカイブを解除し、進行中の一覧に戻します。'
-                : 'プロジェクト一覧とサイドバーから非表示になります。アーカイブ済みタブから復元できます。'}
+                : 'プロジェクト一覧とサイドバーから非表示になります。アーカイブ済みから復元できます。'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -232,15 +287,53 @@ function ProjectCard({ project: p }: { project: ProjectSummary }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </div>
   );
 }
 
-function ListSkeleton() {
+/** 遅延状況のアイコン (Figma node 89:2 / 89:6)。期限超過のボールがあれば警告を出す。 */
+function DelayStatusIcon({ overdueCount }: { overdueCount: number }) {
+  const delayed = overdueCount > 0;
+  const label = delayed ? `期限超過 ${overdueCount}件` : '順調';
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <span
+      title={label}
+      aria-label={label}
+      className={cn(
+        'flex size-7 items-center justify-center rounded-full',
+        delayed ? 'text-danger' : 'text-success',
+      )}
+    >
+      {delayed ? <TriangleAlert className="size-5" /> : <Smile className="size-5" />}
+    </span>
+  );
+}
+
+function EmptyState({ archived, filtered }: { archived: boolean; filtered: boolean }) {
+  return (
+    <div className="border-border flex flex-col items-center gap-3 rounded-2xl border border-dashed py-16 text-center">
+      <p className="text-text-secondary text-body">
+        {filtered
+          ? '条件に一致するプロジェクトはありません。'
+          : archived
+            ? 'アーカイブされたプロジェクトはありません。'
+            : 'まだプロジェクトがありません。'}
+      </p>
+      {!archived && !filtered && (
+        <Button asChild>
+          <Link to="/projects/new">最初のプロジェクトを作成</Link>
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="border-border overflow-hidden rounded-2xl border">
+      <Skeleton className="h-13 w-full rounded-none" />
       {[0, 1, 2].map((i) => (
-        <Skeleton key={i} className="h-40 w-full rounded-xl" />
+        <Skeleton key={i} className="mt-px h-[86px] w-full rounded-none" />
       ))}
     </div>
   );

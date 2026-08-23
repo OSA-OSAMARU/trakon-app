@@ -17,6 +17,7 @@ type MockProject = {
   id: string;
   name: string;
   clientName: string | null;
+  progressManagerMemberId?: string | null;
   startDate: Date;
   endDate: Date;
   status: string;
@@ -91,6 +92,13 @@ const txClient = {
       projectStore[p.id] = p;
       return p;
     }),
+    // #147: 参加者を作ったあとに進行責任者をセットする
+    update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<MockProject> }) => {
+      const p = projectStore[where.id];
+      if (!p) throw new Error('record not found');
+      Object.assign(p, data);
+      return p;
+    }),
   },
   projectItem: {
     createMany: vi.fn(async ({ data }: { data: MockItem[] }) => {
@@ -101,7 +109,7 @@ const txClient = {
   projectMember: {
     create: vi.fn(async ({ data }: { data: MockMember }) => {
       memberStore.push(data);
-      return data;
+      return { ...data, id: newId('m') };
     }),
     createMany: vi.fn(async ({ data }: { data: MockMember[] }) => {
       memberStore.push(...data);
@@ -269,7 +277,9 @@ describe('createProject', () => {
     expect(invited.map((m) => m.sortOrder)).toEqual([1, 2]);
 
     expect(txClient.projectItem.createMany).toHaveBeenCalledTimes(1);
-    expect(txClient.projectMember.createMany).toHaveBeenCalledTimes(1);
+    // #147: 進行責任者に据える参加者の id を拾うため、参加者は 1 件ずつ作る
+    // (作成者 1 + 招待先 2 = 3 回)
+    expect(txClient.projectMember.create).toHaveBeenCalledTimes(3);
   });
 
   it('作成者と同一メールのメンバー入力は除外される (大小文字無視)', async () => {
@@ -298,7 +308,8 @@ describe('createProject', () => {
 
     expect(res.counts).toEqual({ memberCount: 1, itemCount: 0 });
     expect(txClient.projectItem.createMany).not.toHaveBeenCalled();
-    expect(txClient.projectMember.createMany).not.toHaveBeenCalled();
+    // 招待先 0 件なので作成者の 1 回だけ
+    expect(txClient.projectMember.create).toHaveBeenCalledTimes(1);
     expect(txClient.projectMember.create).toHaveBeenCalledTimes(1);
   });
 

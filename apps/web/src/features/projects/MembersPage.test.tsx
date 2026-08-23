@@ -102,7 +102,7 @@ describe('MembersPage 管理タブ (integration)', () => {
 
     expect(await screen.findByText('山田 太郎')).toBeInTheDocument();
     expect(screen.getByText('鈴木 花子')).toBeInTheDocument();
-    expect(screen.getByText('制作側')).toBeInTheDocument();
+    expect(screen.getByText('制作チーム')).toBeInTheDocument();
     expect(screen.getByText('クライアント')).toBeInTheDocument();
   });
 

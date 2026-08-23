@@ -1,3 +1,11 @@
+import {
+  JOB_TITLES,
+  JOB_TITLE_LABEL,
+  MEMBER_TYPES,
+  MEMBER_TYPE_LABEL,
+  type JobTitle,
+  type MemberType,
+} from '@trakon/shared';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -200,7 +208,8 @@ function ManageTab({ projectId }: { projectId: string }) {
                 <TableHead>氏名</TableHead>
                 <TableHead>所属</TableHead>
                 <TableHead>メール</TableHead>
-                <TableHead>種別</TableHead>
+                <TableHead>職種</TableHead>
+                <TableHead>区分</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
@@ -231,7 +240,10 @@ function ManageTab({ projectId }: { projectId: string }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{m.email || '—'}</TableCell>
                     <TableCell className="text-xs">
-                      {m.memberType === 'client' ? 'クライアント' : '制作側'}
+                      {m.jobTitle ? JOB_TITLE_LABEL[m.jobTitle] : '—'}
+                    </TableCell>
+                    <TableCell>
+                      {MEMBER_TYPE_LABEL[m.memberType]}
                     </TableCell>
                     <TableCell>
                       <Button
@@ -291,7 +303,8 @@ const addSchema = z.object({
   // メールは任意。入力された場合のみ形式チェック
   email: z.union([z.literal(''), z.string().trim().email('メール形式が不正').max(320)]),
   organizationName: z.string().trim().max(255),
-  memberType: z.enum(['client', 'production']),
+  memberType: z.enum(MEMBER_TYPES),
+  jobTitle: z.string(),
 });
 type AddValues = z.infer<typeof addSchema>;
 
@@ -307,13 +320,25 @@ function AddMembersDialog({
   const qc = useQueryClient();
   const form = useForm<AddValues>({
     resolver: zodResolver(addSchema),
-    defaultValues: { name: '', email: '', organizationName: '', memberType: 'production' },
+    defaultValues: {
+      name: '',
+      email: '',
+      organizationName: '',
+      memberType: 'production',
+      jobTitle: '',
+    },
   });
 
   const addMut = useMutation({
     mutationFn: (v: AddValues) =>
       membersApi.add(projectId, {
-        members: [{ ...v, email: v.email.trim() || undefined }],
+        members: [
+          {
+            ...v,
+            email: v.email.trim() || undefined,
+            jobTitle: (v.jobTitle as JobTitle) || undefined,
+          },
+        ],
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) });
@@ -353,19 +378,39 @@ function AddMembersDialog({
           <Field label="メール（任意）" error={form.formState.errors.email?.message}>
             <Input type="email" {...form.register('email')} />
           </Field>
-          <Field label="種別" error={form.formState.errors.memberType?.message}>
+          <Field label="職種">
+            <Select
+              value={form.watch('jobTitle')}
+              onValueChange={(v) => form.setValue('jobTitle', v)}
+            >
+              <SelectTrigger aria-label="職種">
+                <SelectValue placeholder="職種を選択" />
+              </SelectTrigger>
+              <SelectContent>
+                {JOB_TITLES.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {JOB_TITLE_LABEL[v]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="区分" error={form.formState.errors.memberType?.message}>
             <Select
               defaultValue="production"
               onValueChange={(v) =>
-                form.setValue('memberType', v as 'client' | 'production')
+                form.setValue('memberType', v as MemberType)
               }
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="production">制作側</SelectItem>
-                <SelectItem value="client">クライアント</SelectItem>
+                {MEMBER_TYPES.map((v) => (
+                  <SelectItem key={v} value={v}>
+                    {MEMBER_TYPE_LABEL[v]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Field>
