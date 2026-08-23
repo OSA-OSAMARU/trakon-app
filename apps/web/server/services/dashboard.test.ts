@@ -167,7 +167,7 @@ describe('getDashboard', () => {
     expect(res.summary).toEqual({ todayTaskCount: 0, overdueCount: 0 });
   });
 
-  it('ball 状態 (in_progress / tossed) を導出し、completed と holder=null は除外する', async () => {
+  it('ball 状態を導出し、completed / tossed / holder=null は除外する', async () => {
     projectStore = [
       project({
         id: 'p-1',
@@ -221,12 +221,14 @@ describe('getDashboard', () => {
       query: { today: '2026-06-21' },
     });
 
-    // in_progress は m-exec、tossed は m-to に振り分けられ、completed と null は消える。
-    expect(res.summary.todayTaskCount).toBe(2);
+    // in_progress だけが残る。completed / holder=null に加え、tossed も除外する。
+    // tossed はボールが後続予定の実施者へ渡った状態で、その後続予定自体が別のカードとして
+    // 出るため、ダッシュボードに並べると二重計上になる (#146)。
+    expect(res.summary.todayTaskCount).toBe(1);
     expect(res.projects).toHaveLength(1);
     const sections = res.projects[0]!.memberSections;
-    // タスクを持つ member のみ。members 配列順 (m-exec, m-to) を維持。
-    expect(sections.map((s) => s.member.id)).toEqual(['m-exec', 'm-to']);
+    // タスクを持つ member のみ。
+    expect(sections.map((s) => s.member.id)).toEqual(['m-exec']);
 
     const execSection = sections.find((s) => s.member.id === 'm-exec')!;
     expect(execSection.tasks).toHaveLength(1);
@@ -242,8 +244,7 @@ describe('getDashboard', () => {
     });
     expect(execSection.member).toMatchObject({ name: 'Exec太郎', memberType: 'client' });
 
-    const toSection = sections.find((s) => s.member.id === 'm-to')!;
-    expect(toSection.tasks[0]).toMatchObject({ planId: 'pl-tossed', ballState: 'tossed' });
+    expect(sections.find((s) => s.member.id === 'm-to')).toBeUndefined();
   });
 
   it('pickLatestBallEvent: 最新イベントで状態が決まる (approved → 進行責任者)', async () => {

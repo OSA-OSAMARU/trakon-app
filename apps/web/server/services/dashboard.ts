@@ -19,6 +19,8 @@ export type DashboardTaskDTO = {
   dueDate: string | null;
   ballState: PlanState;
   isOverdue: boolean;
+  /** カンバンのカードに出す進行責任者 (Figma node 57:505) */
+  progressManager: { id: string; name: string } | null;
 };
 
 export type DashboardMemberSectionDTO = {
@@ -27,6 +29,8 @@ export type DashboardMemberSectionDTO = {
     name: string;
     organizationName: string;
     memberType: 'client' | 'production';
+    /** このメンバーがリクエスト元ユーザー自身か (「要対応のみ」の絞り込みに使う) */
+    isMe: boolean;
   };
   tasks: DashboardTaskDTO[];
 };
@@ -120,6 +124,12 @@ export async function getDashboard(input: {
     for (const it of p.items) itemMap.set(it.id, { name: it.name, projectId: p.id });
   }
 
+  // memberId -> 表示名 (進行責任者をカードに出すため)
+  const memberNameById = new Map<string, string>();
+  for (const p of projects) {
+    for (const m of p.members) memberNameById.set(m.id, m.name);
+  }
+
   let todayTaskCount = 0;
   let overdueCount = 0;
 
@@ -145,7 +155,9 @@ export async function getDashboard(input: {
       },
       latest,
     );
-    if (!holder.memberId || holder.state === 'completed') continue;
+    // completed は対象外。tossed も「後続予定の実施者にボールが渡った」状態であり、
+    // その後続予定自体が別のカードとして出るため二重計上になる (#146)。
+    if (!holder.memberId || holder.state === 'completed' || holder.state === 'tossed') continue;
 
     const dueDate = toDateOnly(plan.dueDate);
     const isOverdue = !!dueDate && dueDate < today;
@@ -163,6 +175,12 @@ export async function getDashboard(input: {
       dueDate,
       ballState: holder.state,
       isOverdue,
+      progressManager: plan.progressManagerMemberId
+        ? {
+            id: plan.progressManagerMemberId,
+            name: memberNameById.get(plan.progressManagerMemberId) ?? '',
+          }
+        : null,
     };
     const arr = tasksByMember.get(holder.memberId) ?? [];
     arr.push(task);
@@ -179,6 +197,7 @@ export async function getDashboard(input: {
             name: m.name,
             organizationName: m.organizationName,
             memberType: m.memberType as 'client' | 'production',
+            isMe: m.userId === input.currentUserId,
           },
           tasks: tasksByMember.get(m.id) ?? [],
         }))

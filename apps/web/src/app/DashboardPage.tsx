@@ -1,209 +1,264 @@
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
-import { AlertTriangle, CheckCircle2, ListChecks } from 'lucide-react';
 
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  BALL_BOARD_COLUMNS,
+  BALL_BOARD_COLUMN_LABEL,
+  ballBoardColumnOf,
+  type BallBoardColumn,
+} from '@trakon/shared';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/components/ui/utils';
-import { PageContainer } from '@/components/layout/PageContainer';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { CATEGORY_STYLE } from '@/features/plans/planTheme';
 import {
-  dashboardApi,
-  dashboardQueryKey,
-  type DashboardMemberSection,
-  type DashboardTask,
-} from '@/features/dashboard/api';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { cn } from '@/components/ui/utils';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { planCardStyle } from '@/features/plans/planTheme';
+import { dashboardApi, dashboardQueryKey, type DashboardTask } from '@/features/dashboard/api';
+
+/** ボードのカード 1 枚分。API の階層 (プロジェクト → メンバー → 予定) を平らにしたもの。 */
+export type BoardBall = DashboardTask & {
+  projectName: string;
+  holderName: string;
+  holderIsMe: boolean;
+};
 
 /**
- * SC-09 ダッシュボード (/dashboard)
- * 設計書 §4.4 SC-09 + §3.6 GET /users/me/dashboard
+ * 列ごとのアクセント色 (Figma node 61:2〜61:5)。
+ * スケジュールカードと同じ 10 テーマから選び、パレットを増やさない。
+ */
+const COLUMN_THEME: Record<BallBoardColumn, { surface: string; text: string }> = {
+  in_progress: { surface: 'bg-plan-blue-surface', text: 'text-plan-blue-accent' },
+  awaiting_reply: { surface: 'bg-plan-violet-surface', text: 'text-plan-violet-accent' },
+  return_handling: { surface: 'bg-plan-coral-surface', text: 'text-plan-coral-accent' },
+  awaiting_toss: { surface: 'bg-plan-rose-surface', text: 'text-plan-rose-accent' },
+};
+
+/**
+ * SC-09 ダッシュボード (Figma node 57:2)。
+ * 参加中の全プロジェクトのボールを「次に必要な行動」で 4 列に並べる。
  */
 export function DashboardPage() {
+  const [projectFilter, setProjectFilter] = useState('all');
+  const [onlyMine, setOnlyMine] = useState(false);
+
   const { data, isLoading, error } = useQuery({
     queryKey: dashboardQueryKey.base(),
     queryFn: () => dashboardApi.get(),
   });
 
+  const projects = useMemo(
+    () => (data?.projects ?? []).map((p) => ({ id: p.id, name: p.name })),
+    [data],
+  );
+
+  const balls = useMemo<BoardBall[]>(() => {
+    if (!data) return [];
+    return data.projects.flatMap((project) =>
+      project.memberSections.flatMap((section) =>
+        section.tasks.map((task) => ({
+          ...task,
+          projectName: project.name,
+          holderName: section.member.name,
+          holderIsMe: section.member.isMe,
+        })),
+      ),
+    );
+  }, [data]);
+
+  const visible = useMemo(
+    () =>
+      balls.filter(
+        (b) =>
+          (projectFilter === 'all' || b.projectId === projectFilter) &&
+          (!onlyMine || b.holderIsMe),
+      ),
+    [balls, projectFilter, onlyMine],
+  );
+
+  const byColumn = useMemo(() => {
+    const map = new Map<BallBoardColumn, BoardBall[]>(
+      BALL_BOARD_COLUMNS.map((c) => [c, [] as BoardBall[]]),
+    );
+    for (const b of visible) {
+      const col = ballBoardColumnOf(b.ballState);
+      if (col) map.get(col)!.push(b);
+    }
+    // 期限が近い順。期限なしは末尾。
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999'));
+    }
+    return map;
+  }, [visible]);
+
+  const today = data?.today ? parseISO(data.today) : new Date();
+
   return (
-    <>
+    <div className="flex h-full flex-col">
       <PageHeader
-        width="lg"
+        width="full"
         title="ダッシュボード"
-        description={
-          data
-            ? `${format(parseISO(data.today), 'yyyy年 M月d日 (E)', { locale: ja })} 時点で進行中のボール`
-            : '今日のボールを集計中…'
+        description={`${format(today, 'yyyy.M.d（E）', { locale: ja })} 時点のボール`}
+        actions={
+          <>
+            <Select value={projectFilter} onValueChange={setProjectFilter}>
+              <SelectTrigger className="w-49">
+                <SelectValue placeholder="すべてのプロジェクト" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべてのプロジェクト</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <label className="border-input flex h-10 cursor-pointer items-center gap-2.5 rounded-md border px-3.5 text-body">
+              <input
+                type="checkbox"
+                checked={onlyMine}
+                onChange={(e) => setOnlyMine(e.target.checked)}
+                className="accent-primary size-4"
+              />
+              要対応のみ
+            </label>
+          </>
         }
       />
-      <PageContainer width="lg">
-        {isLoading && <Loading />}
-      {error && (
-        <Card>
-          <CardContent className="py-6 text-sm text-destructive">
+
+      <div className="min-h-0 flex-1 overflow-auto p-7">
+        {error ? (
+          <p className="text-text-secondary py-12 text-center text-body">
             ダッシュボードの取得に失敗しました。
-          </CardContent>
-        </Card>
-      )}
-
-      {data && (
-        <>
-          <SummaryCards
-            todayCount={data.summary.todayTaskCount}
-            overdueCount={data.summary.overdueCount}
-          />
-
-          {data.projects.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-sm text-muted-foreground">
-                <CheckCircle2 className="size-6 text-emerald-500" />
-                今日のタスクはありません。
-              </CardContent>
-            </Card>
-          ) : (
-            <ul className="space-y-5">
-              {data.projects.map((p) => (
-                <li key={p.id}>
-                  <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                    <span className="inline-block size-2 rounded-full bg-primary" />
-                    <Link to={`/projects/${p.id}/edit`} className="hover:underline">
-                      {p.name}
-                    </Link>
-                    <span className="text-xs font-normal text-muted-foreground">
-                      ({p.memberSections.reduce((s, m) => s + m.tasks.length, 0)} 件)
-                    </span>
-                  </h2>
-                  <ul className="space-y-3">
-                    {p.memberSections.map((s) => (
-                      <li key={s.member.id}>
-                        <MemberSection projectId={p.id} section={s} />
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
-      </PageContainer>
-    </>
-  );
-}
-
-// -----------------------------------------------------------------------------
-function SummaryCards({
-  todayCount,
-  overdueCount,
-}: {
-  todayCount: number;
-  overdueCount: number;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <Card>
-        <CardContent className="flex items-center gap-4 py-5">
-          <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <ListChecks className="size-5" />
-          </span>
-          <div>
-            <p className="text-sm text-muted-foreground">今日のタスク</p>
-            <p className="text-2xl font-bold">{todayCount}</p>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className={cn(overdueCount > 0 ? 'border-rose-300 bg-rose-50' : '')}>
-        <CardContent className="flex items-center gap-4 py-5">
-          <span
-            className={cn(
-              'flex size-10 items-center justify-center rounded-lg',
-              overdueCount > 0 ? 'bg-rose-100 text-rose-600' : 'bg-muted text-muted-foreground',
-            )}
-          >
-            <AlertTriangle className="size-5" />
-          </span>
-          <div>
-            <p className="text-sm text-muted-foreground">期限超過</p>
-            <p className={cn('text-2xl font-bold', overdueCount > 0 && 'text-rose-700')}>
-              {overdueCount}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function MemberSection({
-  projectId,
-  section,
-}: {
-  projectId: string;
-  section: DashboardMemberSection;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <div className="mb-2 flex items-center gap-2 text-xs">
-        <span className="font-medium">{section.member.name}</span>
-        <span className="text-muted-foreground">
-          ({section.member.organizationName || '—'})
-        </span>
-        <Badge variant="secondary" className="ml-auto">
-          {section.tasks.length} 件
-        </Badge>
-      </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {section.tasks.map((t) => (
-          <TaskCard key={t.planId} projectId={projectId} task={t} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TaskCard({ projectId, task }: { projectId: string; task: DashboardTask }) {
-  const style = CATEGORY_STYLE[task.category];
-  return (
-    <Link
-      to={`/projects/${projectId}/items/${task.itemId}?modal=ball-detail&planId=${task.planId}`}
-      className={cn(
-        'block rounded-md border px-3 py-2 text-xs transition-colors',
-        task.isOverdue
-          ? 'border-rose-400 bg-rose-50 text-rose-700 hover:bg-rose-100'
-          : `${style.bg} ${style.border} ${style.text} hover:brightness-95`,
-      )}
-    >
-      <div className="mb-1 flex items-center gap-1">
-        <Badge variant="secondary" className="px-1 py-0 text-[10px]">
-          {style.label}
-        </Badge>
-        {task.isOverdue && (
-          <Badge variant="destructive" className="px-1 py-0 text-[10px]">
-            期限超過
-          </Badge>
+          </p>
+        ) : isLoading ? (
+          <BoardSkeleton />
+        ) : (
+          <BallBoard byColumn={byColumn} />
         )}
       </div>
-      <p className="line-clamp-2 font-medium">{task.title}</p>
-      <p className="mt-0.5 line-clamp-1 text-[11px] opacity-80">{task.itemName}</p>
-      {task.dueDate && (
-        <p className="mt-1 text-[10px] opacity-70">期日 {task.dueDate}</p>
+    </div>
+  );
+}
+
+/** 4 列のボード本体 (Figma node 57:2)。データ取得を持たないので Storybook で確認できる。 */
+export function BallBoard({ byColumn }: { byColumn: Map<BallBoardColumn, BoardBall[]> }) {
+  return (
+    <div className="grid h-full min-h-0 grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {BALL_BOARD_COLUMNS.map((col) => (
+        <BoardColumn key={col} column={col} balls={byColumn.get(col) ?? []} />
+      ))}
+    </div>
+  );
+}
+
+function BoardColumn({ column, balls }: { column: BallBoardColumn; balls: BoardBall[] }) {
+  const theme = COLUMN_THEME[column];
+  return (
+    <section className="border-border bg-surface-subtle flex min-h-0 flex-col overflow-hidden rounded-2xl border">
+      <header
+        className={cn(
+          'border-border flex h-14 shrink-0 items-center gap-2 border-b px-4',
+          theme.surface,
+        )}
+      >
+        <h2 className={cn('flex-1 truncate text-[15px] font-bold', theme.text)}>
+          {BALL_BOARD_COLUMN_LABEL[column]}
+        </h2>
+        <span
+          className={cn(
+            'flex h-7 min-w-8 shrink-0 items-center justify-center rounded-full bg-background px-2 text-xs font-medium',
+            theme.text,
+          )}
+        >
+          {balls.length}
+        </span>
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+        {balls.length === 0 ? (
+          <p className="text-text-tertiary py-6 text-center text-xs">対象のボールはありません</p>
+        ) : (
+          balls.map((b) => <BallCard key={b.planId} ball={b} />)
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** ボードのカード (Figma node 57:497)。クリックでその予定の詳細ドロワーを開く。 */
+function BallCard({ ball }: { ball: BoardBall }) {
+  const theme = planCardStyle(ball.category);
+  return (
+    <Link
+      to={`/projects/${ball.projectId}/items/${ball.itemId}?modal=ball-detail&planId=${ball.planId}`}
+      className={cn(
+        'text-plan-foreground flex flex-col gap-2 rounded-xl border p-3.5 transition-shadow hover:shadow-card',
+        theme.surface,
+        ball.isOverdue ? 'border-danger border-2' : 'border-border',
       )}
+    >
+      <span className="text-text-secondary truncate text-mini font-medium">
+        {ball.projectName}｜{ball.itemName}
+      </span>
+      <span className="truncate text-base font-bold">{ball.title}</span>
+
+      <span className="text-text-secondary mt-1 text-mini">現在の保持者</span>
+      <span className="flex items-center gap-2.5">
+        <span
+          aria-hidden
+          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-background text-tiny font-bold"
+        >
+          {ball.holderName.trim().charAt(0)}
+        </span>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-body font-bold">{ball.holderName}</span>
+          {ball.progressManager && (
+            <span className="text-text-secondary truncate text-mini">
+              進行責任者 {ball.progressManager.name}
+            </span>
+          )}
+        </span>
+      </span>
+
+      <span className="mt-1 flex items-center justify-between gap-2">
+        <span className="text-text-secondary text-tiny font-medium">
+          {ball.dueDate
+            ? `期限 ${format(parseISO(ball.dueDate), 'M.d（E）', { locale: ja })}`
+            : '期限なし'}
+        </span>
+        {ball.isOverdue ? (
+          <Badge variant="danger" shape="pill">
+            期限超過
+          </Badge>
+        ) : (
+          <Badge variant="success" shape="pill">
+            順調
+          </Badge>
+        )}
+      </span>
     </Link>
   );
 }
 
-function Loading() {
+function BoardSkeleton() {
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <Skeleton className="h-20 rounded-xl" />
-        <Skeleton className="h-20 rounded-xl" />
-      </div>
-      <Skeleton className="h-40 rounded-xl" />
-      <Skeleton className="h-40 rounded-xl" />
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {BALL_BOARD_COLUMNS.map((c) => (
+        <div key={c} className="border-border flex flex-col gap-3 rounded-2xl border p-4">
+          <Skeleton className="h-6 w-24" />
+          <Skeleton className="h-44 w-full rounded-xl" />
+          <Skeleton className="h-44 w-full rounded-xl" />
+        </div>
+      ))}
     </div>
   );
 }

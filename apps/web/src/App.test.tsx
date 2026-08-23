@@ -109,7 +109,7 @@ describe('App ルートツリー (integration)', () => {
     renderWithProviders(<App />, { route: '/dashboard' });
 
     // ダッシュボードのサマリーラベルが描画される (= 保護ルートに入れた)。
-    expect(await screen.findByText('今日のタスク')).toBeInTheDocument();
+    expect(await screen.findByText('作業中')).toBeInTheDocument();
     // ログイン画面には落ちていない。
     expect(screen.queryByRole('heading', { name: 'ログイン' })).not.toBeInTheDocument();
   });
