@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
 
-import { SCHEDULE_THEME_KEYS, SCHEDULE_THEME_LIST, SCHEDULE_THEMES } from './scheduleTheme';
+import { SCHEDULE_THEME_KEYS, SCHEDULE_THEME_LIST, SCHEDULE_THEME_MAP } from './scheduleTheme';
 import { ScheduleThemeSwatch } from './ScheduleThemeSwatch';
 
 describe('scheduleTheme', () => {
@@ -24,7 +24,7 @@ describe('ScheduleThemeSwatch', () => {
   it('テーマのアクセント色を描画する', () => {
     const { container } = render(<ScheduleThemeSwatch theme="coral" />);
     const el = container.querySelector('[data-slot="schedule-theme-swatch"]');
-    expect(el?.className).toContain(SCHEDULE_THEMES.coral.accent);
+    expect(el?.className).toContain(SCHEDULE_THEME_MAP.coral.accent);
     expect(el?.getAttribute('title')).toBe('Coral');
   });
 

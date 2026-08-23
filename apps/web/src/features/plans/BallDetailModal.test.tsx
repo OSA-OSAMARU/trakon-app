@@ -85,7 +85,8 @@ function makePlan(overrides: Partial<Plan> = {}): Plan {
     itemId: ITEM_ID,
     planType: 'toss',
     title: 'デザインカンプ作成',
-    category: 'design',
+    category: 'design',    colorTheme: null,
+
     scheduledDate: '2026-06-21',
     dueDate: null,
     executor: memberRef(meMember),

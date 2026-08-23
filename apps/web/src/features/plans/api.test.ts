@@ -25,6 +25,7 @@ const stubPlan: Plan = {
   planType: 'toss',
   title: 'タイトル',
   category: 'design',
+  colorTheme: null,
   scheduledDate: '2026-01-01',
   dueDate: null,
   executor: null,

@@ -302,6 +302,7 @@ describe('CreatePlanModal (integration)', () => {
       planType: 'toss',
       title: '既存予定',
       category: 'review',
+      colorTheme: null,
       scheduledDate: '2026-06-21',
       dueDate: '2026-06-22',
       executor: null,

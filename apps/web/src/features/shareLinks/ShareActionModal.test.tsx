@@ -36,7 +36,8 @@ const plan = (over: Partial<Plan> = {}): Plan => ({
   itemId: 'it1',
   planType: 'toss',
   title: 'デザイン確認',
-  category: 'review',
+  category: 'review',  colorTheme: null,
+
   scheduledDate: '2026-06-10',
   dueDate: null,
   executor: m({ id: 'ex', name: '実施者' }),

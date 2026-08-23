@@ -1,3 +1,5 @@
+import type { ScheduleThemeKey } from '@trakon/shared';
+
 import { prisma, type Prisma } from '@trakon/db';
 import {
   deriveBallHolder,
@@ -37,6 +39,8 @@ export type PlanDTO = {
   planType: 'toss';
   title: string;
   category: PlanCategory;
+  /** カラーテーマ (#149)。null はカテゴリ由来の既定色 */
+  colorTheme: ScheduleThemeKey | null;
   scheduledDate: string;
   dueDate: string | null;
   // 役割 (#131)
@@ -143,6 +147,7 @@ export function toPlanDTO(row: PlanRow, _members: PlanRow['fromMember'][] = []):
     planType: row.planType as 'toss',
     title: row.title,
     category: row.category as PlanCategory,
+    colorTheme: (row.colorTheme as ScheduleThemeKey | null) ?? null,
     scheduledDate: toDateString(row.scheduledDate)!,
     dueDate: toDateString(row.dueDate),
     executor,
@@ -354,6 +359,7 @@ export async function createPlan(input: {
       itemId: input.itemId,
       title: input.body.title,
       category: input.body.category,
+      colorTheme: input.body.colorTheme ?? null,
       scheduledDate: new Date(`${input.body.scheduledDate}T00:00:00Z`),
       dueDate: input.body.dueDate ? new Date(`${input.body.dueDate}T00:00:00Z`) : null,
       executorMemberId: input.body.executorMemberId ?? null,
@@ -386,6 +392,7 @@ export async function duplicatePlan(input: {
       itemId: source.itemId,
       title: source.title,
       category: source.category,
+      colorTheme: source.colorTheme,
       scheduledDate: source.scheduledDate,
       dueDate: source.dueDate,
       // 役割はコピーする。FROM/TO 履歴・後続・ballEvents はコピーしない (新規は未TOSS)。
@@ -438,6 +445,7 @@ export async function updatePlan(input: {
 
   if (input.body.title !== undefined) data.title = input.body.title;
   if (input.body.category !== undefined) data.category = input.body.category;
+  if (input.body.colorTheme !== undefined) data.colorTheme = input.body.colorTheme;
   if (input.body.scheduledDate !== undefined)
     data.scheduledDate = new Date(`${input.body.scheduledDate}T00:00:00Z`);
   if (input.body.dueDate !== undefined)

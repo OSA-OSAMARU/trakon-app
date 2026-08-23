@@ -183,7 +183,8 @@ function makePlan(overrides: Partial<Plan> = {}): Plan {
     itemId: ITEM_ID,
     planType: 'toss',
     title: 'デザインカンプ作成',
-    category: 'design',
+    category: 'design',    colorTheme: null,
+
     scheduledDate: '2026-06-19',
     dueDate: '2026-06-22',
     executor: ref(meMember),
@@ -210,7 +211,8 @@ const PLANS: Plan[] = [
   makePlan({
     id: 'plan-1',
     title: 'ワイヤーフレーム作成',
-    category: 'wireframe',
+    category: 'wireframe',    colorTheme: null,
+
     scheduledDate: '2026-06-19',
     dueDate: '2026-06-22',
     ballState: 'in_progress',
@@ -219,7 +221,8 @@ const PLANS: Plan[] = [
   makePlan({
     id: 'plan-2',
     title: 'デザインカンプ作成',
-    category: 'design',
+    category: 'design',    colorTheme: null,
+
     scheduledDate: '2026-06-22',
     dueDate: '2026-06-24',
     ballState: 'tossed',
@@ -228,7 +231,8 @@ const PLANS: Plan[] = [
   makePlan({
     id: 'plan-3',
     title: 'コーディング',
-    category: 'coding',
+    category: 'coding',    colorTheme: null,
+
     itemId: ITEM_ID_2,
     scheduledDate: '2026-06-20',
     dueDate: null,
@@ -322,7 +326,8 @@ describe('ItemSchedulePage (integration)', () => {
     const wire = makePlan({
       id: 'w',
       title: 'ワイヤー作成',
-      category: 'wireframe',
+      category: 'wireframe',      colorTheme: null,
+
       scheduledDate: '2026-06-19',
       dueDate: '2026-06-20',
       fromMember: ref(meMember),
@@ -334,7 +339,8 @@ describe('ItemSchedulePage (integration)', () => {
     const design = makePlan({
       id: 'd',
       title: 'デザイン作成',
-      category: 'design',
+      category: 'design',      colorTheme: null,
+
       scheduledDate: '2026-06-21',
       dueDate: '2026-06-22',
       executor: ref(dzFrom),

@@ -50,7 +50,8 @@ const plan = (over: Partial<Plan> = {}): Plan => ({
   itemId: 'it1',
   planType: 'toss',
   title: 'デザイン作成',
-  category: 'design',
+  category: 'design',  colorTheme: null,
+
   scheduledDate: '2026-06-10',
   dueDate: null,
   executor: memberRef(),

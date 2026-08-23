@@ -1,3 +1,5 @@
+import type { ScheduleThemeKey } from '@trakon/shared';
+
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
@@ -52,6 +54,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { RoleRow } from '@/components/trakon/RoleRow';
 import { StatusPill } from '@/components/trakon/StatusPill';
+import { ScheduleThemePicker } from '@/components/trakon/ScheduleThemePicker';
 import { WorkflowButton } from '@/components/trakon/WorkflowButton';
 import { cn } from '@/components/ui/utils';
 import { ApiClientError } from '@/lib/api';
@@ -59,7 +62,7 @@ import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import type { ProjectMember } from '@/features/projects/membersApi';
 import { projectsApi, projectsQueryKey } from '@/features/projects/api';
 import { plansApi, plansQueryKey, type BallEvent, type MemberRef, type Plan, type PlanState } from './api';
-import { planCardStyle } from './planTheme';
+import { CATEGORY_THEME, planCardStyle } from './planTheme';
 import {
   useApprovePlan,
   useRequestReviewPlan,
@@ -131,6 +134,19 @@ export function BallDetailModal({
   const tossMut = useTossPlan({ projectId, itemId, planId });
   const undoTossMut = useUndoTossPlan({ projectId, itemId, planId });
   const successorMut = useSetSuccessor(projectId);
+
+  // カラーテーマの変更 (#149)。色は状態ではないので、履歴には残さず即時反映する。
+  const colorMut = useMutation({
+    mutationFn: (colorTheme: ScheduleThemeKey | null) =>
+      plansApi.update(projectId, itemId, planId, { colorTheme }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: plansQueryKey.detail(projectId, itemId, planId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, itemId) });
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '色の変更に失敗しました'),
+  });
 
   const copyMut = useMutation({
     mutationFn: () => plansApi.copy(projectId, itemId, planId),
@@ -215,7 +231,7 @@ export function BallDetailModal({
               active && inProgress && !hasExecutor && (isExecutor || isDirector || myMember == null);
 
             const handleUnlink = () => successorMut.mutate({ itemId, planId, successorPlanId: null });
-            const theme = planCardStyle(plan.category);
+            const theme = planCardStyle(plan.category, plan.colorTheme);
 
             /**
              * フッターに出す主要操作 (Figma node 39:14 は最大 2 つ)。
@@ -368,7 +384,17 @@ export function BallDetailModal({
                       ) : null}
                     </div>
                   </div>
-                  <SheetTitle className="text-2xl font-bold">{plan.title}</SheetTitle>
+                  <div className="flex items-center gap-3">
+                    <SheetTitle className="min-w-0 flex-1 text-2xl font-bold">
+                      {plan.title}
+                    </SheetTitle>
+                    <ScheduleThemePicker
+                      value={plan.colorTheme}
+                      fallback={CATEGORY_THEME[plan.category]}
+                      onChange={(v) => colorMut.mutate(v)}
+                      disabled={!active || colorMut.isPending}
+                    />
+                  </div>
                   <SheetDescription className="text-body">
                     {format(new Date(plan.scheduledDate), 'yyyy.M.d（E）', { locale: ja })}
                     {plan.dueDate &&

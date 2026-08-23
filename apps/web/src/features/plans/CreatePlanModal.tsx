@@ -26,7 +26,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import type { ScheduleThemeKey } from '@trakon/shared';
+import { ScheduleThemePicker } from '@/components/trakon/ScheduleThemePicker';
+import { cn } from '@/components/ui/utils';
 import { ApiClientError } from '@/lib/api';
+import { CATEGORY_THEME } from './planTheme';
 import type { ProjectMember } from '@/features/projects/membersApi';
 import type { ProjectItem } from '@/features/projects/api';
 import {
@@ -45,6 +49,8 @@ const schema = z
   .object({
     title: z.string().trim().min(1, '予定名は必須').max(255),
     category: z.enum(PLAN_CATEGORIES.map((c) => c.value) as [PlanCategory, ...PlanCategory[]]),
+    /** カラーテーマ (#149)。'' はカテゴリ由来の既定色 */
+    colorTheme: z.string(),
     scheduledDate: isoDate,
     dueDate: z.union([isoDate, z.literal('')]).optional(),
     // 役割 (#131)。1 人が複数役割を兼ねることも可 (相違制約なし §5)。
@@ -99,6 +105,7 @@ export function CreatePlanModal({
     defaultValues: {
       title: '',
       category: 'other',
+      colorTheme: '',
       scheduledDate: defaultDate ?? new Date().toISOString().slice(0, 10),
       dueDate: defaultDueDate ?? '',
       executorMemberId: defaultFromMemberId ?? '',
@@ -115,6 +122,7 @@ export function CreatePlanModal({
       form.reset({
         title: editingPlan.title,
         category: editingPlan.category,
+        colorTheme: editingPlan.colorTheme ?? '',
         scheduledDate: editingPlan.scheduledDate,
         dueDate: editingPlan.dueDate ?? '',
         executorMemberId: editingPlan.executor?.id ?? '',
@@ -132,6 +140,7 @@ export function CreatePlanModal({
       plansApi.create(projectId, itemId, {
         title: v.title,
         category: v.category,
+        colorTheme: (v.colorTheme as ScheduleThemeKey) || undefined,
         scheduledDate: v.scheduledDate,
         dueDate: v.dueDate || undefined,
         executorMemberId: v.executorMemberId || undefined,
@@ -227,13 +236,28 @@ export function CreatePlanModal({
             <Input {...form.register('title')} autoFocus placeholder="例: トップページ構成" />
           </Field>
 
-          <Field label="カテゴリ" error={form.formState.errors.category?.message}>
-            <SelectField
-              value={form.watch('category')}
-              onChange={(v) => form.setValue('category', v as PlanCategory)}
-              options={PLAN_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
-            />
-          </Field>
+          <div className="flex items-end gap-3">
+            <Field
+              label="カテゴリ"
+              error={form.formState.errors.category?.message}
+              className="flex-1"
+            >
+              <SelectField
+                value={form.watch('category')}
+                onChange={(v) => form.setValue('category', v as PlanCategory)}
+                options={PLAN_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
+              />
+            </Field>
+            {/* 色はカテゴリとは独立して選べる (#149)。未選択ならカテゴリ由来の既定色。 */}
+            <div className="flex flex-col gap-1.5 pb-1">
+              <span className="text-text-secondary text-tiny font-medium">色</span>
+              <ScheduleThemePicker
+                value={(form.watch('colorTheme') as ScheduleThemeKey) || null}
+                fallback={CATEGORY_THEME[form.watch('category')]}
+                onChange={(v) => form.setValue('colorTheme', v ?? '')}
+              />
+            </div>
+          </div>
 
           {/* 制作物の付け替え (#52)。別制作物へ移すと後続の予定は自動解除される。 */}
           {mode === 'edit' && items.length > 1 && (
@@ -360,15 +384,17 @@ function Field({
   label,
   hint,
   error,
+  className,
   children,
 }: {
   label: string;
   hint?: string;
   error?: string;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className={cn('space-y-1.5', className)}>
       <Label>{label}</Label>
       {children}
       {hint && !error && <p className="text-[11px] text-muted-foreground">{hint}</p>}

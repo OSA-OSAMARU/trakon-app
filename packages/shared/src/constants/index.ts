@@ -84,3 +84,27 @@ export const MEMBER_TYPE_LABEL: Record<MemberType, string> = {
   client: 'クライアント',
   partner: '外部パートナー',
 };
+
+/**
+ * スケジュールカードのカラーテーマ (Figma node 54:2 / 10 種)。
+ *
+ * 色は「状態」を表すものではなく、**ユーザーがスケジュールを視覚整理するために選ぶもの**。
+ * 予定ごとに選択できる (plans.color_theme)。未設定のときはカテゴリ由来の既定色に
+ * フォールバックする。実際の色値は apps/web の globals.css / scheduleTheme.ts 側にある。
+ *
+ * FE の選択肢・BE の Zod 検証・DB の CHECK 制約で同じ定義を使うため shared に置く。
+ */
+export const SCHEDULE_THEMES = [
+  'warm-gray',
+  'rose',
+  'coral',
+  'amber',
+  'lime',
+  'green',
+  'teal',
+  'cyan',
+  'blue',
+  'violet',
+] as const;
+
+export type ScheduleThemeKey = (typeof SCHEDULE_THEMES)[number];

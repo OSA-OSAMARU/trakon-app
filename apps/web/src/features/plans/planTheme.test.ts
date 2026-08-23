@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { SCHEDULE_THEME_KEYS } from '@/components/trakon/scheduleTheme';
 
-import { CATEGORY_LABEL, CATEGORY_STYLE, CATEGORY_THEME, planTheme } from './planTheme';
+import {
+  CATEGORY_LABEL,
+  CATEGORY_STYLE,
+  CATEGORY_THEME,
+  planCardStyle,
+  planTheme,
+  resolvePlanTheme,
+} from './planTheme';
 
 const CATEGORIES = ['wireframe', 'design', 'coding', 'review', 'meeting', 'other'] as const;
 
@@ -32,5 +39,23 @@ describe('planTheme', () => {
   it('planTheme はカテゴリに対応するテーマを返す', () => {
     expect(planTheme('design').key).toBe('cyan');
     expect(planTheme('other').label).toBe('Warm Gray');
+  });
+});
+
+describe('resolvePlanTheme (#149)', () => {
+  it('ユーザーが選んだ色があればそれを使う', () => {
+    expect(resolvePlanTheme('design', 'coral').key).toBe('coral');
+  });
+
+  it('未設定ならカテゴリ由来の既定色にフォールバックする', () => {
+    expect(resolvePlanTheme('design', null).key).toBe('cyan');
+    expect(resolvePlanTheme('design').key).toBe('cyan');
+  });
+
+  it('planCardStyle も選択された色を反映する', () => {
+    expect(planCardStyle('design', 'rose').surface).toBe('bg-plan-rose-surface');
+    expect(planCardStyle('design').surface).toBe('bg-plan-cyan-surface');
+    // カテゴリのラベルは色を変えても変わらない
+    expect(planCardStyle('design', 'rose').label).toBe('デザイン');
   });
 });
