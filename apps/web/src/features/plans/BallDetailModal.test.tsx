@@ -48,6 +48,7 @@ const meMember: ProjectMember = {
   email: 'me@example.com',
   organizationName: 'Acme',
   memberType: 'production',
+  jobTitle: null,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',

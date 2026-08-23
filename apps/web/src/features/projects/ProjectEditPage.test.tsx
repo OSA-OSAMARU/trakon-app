@@ -59,6 +59,9 @@ function setup() {
 const detail = (over: Partial<ProjectDetail> = {}): ProjectDetail => ({
   id: 'p1',
   name: 'サイトリニューアル',
+  clientName: null,
+  progressManager: null,
+  overdueCount: 0,
   startDate: '2026-01-01',
   endDate: '2026-12-31',
   status: 'active',

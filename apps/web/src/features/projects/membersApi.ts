@@ -1,3 +1,5 @@
+import type { JobTitle, MemberType } from '@trakon/shared';
+
 import { apiRequest } from '@/lib/api';
 
 export type ProjectMember = {
@@ -6,7 +8,9 @@ export type ProjectMember = {
   name: string;
   email: string | null;
   organizationName: string;
-  memberType: 'client' | 'production';
+  memberType: MemberType;
+  /** 職種 (#147)。表示用で権限には影響しない */
+  jobTitle: JobTitle | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -17,14 +21,16 @@ export type AddMembersInput = {
     name: string;
     email?: string;
     organizationName: string;
-    memberType: 'client' | 'production';
+    memberType: MemberType;
+    jobTitle?: JobTitle | null;
   }>;
 };
 
 export type UpdateMemberInput = Partial<{
   name: string;
   organizationName: string;
-  memberType: 'client' | 'production';
+  memberType: MemberType;
+  jobTitle: JobTitle | null;
   sortOrder: number;
 }>;
 

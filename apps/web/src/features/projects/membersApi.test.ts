@@ -25,6 +25,7 @@ const stubMember: ProjectMember = {
   email: 'tanaka@example.com',
   organizationName: '株式会社A',
   memberType: 'production',
+  jobTitle: null,
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -58,6 +59,7 @@ describe('membersApi', () => {
           email: 'tanaka@example.com',
           organizationName: '株式会社A',
           memberType: 'production',
+          jobTitle: null,
         },
       ],
     };

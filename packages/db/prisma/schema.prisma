@@ -57,6 +57,8 @@ model Project {
   id                      String    @id @default(uuid(7)) @db.Uuid
   organizationId          String?   @map("organization_id") @db.Uuid
   name                    String
+  /// クライアント名 (#147)。表示専用で、組織テーブルとは紐づかない
+  clientName              String?   @map("client_name")
   startDate               DateTime  @map("start_date") @db.Date
   endDate                 DateTime  @map("end_date") @db.Date
   /// 'active' | 'closed' (CHECK 制約)
@@ -95,8 +97,10 @@ model ProjectMember {
   /// スケジュール担当者としての登録ではメールは任意 (未登録は NULL)
   email            String?
   organizationName String    @map("organization_name")
-  /// 'client' | 'production' (CHECK 制約)
+  /// 'production' | 'client' | 'partner' (CHECK 制約, #147 で partner を追加)
   memberType       String    @map("member_type")
+  /// 職種 (#147)。JOB_TITLES の 18 値 (CHECK 制約)。表示用で権限には影響しない
+  jobTitle         String?   @map("job_title")
   /// Phase 1+ で権限細分化に使用
   roleType         String?   @map("role_type")
   sortOrder        Int       @default(0) @map("sort_order")

@@ -3,6 +3,8 @@ import { apiRequest } from '@/lib/api';
 export type ProjectSummary = {
   id: string;
   name: string;
+  /** クライアント名 (#147) */
+  clientName: string | null;
   startDate: string;
   endDate: string;
   status: 'active' | 'closed';
@@ -12,6 +14,10 @@ export type ProjectSummary = {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** 予定作成時の進行責任者の既定値 (#131) */
+  progressManager: { id: string; name: string } | null;
+  /** 期限超過しているボールの数 (#147)。一覧で遅延を見分けるのに使う */
+  overdueCount: number;
 };
 
 export type ProjectDetail = ProjectSummary & {

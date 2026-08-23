@@ -167,7 +167,8 @@ erDiagram
         text name
         text email
         text organization_name
-        text member_type "client/production (CHECK)"
+        text member_type "client/production/partner (CHECK)"
+        text job_title "職種 18 値 (CHECK, #147)"
         text role_type "Phase1〜"
         int sort_order
         boolean is_active "Phase1〜"
@@ -360,6 +361,7 @@ erDiagram
 | id | uuid | × | uuidv7 | |
 | organization_id | uuid | ○ | NULL | Phase 2 で NOT NULL 化 |
 | name | text | × | — | 1〜255 文字（CHECK） |
+| **client_name** | text | ○ | NULL | **クライアント名（#147 追加）。表示専用で organizations とは紐づかない** |
 | start_date | date | × | — | |
 | end_date | date | × | — | start_date 以降（CHECK） |
 | status | text | × | 'active' | 'active' / 'closed'（CHECK） |
@@ -396,7 +398,8 @@ erDiagram
 | name | text | × | — | 表示名 |
 | email | text | × | — | 招待・連絡先 |
 | organization_name | text | × | — | 所属名（カレンダー横軸グルーピング） |
-| member_type | text | × | — | 'client' / 'production'（CHECK） |
+| member_type | text | × | — | 'client' / 'production' / **'partner'**（CHECK、#147 で partner 追加） |
+| **job_title** | text | ○ | NULL | **職種（#147 追加）。18 値の CHECK。表示専用で権限には影響しない** |
 | role_type | text | ○ | NULL | Phase 1〜（director / designer / engineer / client 等） |
 | sort_order | int | × | 0 | カレンダー横軸の表示順 |
 | is_active | boolean | × | true | Phase 1〜（一時非表示） |
@@ -405,7 +408,8 @@ erDiagram
 | updated_at | timestamptz | × | now() | |
 
 **制約**：
-- `ck_pm_member_type` CHECK (member_type IN ('client','production'))
+- `ck_pm_member_type` CHECK (member_type IN ('client','production','partner'))
+- `ck_pm_job_title` CHECK (job_title IS NULL OR job_title IN (18 値)) — 値の定義は `packages/shared/src/constants` の `JOB_TITLES`
 - `fk_pm_project_id` FK → projects(id) ON DELETE CASCADE
 - `fk_pm_user_id` FK → users(id) ON DELETE SET NULL
 - `uq_pm_project_email`（project_id, email）UNIQUE — 同一プロジェクトに同一メールが重複しないように

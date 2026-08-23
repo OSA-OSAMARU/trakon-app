@@ -91,3 +91,53 @@ describe('listProjectsQuerySchema', () => {
     expect(r.offset).toBe(0);
   });
 });
+
+describe('#147 で追加した項目', () => {
+  const base = {
+    name: 'P',
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    items: [{ name: 'I' }],
+  };
+
+  it('クライアント名は任意で、空文字は未設定に正規化される', () => {
+    expect(createProjectBodySchema.parse(base).clientName).toBeUndefined();
+    expect(createProjectBodySchema.parse({ ...base, clientName: '  ' }).clientName).toBeUndefined();
+    expect(
+      createProjectBodySchema.parse({ ...base, clientName: ' 株式会社灯和食品 ' }).clientName,
+    ).toBe('株式会社灯和食品');
+  });
+
+  it('区分に外部パートナーを受け付ける', () => {
+    const parsed = createProjectBodySchema.parse({
+      ...base,
+      members: [{ name: '外部 太郎', memberType: 'partner' }],
+    });
+    expect(parsed.members[0]!.memberType).toBe('partner');
+  });
+
+  it('職種はマスタの値のみ受け付け、空文字は未設定に正規化される', () => {
+    const ok = createProjectBodySchema.parse({
+      ...base,
+      members: [{ name: 'A', memberType: 'production', jobTitle: 'frontend_engineer' }],
+    });
+    expect(ok.members[0]!.jobTitle).toBe('frontend_engineer');
+
+    const blank = createProjectBodySchema.parse({
+      ...base,
+      members: [{ name: 'A', memberType: 'production', jobTitle: '' }],
+    });
+    expect(blank.members[0]!.jobTitle).toBeUndefined();
+
+    expect(
+      createProjectBodySchema.safeParse({
+        ...base,
+        members: [{ name: 'A', memberType: 'production', jobTitle: 'unknown_role' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('更新ではクライアント名を null で明示的にクリアできる', () => {
+    expect(updateProjectBodySchema.parse({ clientName: null }).clientName).toBeNull();
+  });
+});

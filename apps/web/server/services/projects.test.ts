@@ -16,6 +16,7 @@ import type {
 type MockProject = {
   id: string;
   name: string;
+  clientName: string | null;
   startDate: Date;
   endDate: Date;
   status: string;
@@ -130,7 +131,8 @@ const prismaMock = {
         const matched = Object.values(projectStore).filter((p) =>
           projectMatchesListWhere(p, where),
         );
-        return matched.slice(skip, skip + take);
+        // service は include: { progressManager } を読む (未設定は null)
+        return matched.slice(skip, skip + take).map((p) => ({ ...p, progressManager: null }));
       },
     ),
     count: vi.fn(async ({ where }: { where: Parameters<typeof projectMatchesListWhere>[1] }) => {
@@ -143,6 +145,7 @@ const prismaMock = {
         // service は _count.members / _count.items を読む
         return {
           ...p,
+          progressManager: null,
           _count: { members: countMembers(p.id), items: countItems(p.id) },
         };
       },
@@ -162,6 +165,11 @@ const prismaMock = {
         return p;
       },
     ),
+  },
+  // #147: 一覧・詳細で期限超過ボール数を数えるために plan を読む。
+  // このテストでは予定を持たない前提なので常に空配列。
+  plan: {
+    findMany: vi.fn(async () => []),
   },
   // コールバック形式 ($transaction(fn)) のみ service は使用。
   $transaction: vi.fn(async (arg: unknown) => {
@@ -206,6 +214,7 @@ afterEach(() => {
 function seedProject(p: Partial<MockProject> & { id: string; createdBy: string }): MockProject {
   const full: MockProject = {
     name: 'Seed Project',
+    clientName: null,
     startDate: new Date('2026-01-01T00:00:00Z'),
     endDate: new Date('2026-12-31T00:00:00Z'),
     status: 'active',

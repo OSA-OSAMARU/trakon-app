@@ -105,6 +105,7 @@ const meMember: ProjectMember = {
   email: 'taro@example.com',
   organizationName: 'Acme',
   memberType: 'production',
+  jobTitle: null,
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
@@ -118,6 +119,7 @@ const otherMember: ProjectMember = {
   email: 'hanako@example.com',
   organizationName: 'Beta',
   memberType: 'client',
+  jobTitle: null,
   sortOrder: 1,
 };
 
@@ -141,6 +143,9 @@ const projectDetail: ProjectDetail = {
   status: 'active',
   archivedAt: null,
   role: 'director',
+  clientName: null,
+  progressManager: null,
+  overdueCount: 0,
   createdBy: 'user-1',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
