@@ -85,10 +85,16 @@
   --role-executor: #2e6ea6;
   --role-approver: #d66333;
   --role-manager: #333330;
+  /* サイドモーダルの担当欄は淡いタイル + 濃い文字 (Figma node 38:14 / 38:19 / 38:24) */
+  --role-executor-subtle: #ebf7ff;
+  --role-approver-subtle: #fff0e7;
+  --role-manager-subtle: #e8faf2;
 
   /* 後続 TOSS のコネクト線 (Figma node 32:5 / 32:10) */
   --toss-line: #247dc9;
   --toss-line-strong: #1f6cae;
+  /* 「次のTOSS」カードの面 (Figma node 38:40) */
+  --toss-line-subtle: #ebf7ff;
 
   /* カレンダー日付軸 */
   --today-bg: #fff8e3;
@@ -214,9 +220,13 @@
   --color-role-executor: var(--role-executor);
   --color-role-approver: var(--role-approver);
   --color-role-manager: var(--role-manager);
+  --color-role-executor-subtle: var(--role-executor-subtle);
+  --color-role-approver-subtle: var(--role-approver-subtle);
+  --color-role-manager-subtle: var(--role-manager-subtle);
 
   --color-toss-line: var(--toss-line);
   --color-toss-line-strong: var(--toss-line-strong);
+  --color-toss-line-subtle: var(--toss-line-subtle);
 
   --color-today-bg: var(--today-bg);
   --color-today-marker: var(--today-marker);

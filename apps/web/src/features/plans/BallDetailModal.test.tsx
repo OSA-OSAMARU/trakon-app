@@ -191,6 +191,14 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/**
+ * 取り消し系・前工程への差し戻し・削除はヘッダーの「⋯」メニューに移動した
+ * (Figma node 37:16)。メニューを開いて項目を返す。
+ */
+async function openMoreMenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: 'その他の操作' }));
+}
+
 describe('BallDetailModal (integration)', () => {
   // ---------------------------------------------------------------------------
   // 基本表示
@@ -204,15 +212,17 @@ describe('BallDetailModal (integration)', () => {
 
     expect(await screen.findByText('デザインカンプ作成')).toBeInTheDocument();
     // 実施者=自分 太郎 / 承認者=他人 花子 (進行責任者・TOSS履歴でも名前が重複しうるため getAllByText)
-    expect(screen.getAllByText('自分 太郎 (Acme)').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('他人 花子 (Acme)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('自分 太郎').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('他人 花子').length).toBeGreaterThan(0);
     // 役割ラベル
     expect(screen.getByText('実施者')).toBeInTheDocument();
     expect(screen.getByText('承認者')).toBeInTheDocument();
     expect(screen.getByText('進行責任者')).toBeInTheDocument();
-    // 履歴 (TOSS イベント)
-    expect(screen.getByText('TOSS')).toBeInTheDocument();
-    expect(screen.getByText('by 自分 太郎')).toBeInTheDocument();
+    // 概要タブの「最近の履歴」は 1 行の文で出す
+    expect(screen.getByText('自分 太郎がTOSSしました')).toBeInTheDocument();
+    // 履歴タブに切り替えるとイベント名と担当者が分かれて出る
+    await userEvent.click(screen.getByRole('tab', { name: /履歴/ }));
+    expect(await screen.findByText('TOSS')).toBeInTheDocument();
   });
 
   it('履歴: 自動連鎖バッジと完了の取り消し/完了イベントを描画する', async () => {
@@ -227,12 +237,13 @@ describe('BallDetailModal (integration)', () => {
     });
     renderModal();
 
+    await userEvent.click(await screen.findByRole('tab', { name: /履歴/ }));
     expect(await screen.findByText('自動連鎖')).toBeInTheDocument();
     // 各イベントラベル
     expect(screen.getByText('完了')).toBeInTheDocument();
     expect(screen.getByText('完了の取り消し')).toBeInTheDocument();
     // actor が null のイベントは system 表記
-    expect(screen.getByText('by system')).toBeInTheDocument();
+    expect(screen.getAllByText('システム').length).toBeGreaterThan(0);
   });
 
   it('詳細取得に失敗するとエラーメッセージを表示する', async () => {
@@ -278,7 +289,7 @@ describe('BallDetailModal (integration)', () => {
     // 状態バッジ (承認済み・TOSS待ち)。
     expect(await screen.findByText('承認済み・TOSS待ち')).toBeInTheDocument();
     // 進行責任者 (=本人) なので TOSS ボタンが出る。
-    expect(screen.getByRole('button', { name: /^TOSS（/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '次の工程へトス' })).toBeInTheDocument();
   });
 
   it('completed 状態: 完了済みバナーを表示し TOSS/完了ボタンを出さない', async () => {
@@ -312,7 +323,7 @@ describe('BallDetailModal (integration)', () => {
 
     // 詳細が描画されるまで待つ
     expect(await screen.findByText('承認済み・TOSS待ち')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^TOSS（/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '次の工程へトス' })).not.toBeInTheDocument();
   });
 
   it('認可: 進行責任者でなくてもディレクターなら TOSS できる', async () => {
@@ -330,7 +341,7 @@ describe('BallDetailModal (integration)', () => {
     );
     renderModal();
 
-    expect(await screen.findByRole('button', { name: /^TOSS（/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: '次の工程へトス' })).toBeInTheDocument();
   });
 
   it('認可: 実施者が未設定なら操作の代わりに案内文を表示する (director)', async () => {
@@ -369,7 +380,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: /^TOSS（/ });
+    const btn = await screen.findByRole('button', { name: '次の工程へトス' });
     await user.click(btn);
 
     await waitFor(() => expect(tossCalled).toBe(true));
@@ -397,7 +408,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: /^TOSS（/ });
+    const btn = await screen.findByRole('button', { name: '次の工程へトス' });
     await user.click(btn);
 
     // mutation が呼ばれ、onError でトースト表示 (UI は維持される)
@@ -426,8 +437,8 @@ describe('BallDetailModal (integration)', () => {
     // 先行予定 = この予定を後続に指す予定
     renderModal({ plans: [makePlan({ id: 'pred-1', successorPlanId: PLAN_ID })] });
 
-    const btn = await screen.findByRole('button', { name: '前工程へ差し戻す' });
-    await user.click(btn);
+    await openMoreMenu(user);
+    await user.click(await screen.findByRole('menuitem', { name: '前工程へ差し戻す' }));
     await waitFor(() => expect(called).toBe(true));
   });
 
@@ -436,7 +447,7 @@ describe('BallDetailModal (integration)', () => {
     renderModal({ plans: [] });
     // 詳細描画を待つ
     expect(await screen.findByText('デザインカンプ作成')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '前工程へ差し戻す' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '前工程へ差し戻す' })).not.toBeInTheDocument();
   });
 
   it('確認待ちでは前工程があっても「前工程へ差し戻す」は表示しない (確認依頼前のみ)', async () => {
@@ -446,7 +457,7 @@ describe('BallDetailModal (integration)', () => {
     });
     renderModal({ plans: [makePlan({ id: 'pred-1', successorPlanId: PLAN_ID })] });
     expect(await screen.findByText('デザインカンプ作成')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '前工程へ差し戻す' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '前工程へ差し戻す' })).not.toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
@@ -473,7 +484,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: '完了' });
+    const btn = await screen.findByRole('button', { name: '承認して完了' });
     await user.click(btn);
 
     await waitFor(() => expect(approveCalled).toBe(true));
@@ -501,7 +512,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: '完了' });
+    const btn = await screen.findByRole('button', { name: '承認して完了' });
     await user.click(btn);
 
     await waitFor(() => expect(approveCalled).toBe(true));
@@ -552,7 +563,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: '確認依頼を取り消す' });
+    const btn = await screen.findByRole('button', { name: 'ボールを戻す' });
     // 「差し戻す」ボタンは廃止済み。
     expect(screen.queryByRole('button', { name: '差し戻す' })).not.toBeInTheDocument();
     await user.click(btn);
@@ -583,8 +594,8 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: 'TOSS を取り消す' });
-    await user.click(btn);
+    await openMoreMenu(user);
+    await user.click(await screen.findByRole('menuitem', { name: 'TOSS を取り消す' }));
 
     await waitFor(() => expect(undoCalled).toBe(true));
   });
@@ -615,8 +626,8 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    const btn = await screen.findByRole('button', { name: '完了を取り消す' });
-    await user.click(btn);
+    await openMoreMenu(user);
+    await user.click(await screen.findByRole('menuitem', { name: '完了を取り消す' }));
 
     await waitFor(() => expect(undoApproveCalled).toBe(true));
   });
@@ -635,7 +646,7 @@ describe('BallDetailModal (integration)', () => {
     renderModal();
 
     expect(await screen.findByText('完了済み')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '完了を取り消す' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '完了を取り消す' })).not.toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
@@ -680,16 +691,12 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     const { onClose } = renderModal();
 
-    const trash = await screen.findByRole('button', { name: '削除' });
-    await user.click(trash);
+    // 削除はヘッダーの「⋯」メニューへ移動した
+    await openMoreMenu(user);
+    await user.click(await screen.findByRole('menuitem', { name: '削除' }));
 
     // 確認ダイアログの「削除」アクションを押す
-    const confirm = await screen.findByRole('button', { name: '削除' });
-    // ダイアログ内の確認ボタン (AlertDialogAction) を取得
-    const confirmBtn = screen
-      .getAllByRole('button', { name: '削除' })
-      .find((b) => b !== trash) ?? confirm;
-    await user.click(confirmBtn);
+    await user.click(await screen.findByRole('button', { name: '削除' }));
 
     await waitFor(() => expect(deleteCalled).toBe(true));
     await waitFor(() => expect(onClose).toHaveBeenCalled());

@@ -31,13 +31,13 @@ export const CardBlock: Story = {
   ),
 };
 
-/** サイドモーダルでは職種を添える (Figma node 35:882) */
-export const WithCaption: Story = {
+/** サイドモーダルの担当欄 (Figma node 38:12)。淡いタイルのアバターに職種を添える */
+export const Detail: Story = {
   render: () => (
-    <div className="bg-background flex w-[320px] flex-col gap-2 rounded-lg border border-border p-4">
-      <RoleRow role="executor" name="杉野 遥" caption="デザイナー" />
-      <RoleRow role="approver" name="石原 美咲" caption="クライアント担当" />
-      <RoleRow role="manager" name="横山 直樹" caption="ディレクター" />
+    <div className="bg-background flex w-[432px] flex-col gap-2 rounded-xl border border-border p-4">
+      <RoleRow variant="detail" role="executor" name="杉野 遥" caption="デザイナー" />
+      <RoleRow variant="detail" role="approver" name="石原 美咲" caption="クライアント" />
+      <RoleRow variant="detail" role="manager" name="横山 直樹" caption="ディレクター" />
     </div>
   ),
 };
