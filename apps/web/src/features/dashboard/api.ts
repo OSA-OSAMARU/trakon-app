@@ -1,5 +1,5 @@
 import { apiRequest } from '@/lib/api';
-import type { PlanCategory } from '@/features/plans/api';
+import type { PlanCategory, PlanState } from '@/features/plans/api';
 
 export type DashboardTask = {
   planId: string;
@@ -10,8 +10,11 @@ export type DashboardTask = {
   category: PlanCategory;
   scheduledDate: string;
   dueDate: string | null;
-  ballState: 'ready' | 'tossed' | 'completed';
+  /** ボール状態機械 6 値 (#131)。カンバンの列はこれで決まる */
+  ballState: PlanState;
   isOverdue: boolean;
+  /** カードに出す進行責任者 */
+  progressManager: { id: string; name: string } | null;
 };
 
 export type DashboardMemberSection = {
@@ -20,6 +23,8 @@ export type DashboardMemberSection = {
     name: string;
     organizationName: string;
     memberType: 'client' | 'production';
+    /** 自分自身か (「要対応のみ」の絞り込みに使う) */
+    isMe: boolean;
   };
   tasks: DashboardTask[];
 };
