@@ -64,6 +64,7 @@ function makeApprovedPlan(): Plan {
     planType: 'toss',
     title: 'デザイン',
     category: 'design',
+    colorTheme: null,
     scheduledDate: '2026-06-21',
     dueDate: null,
     executor,

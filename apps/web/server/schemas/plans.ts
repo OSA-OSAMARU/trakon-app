@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { SCHEDULE_THEMES } from '@trakon/shared';
+
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.');
@@ -21,6 +23,8 @@ export const createPlanBodySchema = z
   .object({
     title: z.string().trim().min(1).max(255),
     category: planCategorySchema,
+    /** 未指定ならカテゴリ由来の既定色になる (#149) */
+    colorTheme: z.enum(SCHEDULE_THEMES).optional(),
     scheduledDate: isoDate,
     dueDate: isoDate.optional(),
     // 役割 (#131)。実施者は実質必須だが後から設定も可のため任意。承認者は任意。
@@ -41,6 +45,8 @@ export const updatePlanBodySchema = z
   .object({
     title: z.string().trim().min(1).max(255).optional(),
     category: planCategorySchema.optional(),
+    // null を送るとカテゴリ由来の既定色に戻せる (#149)
+    colorTheme: z.enum(SCHEDULE_THEMES).nullable().optional(),
     scheduledDate: isoDate.optional(),
     dueDate: isoDate.nullable().optional(),
     // null を送ると担当者を未設定に戻せる (#114)。undefined は変更なし。

@@ -163,6 +163,9 @@ model Plan {
   title                   String
   /// 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other' (CHECK 制約)
   category                String
+  /// カラーテーマ (#149)。SCHEDULE_THEMES の 10 値 (CHECK 制約)。
+  /// NULL はカテゴリ由来の既定色にフォールバックする。色は状態ではなくユーザーの視覚整理用
+  colorTheme              String?   @map("color_theme")
   scheduledDate           DateTime  @map("scheduled_date") @db.Date
   dueDate                 DateTime? @map("due_date") @db.Date
   /// 実施者 (#131)。作業/確認を行う人。DBは任意だがアプリ層で実質必須

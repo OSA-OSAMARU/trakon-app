@@ -1,5 +1,5 @@
 import {
-  SCHEDULE_THEMES,
+  SCHEDULE_THEME_MAP,
   type ScheduleTheme,
   type ScheduleThemeKey,
 } from '@/components/trakon/scheduleTheme';
@@ -33,7 +33,18 @@ export const CATEGORY_LABEL: Record<PlanCategory, string> = {
 };
 
 export function planTheme(category: PlanCategory): ScheduleTheme {
-  return SCHEDULE_THEMES[CATEGORY_THEME[category]];
+  return SCHEDULE_THEME_MAP[CATEGORY_THEME[category]];
+}
+
+/**
+ * 予定に効いているテーマを解決する (#149)。
+ * ユーザーが選んだ colorTheme が最優先で、未設定ならカテゴリ由来の既定色になる。
+ */
+export function resolvePlanTheme(
+  category: PlanCategory,
+  colorTheme?: ScheduleThemeKey | null,
+): ScheduleTheme {
+  return colorTheme ? SCHEDULE_THEME_MAP[colorTheme] : planTheme(category);
 }
 
 /**
@@ -41,13 +52,16 @@ export function planTheme(category: PlanCategory): ScheduleTheme {
  * Figma node 54:2 のとおり、文字色は全テーマ共通 (--plan-foreground) で、
  * 淡色の面 + 濃色のアクセント (左ストライプ・枠線) で色を分ける。
  */
-export function planCardStyle(category: PlanCategory): {
+export function planCardStyle(
+  category: PlanCategory,
+  colorTheme?: ScheduleThemeKey | null,
+): {
   surface: string;
   stripe: string;
   border: string;
   label: string;
 } {
-  const t = planTheme(category);
+  const t = resolvePlanTheme(category, colorTheme);
   return {
     surface: t.surface,
     stripe: t.accent,

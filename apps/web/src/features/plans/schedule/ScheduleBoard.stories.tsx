@@ -27,6 +27,7 @@ const START = iso(-10);
 const plan = (over: Partial<Plan> & { id: string; itemId: string; title: string }): Plan => ({
   planType: 'toss',
   category: 'design' as PlanCategory,
+  colorTheme: null,
   scheduledDate: START,
   dueDate: null,
   executor: sugino,
@@ -70,7 +71,8 @@ const PLANS: Plan[] = [
     id: 'p3',
     itemId: 'web',
     title: 'フロントエンド実装',
-    category: 'coding',
+    category: 'coding',    colorTheme: null,
+
     scheduledDate: iso(-3),
     dueDate: iso(2),
     executor: aoki,
@@ -98,7 +100,8 @@ const PLANS: Plan[] = [
     id: 'p6',
     itemId: 'book',
     title: '校正・色確認',
-    category: 'review',
+    category: 'review',    colorTheme: null,
+
     scheduledDate: iso(4),
     dueDate: iso(8),
     executor: fujiwara,

@@ -86,7 +86,7 @@ export function BallChip({
 
   const { top, height } = chipVerticalBounds(startIdx, endIdx, rowHeight);
   const tier = ballTier(height);
-  const theme = planCardStyle(plan.category);
+  const theme = planCardStyle(plan.category, plan.colorTheme);
   const completed = plan.status === 'completed';
   const overdue = isOverdue(plan, today);
   const active = isActiveNow(plan, today);

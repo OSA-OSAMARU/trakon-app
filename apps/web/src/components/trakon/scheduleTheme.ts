@@ -1,3 +1,5 @@
+import { SCHEDULE_THEMES, type ScheduleThemeKey } from '@trakon/shared';
+
 /**
  * スケジュールカードのカラーテーマ 10 種 (Figma node 54:2)。
  *
@@ -11,20 +13,8 @@
  * 将来的に予定ごとのユーザー選択へ移行する。
  */
 
-export const SCHEDULE_THEME_KEYS = [
-  'warm-gray',
-  'rose',
-  'coral',
-  'amber',
-  'lime',
-  'green',
-  'teal',
-  'cyan',
-  'blue',
-  'violet',
-] as const;
-
-export type ScheduleThemeKey = (typeof SCHEDULE_THEME_KEYS)[number];
+// キーの定義は FE/BE/DB で共有するため packages/shared に置いている。
+export { SCHEDULE_THEMES as SCHEDULE_THEME_KEYS, type ScheduleThemeKey };
 
 export type ScheduleTheme = {
   key: ScheduleThemeKey;
@@ -48,7 +38,7 @@ const theme = (key: ScheduleThemeKey, label: string): ScheduleTheme => ({
   accentText: `text-plan-${key}-accent`,
 });
 
-export const SCHEDULE_THEMES: Record<ScheduleThemeKey, ScheduleTheme> = {
+export const SCHEDULE_THEME_MAP: Record<ScheduleThemeKey, ScheduleTheme> = {
   'warm-gray': theme('warm-gray', 'Warm Gray'),
   rose: theme('rose', 'Rose'),
   coral: theme('coral', 'Coral'),
@@ -61,6 +51,6 @@ export const SCHEDULE_THEMES: Record<ScheduleThemeKey, ScheduleTheme> = {
   violet: theme('violet', 'Violet'),
 };
 
-export const SCHEDULE_THEME_LIST: ScheduleTheme[] = SCHEDULE_THEME_KEYS.map(
-  (k) => SCHEDULE_THEMES[k],
+export const SCHEDULE_THEME_LIST: ScheduleTheme[] = SCHEDULE_THEMES.map(
+  (k) => SCHEDULE_THEME_MAP[k],
 );

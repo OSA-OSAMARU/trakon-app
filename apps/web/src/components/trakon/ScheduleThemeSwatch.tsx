@@ -2,7 +2,7 @@ import type * as React from 'react';
 
 import { cn } from '@/components/ui/utils';
 
-import { SCHEDULE_THEMES, type ScheduleThemeKey } from './scheduleTheme';
+import { SCHEDULE_THEME_MAP, type ScheduleThemeKey } from './scheduleTheme';
 
 /**
  * スケジュールカラーテーマの色見本 (Figma node 54:2 のカード右上の丸)。
@@ -19,7 +19,7 @@ export function ScheduleThemeSwatch({
   className,
   ...props
 }: ScheduleThemeSwatchProps) {
-  const t = SCHEDULE_THEMES[theme];
+  const t = SCHEDULE_THEME_MAP[theme];
   return (
     <span
       data-slot="schedule-theme-swatch"

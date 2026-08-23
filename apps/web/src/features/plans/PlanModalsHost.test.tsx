@@ -72,7 +72,8 @@ const plan: Plan = {
   itemId: ITEM_ID,
   planType: 'toss',
   title: '既存の予定',
-  category: 'design',
+  category: 'design',  colorTheme: null,
+
   scheduledDate: '2026-06-21',
   dueDate: null,
   executor: null,

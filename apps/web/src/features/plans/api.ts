@@ -1,4 +1,4 @@
-import type { MemberType } from '@trakon/shared';
+import type { MemberType, ScheduleThemeKey } from '@trakon/shared';
 
 import type { BallEventType, PlanState } from '@trakon/shared';
 
@@ -49,6 +49,8 @@ export type Plan = {
   planType: 'toss';
   title: string;
   category: PlanCategory;
+  /** カラーテーマ (#149)。null はカテゴリ由来の既定色 */
+  colorTheme: ScheduleThemeKey | null;
   scheduledDate: string; // YYYY-MM-DD
   dueDate: string | null;
   // 役割 (#131)
@@ -82,6 +84,8 @@ export type BallActionResult = {
 export type CreatePlanInput = {
   title: string;
   category: PlanCategory;
+  /** 未指定ならカテゴリ由来の既定色になる (#149) */
+  colorTheme?: ScheduleThemeKey;
   scheduledDate: string;
   dueDate?: string;
   // 役割 (#131)。実施者は実質必須、承認者は任意、進行責任者は未指定なら既定値。
@@ -95,6 +99,8 @@ export type CreatePlanInput = {
 export type UpdatePlanInput = Partial<{
   title: string;
   category: PlanCategory;
+  /** null でカテゴリ由来の既定色に戻す (#149) */
+  colorTheme: ScheduleThemeKey | null;
   scheduledDate: string;
   dueDate: string | null;
   executorMemberId: string | null;
