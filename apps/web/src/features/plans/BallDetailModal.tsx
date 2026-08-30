@@ -421,101 +421,117 @@ export function BallDetailModal({
                     </Section>
 
                     <Section title="担当">
-                      <div className="border-border flex flex-col gap-3 rounded-xl border bg-background p-4">
-                        <RoleRow
-                          variant="detail"
-                          role="executor"
-                          name={plan.executor?.name ?? '未設定'}
-                          caption={plan.executor?.organizationName ?? undefined}
-                        />
-                        <RoleRow
-                          variant="detail"
-                          role="approver"
-                          name={plan.approver?.name ?? '未設定（実施者が承認）'}
-                          caption={plan.approver?.organizationName ?? undefined}
-                        />
-                        <RoleRow
-                          variant="detail"
-                          role="manager"
-                          name={plan.progressManager?.name ?? '未設定'}
-                          caption={plan.progressManager?.organizationName ?? undefined}
-                        />
-                      </div>
+                      <DetailCard>
+                        <DetailRow>
+                          <RoleRow
+                            variant="detail"
+                            role="executor"
+                            name={plan.executor?.name ?? '未設定'}
+                            caption={plan.executor?.organizationName ?? undefined}
+                          />
+                        </DetailRow>
+                        <DetailRow>
+                          <RoleRow
+                            variant="detail"
+                            role="approver"
+                            name={plan.approver?.name ?? '未設定（実施者が承認）'}
+                            caption={plan.approver?.organizationName ?? undefined}
+                          />
+                        </DetailRow>
+                        <DetailRow>
+                          <RoleRow
+                            variant="detail"
+                            role="manager"
+                            name={plan.progressManager?.name ?? '未設定'}
+                            caption={plan.progressManager?.organizationName ?? undefined}
+                          />
+                        </DetailRow>
+                      </DetailCard>
                     </Section>
 
                     <Section title="スケジュール">
-                      <div className="border-border grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border bg-background p-4">
-                        <Field label="開始">
-                          {format(new Date(plan.scheduledDate), 'yyyy.M.d（E）', { locale: ja })}
-                        </Field>
-                        <Field label="終了">
-                          {plan.dueDate
-                            ? format(new Date(plan.dueDate), 'yyyy.M.d（E）', { locale: ja })
-                            : '—'}
-                        </Field>
-                        <Field label="工程">{theme.label}</Field>
-                        <Field label="状態" emphasis>
-                          {STATE_LABEL[s]}
-                        </Field>
-                      </div>
+                      {/* Figma node 38:29 も 2 行の間に罫線を持つ */}
+                      <DetailCard>
+                        <DetailRow className="grid grid-cols-2 gap-x-4">
+                          <Field label="開始">
+                            {format(new Date(plan.scheduledDate), 'yyyy.M.d（E）', { locale: ja })}
+                          </Field>
+                          <Field label="終了">
+                            {plan.dueDate
+                              ? format(new Date(plan.dueDate), 'yyyy.M.d（E）', { locale: ja })
+                              : '—'}
+                          </Field>
+                        </DetailRow>
+                        <DetailRow className="grid grid-cols-2 gap-x-4">
+                          <Field label="工程">{theme.label}</Field>
+                          <Field label="状態" emphasis>
+                            {STATE_LABEL[s]}
+                          </Field>
+                        </DetailRow>
+                      </DetailCard>
                     </Section>
 
                     {(plan.fromMember || plan.toMember) && (
                       <Section title="TOSS 履歴">
-                        <p className="text-body">
-                          {memberLabel(plan.fromMember)} <ArrowRight className="inline size-3.5" />{' '}
-                          {memberLabel(plan.toMember)}
-                        </p>
+                        <DetailCard>
+                          <DetailRow className="text-body">
+                            {memberLabel(plan.fromMember)}{' '}
+                            <ArrowRight className="inline size-3.5" />{' '}
+                            {memberLabel(plan.toMember)}
+                          </DetailRow>
+                        </DetailCard>
                       </Section>
                     )}
 
                     {plan.memo && (
                       <Section title="メモ">
-                        <p className="border-border rounded-xl border bg-background p-4 text-body whitespace-pre-wrap">
-                          {plan.memo}
-                        </p>
+                        <DetailCard>
+                          <DetailRow className="text-body whitespace-pre-wrap">{plan.memo}</DetailRow>
+                        </DetailCard>
                       </Section>
                     )}
 
                     {hasSuccessor && (
                       <Section title="次のTOSS">
-                        <div className="border-border bg-toss-line-subtle flex items-center gap-3 rounded-xl border p-4">
-                          <Send className="text-toss-line size-6 shrink-0" aria-hidden />
-                          <span className="flex min-w-0 flex-1 flex-col">
-                            <span className="truncate text-sm font-bold">
-                              {successor ? successor.title : '（別の制作物 / 取得中）'}
-                            </span>
-                            {successor && (
-                              <span className="text-text-secondary truncate text-xs">
-                                {format(new Date(successor.scheduledDate), 'M.d（E）', {
-                                  locale: ja,
-                                })}
-                                開始
-                                {successor.progressManager &&
-                                  ` ・ 進行責任者 ${successor.progressManager.name}`}
+                        <DetailCard className="bg-toss-line-subtle">
+                          <DetailRow className="flex items-center gap-3">
+                            <Send className="text-toss-line size-6 shrink-0" aria-hidden />
+                            <span className="flex min-w-0 flex-1 flex-col">
+                              <span className="truncate text-sm font-bold">
+                                {successor ? successor.title : '（別の制作物 / 取得中）'}
                               </span>
-                            )}
-                          </span>
-                          {plan.status === 'active' ? (
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="shrink-0"
-                              onClick={handleUnlink}
-                              disabled={successorMut.isPending}
-                              aria-label="後続の紐づけを解除"
-                              title="後続の紐づけを解除"
-                            >
-                              {successorMut.isPending ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : (
-                                <Link2Off className="size-4" />
+                              {successor && (
+                                <span className="text-text-secondary truncate text-xs">
+                                  {format(new Date(successor.scheduledDate), 'M.d（E）', {
+                                    locale: ja,
+                                  })}
+                                  開始
+                                  {successor.progressManager &&
+                                    ` ・ 進行責任者 ${successor.progressManager.name}`}
+                                </span>
                               )}
-                            </Button>
-                          ) : (
-                            <ChevronRight className="text-toss-line size-5 shrink-0" aria-hidden />
-                          )}
-                        </div>
+                            </span>
+                            {plan.status === 'active' ? (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="shrink-0"
+                                onClick={handleUnlink}
+                                disabled={successorMut.isPending}
+                                aria-label="後続の紐づけを解除"
+                                title="後続の紐づけを解除"
+                              >
+                                {successorMut.isPending ? (
+                                  <Loader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <Link2Off className="size-4" />
+                                )}
+                              </Button>
+                            ) : (
+                              <ChevronRight className="text-toss-line size-5 shrink-0" aria-hidden />
+                            )}
+                          </DetailRow>
+                        </DetailCard>
                       </Section>
                     )}
 
@@ -611,32 +627,53 @@ function BallHolderBanner({
   const completed = plan.status === 'completed';
   const holder = plan.ballHolder;
   return (
-    <div className="border-border bg-surface-subtle flex items-center gap-4 rounded-xl border p-4">
-      <span
-        aria-hidden
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-full text-body font-bold',
-          completed ? 'bg-success-subtle text-success' : 'bg-brand-subtle text-brand-strong',
-        )}
-      >
-        {completed ? <CheckCircle2 className="size-4" /> : (holder?.name.trim().charAt(0) ?? '—')}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[15px] font-bold">
-          {completed ? '完了済み' : (holder?.name ?? '—')}
+    <DetailCard className="bg-surface-subtle">
+      <DetailRow className="flex items-center gap-4">
+        <span
+          aria-hidden
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center rounded-full text-body font-bold',
+            completed ? 'bg-success-subtle text-success' : 'bg-brand-subtle text-brand-strong',
+          )}
+        >
+          {completed ? <CheckCircle2 className="size-4" /> : (holder?.name.trim().charAt(0) ?? '—')}
         </span>
-        {!completed && holder?.organizationName && (
-          <span className="text-text-secondary truncate text-xs">{holder.organizationName}</span>
-        )}
-      </span>
-      <StatusPill
-        status={completed ? 'completed' : plan.ballState}
-        hideIcon
-        size="lg"
-        className="shrink-0"
-      />
-    </div>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[15px] font-bold">
+            {completed ? '完了済み' : (holder?.name ?? '—')}
+          </span>
+          {!completed && holder?.organizationName && (
+            <span className="text-text-secondary truncate text-xs">{holder.organizationName}</span>
+          )}
+        </span>
+        {/* neutral の pill はカード面と同じ淡色なので、面に埋もれないよう背景を白に起こす */}
+        <StatusPill
+          status={completed ? 'completed' : plan.ballState}
+          hideIcon
+          size="lg"
+          className="bg-background shrink-0"
+        />
+      </DetailRow>
+    </DetailCard>
   );
+}
+
+/**
+ * 概要タブ・履歴タブで共有するカード外観 (枠 + 罫線区切りの行)。
+ * 概要側だけ「ラベル付きの箱が個別の作りで並ぶ」状態だったため、履歴の一覧に合わせて
+ * 外観をこの 2 定数に集約し、タブを行き来しても同じ部品に見えるようにする。
+ */
+const DETAIL_CARD =
+  'border-border divide-border divide-y overflow-hidden rounded-xl border bg-background';
+/** カード内 1 行の余白。左右 16px・上下 12px を両タブ共通にする。 */
+const DETAIL_ROW = 'px-4 py-3';
+
+function DetailCard({ className, children }: { className?: string; children: React.ReactNode }) {
+  return <div className={cn(DETAIL_CARD, className)}>{children}</div>;
+}
+
+function DetailRow({ className, children }: { className?: string; children: React.ReactNode }) {
+  return <div className={cn(DETAIL_ROW, className)}>{children}</div>;
 }
 
 /** サイドモーダルのタブ (Figma node 37:25)。下線だけのシンプルな見た目にする。 */
@@ -722,9 +759,9 @@ function EventTimeline({ events, compact }: { events: BallEvent[]; compact?: boo
   if (compact) {
     // 概要タブの「最近の履歴」(Figma node 39:2): ドット + 文 + 時刻の 1 行
     return (
-      <ol className="border-border flex flex-col gap-3 rounded-xl border bg-background p-4">
+      <ol className={DETAIL_CARD}>
         {events.map((e) => (
-          <li key={e.id} className="flex items-center gap-3 text-xs">
+          <li key={e.id} className={cn(DETAIL_ROW, 'flex items-center gap-3 text-xs')}>
             <span className="bg-toss-line size-2 shrink-0 rounded-full" aria-hidden />
             <span className="min-w-0 flex-1 truncate">
               {e.actor?.name ?? 'システム'}が{EVENT_LABEL[e.eventType]}しました
@@ -738,9 +775,9 @@ function EventTimeline({ events, compact }: { events: BallEvent[]; compact?: boo
     );
   }
   return (
-    <ol className="border-border flex flex-col divide-y divide-border rounded-xl border bg-background">
+    <ol className={DETAIL_CARD}>
       {events.map((e) => (
-        <li key={e.id} className="flex items-start gap-3 p-4 text-body">
+        <li key={e.id} className={cn(DETAIL_ROW, 'flex items-start gap-3 text-body')}>
           <EventIcon type={e.eventType} />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="flex flex-wrap items-center gap-2">
