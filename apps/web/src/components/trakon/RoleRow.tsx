@@ -58,9 +58,14 @@ export function RoleRow({
         {initial}
       </span>
       <span className="flex min-w-0 flex-col">
-        <span className={cn('truncate font-medium', detail ? 'text-sm' : 'text-mini')}>{name}</span>
+        {/* detail は行の高さをアバター (32px) に揃えたいので行間を詰める (Figma node 38:12) */}
+        <span
+          className={cn('truncate font-medium', detail ? 'text-sm leading-tight' : 'text-mini')}
+        >
+          {name}
+        </span>
         {detail && caption ? (
-          <span className="text-text-secondary truncate text-tiny">{caption}</span>
+          <span className="text-text-secondary truncate text-tiny leading-tight">{caption}</span>
         ) : null}
       </span>
       {!detail && caption ? (

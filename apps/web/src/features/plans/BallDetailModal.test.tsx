@@ -227,6 +227,33 @@ describe('BallDetailModal (integration)', () => {
     expect(await screen.findByText('TOSS')).toBeInTheDocument();
   });
 
+  it('概要タブのカードは履歴タブの一覧と同じ枠・行の作りを使う', async () => {
+    setupReads({
+      plan: makePlan({ ballState: 'tossed' }),
+      events: [makeEvent()],
+    });
+    renderModal();
+
+    await screen.findByText('デザインカンプ作成');
+
+    // 概要タブ: 見出しの隣に置くカードは「枠 + 罫線区切りの行」で組む
+    const cards = ['担当', 'スケジュール'].map(
+      (title) => screen.getByText(title).closest('section')!.lastElementChild!,
+    );
+    for (const card of cards) {
+      expect(card.className).toContain('rounded-xl');
+      expect(card.className).toContain('divide-y');
+      expect(card.firstElementChild!.className).toContain('px-4 py-3');
+    }
+
+    // 履歴タブの一覧も同じ枠・行の余白であること (両タブで見た目が揃う)
+    await userEvent.click(screen.getByRole('tab', { name: /履歴/ }));
+    const list = await screen.findByRole('list');
+    expect(list.className).toContain('rounded-xl');
+    expect(list.className).toContain('divide-y');
+    expect(list.firstElementChild!.className).toContain('px-4 py-3');
+  });
+
   it('履歴: 自動連鎖バッジと完了の取り消し/完了イベントを描画する', async () => {
     // ballHolder を他人にして完了/TOSS ボタンを出さず、履歴ラベルの衝突を避ける。
     setupReads({
