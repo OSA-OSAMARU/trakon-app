@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
-import { Toaster } from '@/components/ui/sonner';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
@@ -50,7 +49,6 @@ export function SidebarLayout() {
         />
       )}
 
-      <Toaster richColors position="bottom-center" />
     </div>
   );
 }
