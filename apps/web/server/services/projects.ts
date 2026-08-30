@@ -2,6 +2,7 @@ import { prisma, type Prisma } from '@trakon/db';
 import { pickLatestBallEvent, type BallEventType } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
+import { resolvePrimaryOrganization } from './organizations.js';
 import type { CreateProjectBody, UpdateProjectBody } from '../schemas/projects.js';
 
 export type ProjectSummaryDTO = {
@@ -199,6 +200,9 @@ export async function createProject(input: {
     throw new ApiException('PROFILE_NOT_COMPLETED', 404, 'Profile is required.');
   }
 
+  // プロジェクトは必ずいずれかの組織に属する (§7.3.1)。プロジェクト数上限の判定単位。
+  const { organizationId } = await resolvePrimaryOrganization(prisma, currentUserId);
+
   // 作成者のメールがメンバー入力に被ると uq_pm_project_email 違反になるため除外
   // (メール未登録の参加者は衝突しないためそのまま残す)。
   // 進行責任者は入力順 (index) で指されるため、元の位置も控えておく。
@@ -209,6 +213,7 @@ export async function createProject(input: {
   const created = await prisma.$transaction(async (tx) => {
     const project = await tx.project.create({
       data: {
+        organizationId,
         name: body.name,
         clientName: body.clientName ?? null,
         startDate: new Date(`${body.startDate}T00:00:00Z`),

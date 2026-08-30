@@ -3,6 +3,7 @@ import type { WithdrawalReason } from '@trakon/shared';
 import { uuidv7 } from 'uuidv7';
 
 import { ApiException } from '../lib/errors.js';
+import { defaultOrganizationName, ensureOrganizationForUser } from './organizations.js';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
 
 /**
@@ -156,6 +157,9 @@ export async function syncUser(authUserId: string, jwtEmail: string): Promise<Sy
         email,
       },
     });
+    // 課金の契約主体となる個人組織を同時に作る (§7.3.1)。
+    // ここで作っておかないとプロジェクト作成 (organization_id NOT NULL) が通らない。
+    await ensureOrganizationForUser(tx, { userId: user.id, displayName: user.displayName });
     return user;
   });
 
@@ -262,6 +266,7 @@ export async function completeSignup(input: {
   // id をアプリ側で採番し、依存のないバッチ (配列) トランザクションで 1 往復に収める。
   step('transaction:start');
   const userId = uuidv7();
+  const organizationId = uuidv7();
   const [user] = await withTimeout(
     prisma.$transaction([
       prisma.user.create({
@@ -273,6 +278,18 @@ export async function completeSignup(input: {
           displayName: input.displayName,
           primaryAuthMethod: 'password',
         },
+      }),
+      // 課金の契約主体となる個人組織 (§7.3.1)。id をアプリ側で採番することで
+      // 対話的トランザクションを避け、バッチのまま 1 往復に収める。
+      prisma.organization.create({
+        data: {
+          id: organizationId,
+          name: defaultOrganizationName(input.displayName),
+          ownerUserId: userId,
+        },
+      }),
+      prisma.organizationMember.create({
+        data: { organizationId, userId, orgRole: 'owner', isPrimary: true },
       }),
       prisma.auditLog.create({
         data: {

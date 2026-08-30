@@ -92,6 +92,50 @@ const auditTx = {
   }),
 };
 
+// 組織 (課金の契約主体)。サインアップ経路ごとに個人組織が 1 つ作られることを検証する。
+type MockOrganization = { id: string; name: string; ownerUserId: string };
+const organizationStore: Record<string, MockOrganization> = {};
+const organizationMemberStore: Array<{
+  organizationId: string;
+  userId: string;
+  orgRole: string;
+  isPrimary: boolean;
+}> = [];
+
+const organizationTx = {
+  findUnique: vi.fn(async ({ where }: { where: { ownerUserId: string } }) => {
+    return Object.values(organizationStore).find((o) => o.ownerUserId === where.ownerUserId) ?? null;
+  }),
+  create: vi.fn(async ({ data }: { data: { id?: string; name: string; ownerUserId: string } }) => {
+    const row: MockOrganization = {
+      id: data.id ?? `org-${data.ownerUserId}`,
+      name: data.name,
+      ownerUserId: data.ownerUserId,
+    };
+    organizationStore[row.id] = row;
+    return row;
+  }),
+};
+
+const organizationMemberTx = {
+  create: vi.fn(
+    async ({
+      data,
+    }: {
+      data: { organizationId: string; userId: string; orgRole?: string; isPrimary?: boolean };
+    }) => {
+      const row = {
+        organizationId: data.organizationId,
+        userId: data.userId,
+        orgRole: data.orgRole ?? 'member',
+        isPrimary: data.isPrimary ?? false,
+      };
+      organizationMemberStore.push(row);
+      return row;
+    },
+  ),
+};
+
 const prismaMock = {
   user: {
     findUnique: vi.fn(async ({ where }: { where: { authUserId: string } }) => {
@@ -108,6 +152,9 @@ const prismaMock = {
   },
   oAuthIdentity: { create: oauthTx.create, deleteMany: oauthTx.deleteMany },
   auditLog: { create: auditTx.create },
+  // サインアップ時に個人組織 + オーナーの会員行を作る (§7.3.1)。
+  organization: { findUnique: organizationTx.findUnique, create: organizationTx.create },
+  organizationMember: { create: organizationMemberTx.create },
   // 配列形式 ($transaction([...])) とコールバック形式 ($transaction(fn)) の両対応。
   $transaction: vi.fn(async (arg: unknown) => {
     if (Array.isArray(arg)) return Promise.all(arg);
@@ -115,6 +162,8 @@ const prismaMock = {
       user: userTx,
       oAuthIdentity: oauthTx,
       auditLog: auditTx,
+      organization: organizationTx,
+      organizationMember: organizationMemberTx,
     });
   }),
 };
@@ -164,6 +213,8 @@ beforeAll(async () => {
 
 afterEach(() => {
   for (const k of Object.keys(userStore)) delete userStore[k];
+  for (const k of Object.keys(organizationStore)) delete organizationStore[k];
+  organizationMemberStore.length = 0;
   oauthStore.length = 0;
   auditStore.length = 0;
   vi.clearAllMocks();
@@ -251,6 +302,9 @@ describe('syncUser', () => {
       expect(res.user.fullName).toBe('Gina Example');
       expect(res.user.displayName).toBe('Gina');
     }
+    // OAuth 経路でも個人組織を同時に作る (§7.3.1)
+    expect(Object.values(organizationStore)).toHaveLength(1);
+    expect(organizationMemberStore[0]).toMatchObject({ orgRole: 'owner', isPrimary: true });
     expect(oauthStore).toHaveLength(1);
     expect(oauthStore[0]).toMatchObject({
       provider: 'google',
@@ -385,6 +439,22 @@ describe('completeSignup', () => {
       resourceId: res.id,
       result: 'success',
     });
+  });
+
+  it('課金の契約主体となる個人組織をオーナー付きで同時に作る', async () => {
+    const res = await completeSignup(input);
+
+    const organizations = Object.values(organizationStore);
+    expect(organizations).toHaveLength(1);
+    expect(organizations[0]).toMatchObject({ name: 'Kawazu の組織', ownerUserId: res.id });
+    expect(organizationMemberStore).toEqual([
+      {
+        organizationId: organizations[0]?.id,
+        userId: res.id,
+        orgRole: 'owner',
+        isPrimary: true,
+      },
+    ]);
   });
 
   it('throws 409 ALREADY_COMPLETED when a users row already exists', async () => {

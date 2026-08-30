@@ -39,14 +39,66 @@ model User {
   updatedAt         DateTime  @default(now()) @map("updated_at") @db.Timestamptz
   deletedAt         DateTime? @map("deleted_at") @db.Timestamptz
 
-  oauthIdentities OAuthIdentity[]
-  auditLogs       AuditLog[]
-  projectsCreated Project[]       @relation("ProjectsCreatedBy")
-  memberships     ProjectMember[]
-  ballEvents      BallEvent[]
+  oauthIdentities    OAuthIdentity[]
+  auditLogs          AuditLog[]
+  projectsCreated    Project[]            @relation("ProjectsCreatedBy")
+  memberships        ProjectMember[]
+  ballEvents         BallEvent[]
+  organizationsOwned Organization[]       @relation("OrganizationOwner")
+  orgMemberships     OrganizationMember[]
 
   @@index([authUserId], map: "idx_users_auth_user_id")
   @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// organizations — 組織 (課金の契約主体)
+// 設計書 §2.4.10 / §7.3.1
+//
+// プランは本テーブルに持たせない。契約情報の唯一の正は BillingSubscription。
+// -----------------------------------------------------------------------------
+model Organization {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  name        String
+  ownerUserId String    @unique(map: "uq_orgs_owner_user_id") @map("owner_user_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
+
+  owner    User                 @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, map: "fk_orgs_owner_user_id")
+  members  OrganizationMember[]
+  projects Project[]
+
+  @@map("organizations")
+}
+
+// -----------------------------------------------------------------------------
+// organization_members — 会員アカウント (座席)。課金の人数カウント対象
+// 設計書 §2.4.11
+//
+// ProjectMember との違い:
+//   OrganizationMember … userId 必須 / 座席を消費する / 課金操作の権限
+//   ProjectMember      … userId 任意 / 座席を消費しない / 業務操作の権限
+// -----------------------------------------------------------------------------
+model OrganizationMember {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  /// 'owner' | 'admin' | 'member' (CHECK 制約)。課金操作の可否を決める
+  orgRole        String    @default("member") @map("org_role")
+  /// 既定の所属組織か。プロジェクト作成先の決定に使う
+  isPrimary      Boolean   @default(false) @map("is_primary")
+  joinedAt       DateTime  @default(now()) @map("joined_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, map: "fk_om_organization_id")
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_om_user_id")
+
+  @@unique([organizationId, userId], map: "uq_om_org_user")
+  @@index([userId], map: "idx_om_user")
+  @@map("organization_members")
 }
 
 // -----------------------------------------------------------------------------
@@ -55,7 +107,8 @@ model User {
 // -----------------------------------------------------------------------------
 model Project {
   id                      String    @id @default(uuid(7)) @db.Uuid
-  organizationId          String?   @map("organization_id") @db.Uuid
+  /// 所属組織。プロジェクト数上限の判定単位 (Phase 0.5 で NOT NULL 化)
+  organizationId          String    @map("organization_id") @db.Uuid
   name                    String
   /// クライアント名 (#147)。表示専用で、組織テーブルとは紐づかない
   clientName              String?   @map("client_name")
@@ -69,9 +122,12 @@ model Project {
   closedAt                DateTime? @map("closed_at") @db.Timestamptz
   archivedAt              DateTime? @map("archived_at") @db.Timestamptz
   deletedAt               DateTime? @map("deleted_at") @db.Timestamptz
+  /// 上限超過時に「維持する」と選択された日時。未指定なら作成が古い順に維持される (§7.11)
+  retainedAt              DateTime? @map("retained_at") @db.Timestamptz
   createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt               DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict, map: "fk_projects_organization_id")
   creator         User            @relation("ProjectsCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict, map: "fk_projects_created_by")
   progressManager ProjectMember?  @relation("ProjectProgressManager", fields: [progressManagerMemberId], references: [id], onDelete: Restrict, map: "fk_projects_progress_manager_member_id")
   members         ProjectMember[]

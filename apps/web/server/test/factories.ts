@@ -12,15 +12,21 @@ import { signTestJwt } from './auth.js';
 let seq = 0;
 const uniq = () => `${Date.now().toString(36)}-${seq++}`;
 
+/**
+ * ユーザーを作る。本番の登録フロー (complete-signup / OAuth sync) と同じく
+ * 個人組織 + オーナーの会員行も同時に作る (§7.3.1)。
+ * これを作らないと projects.organization_id (NOT NULL) を満たせない。
+ */
 export async function createUser(overrides: Partial<{
   authUserId: string;
   email: string;
   fullName: string;
   displayName: string;
   primaryAuthMethod: string;
+  withOrganization: boolean;
 }> = {}) {
   const tag = uniq();
-  return prisma.user.create({
+  const user = await prisma.user.create({
     data: {
       authUserId: overrides.authUserId ?? randomUUID(),
       email: overrides.email ?? `user-${tag}@example.test`,
@@ -29,23 +35,83 @@ export async function createUser(overrides: Partial<{
       primaryAuthMethod: overrides.primaryAuthMethod ?? 'password',
     },
   });
+  if (overrides.withOrganization !== false) {
+    await createOrganization({ ownerUserId: user.id, name: `${user.displayName} の組織` });
+  }
+  return user;
 }
 
+/** 組織 + オーナーの会員行を作る。 */
+export async function createOrganization(args: { ownerUserId: string; name?: string }) {
+  const organization = await prisma.organization.create({
+    data: {
+      name: args.name ?? `Org ${uniq()}`,
+      ownerUserId: args.ownerUserId,
+    },
+  });
+  await prisma.organizationMember.create({
+    data: {
+      organizationId: organization.id,
+      userId: args.ownerUserId,
+      orgRole: 'owner',
+      isPrimary: true,
+    },
+  });
+  return organization;
+}
+
+/** 既存組織に会員 (座席) を追加する。 */
+export async function createOrgMember(args: {
+  organizationId: string;
+  userId: string;
+  orgRole?: 'owner' | 'admin' | 'member';
+  isPrimary?: boolean;
+}) {
+  return prisma.organizationMember.create({
+    data: {
+      organizationId: args.organizationId,
+      userId: args.userId,
+      orgRole: args.orgRole ?? 'member',
+      isPrimary: args.isPrimary ?? false,
+    },
+  });
+}
+
+/** ユーザーの既定の所属組織 ID を引く。 */
+export async function primaryOrganizationId(userId: string): Promise<string> {
+  const row = await prisma.organizationMember.findFirst({
+    where: { userId, deletedAt: null },
+    orderBy: [{ isPrimary: 'desc' }, { joinedAt: 'asc' }],
+    select: { organizationId: true },
+  });
+  if (!row) throw new Error(`no organization for user ${userId}`);
+  return row.organizationId;
+}
+
+/**
+ * プロジェクトを作る。organizationId 未指定なら作成者の既定の所属組織を使う
+ * (projects.organization_id は NOT NULL)。
+ */
 export async function createProject(args: {
   createdBy: string;
+  organizationId?: string;
   name?: string;
   startDate?: Date;
   endDate?: Date;
   status?: string;
   archivedAt?: Date | null;
+  retainedAt?: Date | null;
 }) {
+  const organizationId = args.organizationId ?? (await primaryOrganizationId(args.createdBy));
   return prisma.project.create({
     data: {
+      organizationId,
       name: args.name ?? `Project ${uniq()}`,
       startDate: args.startDate ?? new Date('2026-01-01'),
       endDate: args.endDate ?? new Date('2026-12-31'),
       status: args.status ?? 'active',
       archivedAt: args.archivedAt ?? null,
+      retainedAt: args.retainedAt ?? null,
       createdBy: args.createdBy,
     },
   });

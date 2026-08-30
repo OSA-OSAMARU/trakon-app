@@ -179,6 +179,12 @@ const prismaMock = {
   plan: {
     findMany: vi.fn(async () => []),
   },
+  // 作成者の既定の所属組織を解決する (projects.organization_id は NOT NULL)。
+  organizationMember: {
+    findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
+      userStore[where.userId] ? { organizationId: `org-${where.userId}`, orgRole: 'owner' } : null,
+    ),
+  },
   // コールバック形式 ($transaction(fn)) のみ service は使用。
   $transaction: vi.fn(async (arg: unknown) => {
     if (Array.isArray(arg)) return Promise.all(arg);
