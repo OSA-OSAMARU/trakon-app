@@ -10,6 +10,7 @@ import { healthRoute } from './routes/v1/healthz.js';
 import { invitationsRoute } from './routes/v1/invitations.js';
 import { projectsRoute } from './routes/v1/projects.js';
 import { shareRoute } from './routes/v1/share.js';
+import { stripeWebhookRoute } from './routes/v1/stripeWebhook.js';
 
 // Sentry の初期化 (SENTRY_DSN 未設定なら no-op)
 try {
@@ -23,6 +24,10 @@ export function createApp() {
 
   app.use('*', logger());
   app.use('*', secureHeaders());
+
+  // Stripe Webhook は認証なし・署名検証で認可する (設計書 §3.2.4c)。
+  // 生ボディが必要なため、このルートでは JSON パースを先に行わない。
+  app.route('/api/v1/stripe', stripeWebhookRoute);
 
   app.route('/api/v1', healthRoute);
   app.route('/api/v1/auth', authRoute);

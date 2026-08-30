@@ -47,6 +47,7 @@ model User {
   organizationsOwned Organization[]       @relation("OrganizationOwner")
   orgMemberships     OrganizationMember[]
   invitationsSent    Invitation[]         @relation("InvitationInvitedBy")
+  trialClaims        BillingTrialClaim[]
 
   @@index([authUserId], map: "idx_users_auth_user_id")
   @@map("users")
@@ -66,10 +67,13 @@ model Organization {
   updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
 
-  owner      User                 @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, map: "fk_orgs_owner_user_id")
-  members    OrganizationMember[]
-  projects   Project[]
-  Invitation Invitation[]
+  owner               User                 @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, map: "fk_orgs_owner_user_id")
+  members             OrganizationMember[]
+  projects            Project[]
+  Invitation          Invitation[]
+  BillingSubscription BillingSubscription?
+  StripeEvent         StripeEvent[]
+  BillingTrialClaim   BillingTrialClaim[]
 
   @@map("organizations")
 }
@@ -404,4 +408,119 @@ model ShareLink {
 
   @@index([projectId], map: "idx_sl_project_id")
   @@map("share_links")
+}
+
+// -----------------------------------------------------------------------------
+// billing_subscriptions — 契約・課金状態 (組織と 1:1)
+// 設計書 §2.4.12 / §7.6
+//
+// Stripe Webhook を正として更新し、これを唯一の権限判定材料とする。
+// カード情報はブランド名と下 4 桁のみ (識別子 fingerprint は保存しない)。
+// -----------------------------------------------------------------------------
+model BillingSubscription {
+  id             String @id @default(uuid(7)) @db.Uuid
+  organizationId String @unique(map: "uq_bs_organization_id") @map("organization_id") @db.Uuid
+
+  /// 'free' | 'personal' | 'team' | 'enterprise' (CHECK 制約)
+  planCode String @default("free") @map("plan_code")
+  /// 'none' | 'trialing' | 'active' | 'past_due' | 'unpaid' | 'canceled'
+  /// | 'incomplete' | 'incomplete_expired' | 'paused' (CHECK 制約)
+  status   String @default("none")
+
+  stripeCustomerId     String? @unique(map: "uq_bs_stripe_customer_id") @map("stripe_customer_id")
+  stripeSubscriptionId String? @unique(map: "uq_bs_stripe_subscription_id") @map("stripe_subscription_id")
+  stripePriceId        String? @map("stripe_price_id")
+
+  currentPeriodStart DateTime? @map("current_period_start") @db.Timestamptz
+  currentPeriodEnd   DateTime? @map("current_period_end") @db.Timestamptz
+  cancelAtPeriodEnd  Boolean   @default(false) @map("cancel_at_period_end")
+  canceledAt         DateTime? @map("canceled_at") @db.Timestamptz
+
+  trialStart  DateTime? @map("trial_start") @db.Timestamptz
+  trialEnd    DateTime? @map("trial_end") @db.Timestamptz
+  trialUsedAt DateTime? @map("trial_used_at") @db.Timestamptz
+
+  latestInvoiceId     String?   @map("latest_invoice_id")
+  lastPaymentFailedAt DateTime? @map("last_payment_failed_at") @db.Timestamptz
+  /// 支払猶予期限 (初回失敗 + 7日)。再試行のたびに延ばさない
+  gracePeriodEndsAt   DateTime? @map("grace_period_ends_at") @db.Timestamptz
+
+  /// 保留中のプラン変更。決済成功を確認するまで planCode は昇格させない
+  pendingPlanCode        String?   @map("pending_plan_code")
+  pendingPlanEffectiveAt DateTime? @map("pending_plan_effective_at") @db.Timestamptz
+
+  /// 表示専用。カード番号・識別子は保持しない
+  defaultPaymentMethodBrand String? @map("default_payment_method_brand")
+  defaultPaymentMethodLast4 String? @map("default_payment_method_last4")
+
+  lastStripeEventId String?   @map("last_stripe_event_id")
+  lastStripeEventAt DateTime? @map("last_stripe_event_at") @db.Timestamptz
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, map: "fk_bs_organization_id")
+
+  @@index([status], map: "idx_bs_status")
+  @@map("billing_subscriptions")
+}
+
+// -----------------------------------------------------------------------------
+// stripe_events — Webhook 受信台帳 (冪等性・順序逆転耐性)
+// 設計書 §2.4.13 / §7.5.3
+//
+// audit_logs と違い append-only トリガは付けない (processed_at を後から更新する)。
+// -----------------------------------------------------------------------------
+model StripeEvent {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  stripeEventId  String    @unique(map: "uq_se_event_id") @map("stripe_event_id")
+  eventType      String    @map("event_type")
+  /// Stripe 側の発生時刻。秒精度なので順序判定には使わない
+  eventCreatedAt DateTime  @map("event_created_at") @db.Timestamptz
+  receivedAt     DateTime  @default(now()) @map("received_at") @db.Timestamptz
+  processedAt    DateTime? @map("processed_at") @db.Timestamptz
+  /// 'received' | 'processed' | 'skipped' | 'failed' (CHECK 制約)
+  status         String    @default("received")
+  organizationId String?   @map("organization_id") @db.Uuid
+  error          String?
+  payload        Json      @default("{}")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull, map: "fk_se_organization_id")
+
+  @@index([eventType, eventCreatedAt(sort: Desc)], map: "idx_se_type_created")
+  @@map("stripe_events")
+}
+
+// -----------------------------------------------------------------------------
+// billing_trial_claims — トライアル利用履歴 (重複防止)
+// 設計書 §2.4.14 / §7.9.2
+//
+// カードの識別子 (fingerprint) は保存しない。法人カードの共有による誤判定が
+// あり得るため、識別子のみを根拠に自動拒否してはならない。
+// 解除は行を削除せず released_* を埋める (運用手順は docs/operations.md)。
+// -----------------------------------------------------------------------------
+model BillingTrialClaim {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  organizationId String? @map("organization_id") @db.Uuid
+  userId         String? @map("user_id") @db.Uuid
+
+  emailNormalized String @map("email_normalized")
+  /// ドメイン一致は記録のみ。自動拒否には使わない
+  emailDomain     String @map("email_domain")
+
+  stripeCustomerId     String? @map("stripe_customer_id")
+  stripeSubscriptionId String? @map("stripe_subscription_id")
+
+  claimedAt      DateTime  @default(now()) @map("claimed_at") @db.Timestamptz
+  releasedAt     DateTime? @map("released_at") @db.Timestamptz
+  releasedReason String?   @map("released_reason")
+  releasedBy     String?   @map("released_by")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull, map: "fk_btc_organization_id")
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull, map: "fk_btc_user_id")
+
+  @@index([emailDomain], map: "idx_btc_domain")
+  @@index([stripeCustomerId], map: "idx_btc_customer")
+  @@map("billing_trial_claims")
 }

@@ -55,6 +55,7 @@
     "react-router-dom": "^6.28.0",
     "resend": "^4.0.1",
     "sonner": "^1.7.0",
+    "stripe": "^22.6.0",
     "tailwind-merge": "^2.5.4",
     "uuidv7": "^1.0.2",
     "ws": "^8.21.0",

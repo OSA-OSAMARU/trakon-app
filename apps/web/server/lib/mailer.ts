@@ -17,8 +17,34 @@ export type InvitationEmail = {
   expiresAt: Date;
 };
 
+/** トライアル終了間近の通知 (§7.10 / PRD 付記) */
+export type TrialWillEndEmail = {
+  to: string;
+  organizationName: string;
+  trialEnd: Date | null;
+};
+
+/** 支払い失敗・追加認証要求の通知 */
+export type PaymentFailedEmail = {
+  to: string;
+  organizationName: string;
+  /** 猶予期限。追加認証要求のときは null */
+  graceEndsAt: Date | null;
+  /** 3D セキュア等の追加認証が必要なケース */
+  actionRequired: boolean;
+};
+
+/** 解約完了の通知 */
+export type SubscriptionCanceledEmail = {
+  to: string;
+  organizationName: string;
+};
+
 export type Mailer = {
   sendInvitation(input: InvitationEmail): Promise<void>;
+  sendTrialWillEnd(input: TrialWillEndEmail): Promise<void>;
+  sendPaymentFailed(input: PaymentFailedEmail): Promise<void>;
+  sendSubscriptionCanceled(input: SubscriptionCanceledEmail): Promise<void>;
 };
 
 // -----------------------------------------------------------------------------
@@ -30,6 +56,24 @@ function createDummyMailer(): Mailer {
       // eslint-disable-next-line no-console
       console.log(
         `[trakon][mailer/dummy] invitation -> ${input.to} | project="${input.projectName}" inviter="${input.inviterName}" url=${input.acceptUrl} expires=${input.expiresAt.toISOString()}`,
+      );
+    },
+    async sendTrialWillEnd(input) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[trakon][mailer/dummy] trial_will_end -> ${input.to} | org="${input.organizationName}" trialEnd=${input.trialEnd?.toISOString() ?? '-'}`,
+      );
+    },
+    async sendPaymentFailed(input) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[trakon][mailer/dummy] payment_failed -> ${input.to} | org="${input.organizationName}" grace=${input.graceEndsAt?.toISOString() ?? '-'} actionRequired=${input.actionRequired}`,
+      );
+    },
+    async sendSubscriptionCanceled(input) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[trakon][mailer/dummy] subscription_canceled -> ${input.to} | org="${input.organizationName}"`,
       );
     },
   };
@@ -71,7 +115,93 @@ function createResendMailer(apiKey: string, fromEmail: string): Mailer {
         );
       }
     },
+
+    // 課金系の通知 (§7.10)。決済情報は本文に含めない (PRD SR-BILL-05)。
+    async sendTrialWillEnd(input) {
+      const deadline = input.trialEnd
+        ? input.trialEnd.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+        : '間もなく';
+      await sendSimple(client, fromEmail, {
+        to: input.to,
+        subject: '無料トライアル終了のお知らせ | TRAKON',
+        heading: '無料トライアルが終了します',
+        lines: [
+          `${escapeHtml(input.organizationName)} の無料トライアルは ${escapeHtml(deadline)} に終了します。`,
+          '終了後は登録済みのお支払い方法へ自動で請求されます。',
+          '継続しない場合は、終了時刻までに解約してください。',
+        ],
+      });
+    },
+
+    async sendPaymentFailed(input) {
+      const deadline = input.graceEndsAt
+        ? input.graceEndsAt.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
+        : null;
+      await sendSimple(client, fromEmail, {
+        to: input.to,
+        subject: input.actionRequired
+          ? 'お支払いに追加の確認が必要です | TRAKON'
+          : 'お支払いを確認できませんでした | TRAKON',
+        heading: input.actionRequired
+          ? 'お支払いに追加の確認が必要です'
+          : 'お支払いを確認できませんでした',
+        lines: [
+          `${escapeHtml(input.organizationName)} のお支払い手続きが完了していません。`,
+          ...(input.actionRequired
+            ? ['カード会社の追加認証が必要です。お支払い方法の画面から手続きしてください。']
+            : []),
+          ...(deadline
+            ? [`${escapeHtml(deadline)} までにお支払い方法を更新してください。それまでは通常どおりご利用いただけます。`]
+            : []),
+          '期限を過ぎると編集を停止し、閲覧のみとなります。データは削除されません。',
+        ],
+      });
+    },
+
+    async sendSubscriptionCanceled(input) {
+      await sendSimple(client, fromEmail, {
+        to: input.to,
+        subject: '解約手続きが完了しました | TRAKON',
+        heading: '解約手続きが完了しました',
+        lines: [
+          `${escapeHtml(input.organizationName)} の契約は解約されました。`,
+          'ご利用いただきありがとうございました。',
+          'プロジェクトやメンバーのデータは削除していません。再契約すればそのまま続きから利用できます。',
+        ],
+      });
+    },
   };
+}
+
+/** 課金系通知の共通レンダラ。招待メールと同じ素朴な HTML/text 構成にそろえる。 */
+async function sendSimple(
+  client: Resend,
+  fromEmail: string,
+  input: { to: string; subject: string; heading: string; lines: string[] },
+): Promise<void> {
+  const html = `<!doctype html>
+<html lang="ja"><body style="font-family:sans-serif;line-height:1.7;color:#1a1a1a">
+<h1 style="font-size:18px">${escapeHtml(input.heading)}</h1>
+${input.lines.map((l) => `<p>${l}</p>`).join('\n')}
+<hr style="border:none;border-top:1px solid #eee;margin:24px 0" />
+<p style="font-size:12px;color:#888">TRAKON — Keep the ball moving.</p>
+</body></html>`;
+  const text = [input.heading, '', ...input.lines.map(stripTags), '', 'TRAKON'].join('\n');
+
+  const { error } = await client.emails.send({
+    from: fromEmail,
+    to: input.to,
+    subject: input.subject,
+    html,
+    text,
+  });
+  if (error) {
+    throw new Error(`[trakon][mailer/resend] send failed: ${error.message ?? 'unknown'}`);
+  }
+}
+
+function stripTags(html: string): string {
+  return html.replace(/<[^>]*>/g, '');
 }
 
 function renderInvitationText(input: {

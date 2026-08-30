@@ -24,12 +24,43 @@ const envSchema = z
     RESEND_FROM_EMAIL: z.string().optional(),
     /** Sentry エラー監視 (未設定なら no-op) */
     SENTRY_DSN: z.string().optional(),
+    // Stripe (Phase 0.5)。テストと本番で値が異なるため env のみで扱う (設計書 §6.5.3)。
+    // すべて optional にしておかないと、Stripe を使わない既存テストが env 検証で落ちる。
+    // prod でのみ必須にするのは下の superRefine で担保する。
+    STRIPE_SECRET_KEY: z.string().min(10).optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().min(10).optional(),
+    STRIPE_PERSONAL_MONTHLY_PRICE_ID: z.string().min(3).optional(),
+    STRIPE_TEAM_MONTHLY_PRICE_ID: z.string().min(3).optional(),
+    STRIPE_JP_TAX_RATE_ID: z.string().min(3).optional(),
+    STRIPE_PORTAL_CONFIGURATION_ID: z.string().min(3).optional(),
     SENTRY_ENVIRONMENT: z.string().optional(),
   })
   .refine((d) => Boolean(d.SUPABASE_SECRET_KEY ?? d.SUPABASE_SERVICE_ROLE_KEY), {
     message:
       'SUPABASE_SECRET_KEY (推奨, sb_secret_*) または SUPABASE_SERVICE_ROLE_KEY (deprecated) のいずれかが必要',
     path: ['SUPABASE_SECRET_KEY'],
+  })
+  // 本番のみ Stripe 設定を必須にする (PRD SR-BILL-04)。
+  // dev / test では未設定を許し、実行時に getStripe() が 503 を返す。
+  .superRefine((d, ctx) => {
+    if (d.APP_ENV !== 'prod') return;
+    const required = [
+      'STRIPE_SECRET_KEY',
+      'STRIPE_WEBHOOK_SECRET',
+      'STRIPE_PERSONAL_MONTHLY_PRICE_ID',
+      'STRIPE_TEAM_MONTHLY_PRICE_ID',
+      'STRIPE_JP_TAX_RATE_ID',
+      'STRIPE_PORTAL_CONFIGURATION_ID',
+    ] as const;
+    for (const key of required) {
+      if (!d[key]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${key} は本番環境では必須`,
+          path: [key],
+        });
+      }
+    }
   })
   .transform((d) => ({
     ...d,
