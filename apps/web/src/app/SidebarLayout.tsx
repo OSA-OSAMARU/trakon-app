@@ -7,6 +7,9 @@ import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import { ProfileModal } from '@/features/auth/ProfileModal';
 import { projectsApi, projectsQueryKey } from '@/features/projects/api';
+import { useEntitlement } from '@/features/billing/useEntitlement';
+import { BillingStatusBanner } from '@/features/billing/BillingStatusBanner';
+import { BILLING_PLANS } from '@trakon/shared';
 
 /**
  * ログイン後画面の共通レイアウト。
@@ -23,6 +26,13 @@ export function SidebarLayout() {
     queryFn: () => projectsApi.list(),
   });
 
+  // サイドバーのプランバッジは契約状態から作る (ハードコードしない、§4.5)
+  const { subscription } = useEntitlement();
+  const planBadge =
+    subscription && subscription.planCode !== 'free'
+      ? { label: BILLING_PLANS[subscription.planCode].label, variant: 'brand' as const }
+      : null;
+
   const signOut = async () => {
     await supabase.auth.signOut();
     navigate('/login', { replace: true });
@@ -34,9 +44,12 @@ export function SidebarLayout() {
         projects={projectsQuery.data ?? []}
         user={user}
         onOpenProfile={() => setProfileOpen(true)}
+        planBadge={planBadge}
       />
 
       <main className="h-full flex-1 overflow-auto bg-content">
+        {/* 課金起因の状態は隠さずバナーで示し、復旧導線を出す (§4.5.2) */}
+        <BillingStatusBanner />
         <Outlet />
       </main>
 

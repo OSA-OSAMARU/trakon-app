@@ -1,4 +1,5 @@
 import { canProjectRole } from '@trakon/shared';
+import { useEntitlement } from '@/features/billing/useEntitlement';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -65,6 +67,11 @@ export function ProjectListPage() {
   const [keyword, setKeyword] = useState('');
   const [sort, setSort] = useState<Sort>('updated');
 
+  // プランの上限。到達していれば作成ボタンを無効化し、理由と復旧導線を出す (§4.5.2)
+  const { entitlement, frozenProjectIds } = useEntitlement();
+  const canCreateProject = entitlement?.canCreateProject ?? true;
+  const limitReached = entitlement !== null && !entitlement.canCreateProject;
+
   const { data, isLoading, error } = useQuery({
     queryKey: archived ? projectsQueryKey.archived : projectsQueryKey.all,
     queryFn: () => projectsApi.list({ archived }),
@@ -102,17 +109,38 @@ export function ProjectListPage() {
         title="プロジェクト一覧"
         description="進行中のプロジェクトと遅延状況を確認します"
         actions={
-          <Button size="lg" asChild>
-            <Link to="/projects/new">
+          canCreateProject ? (
+            <Button size="lg" asChild>
+              <Link to="/projects/new">
+                <Plus />
+                プロジェクトを作成
+              </Link>
+            </Button>
+          ) : (
+            // 課金起因の制限は隠さず無効化して理由を出す (§4.5.2)
+            <Button size="lg" disabled>
               <Plus />
               プロジェクトを作成
-            </Link>
-          </Button>
+            </Button>
+          )
         }
       />
 
       <div className="min-h-0 flex-1 overflow-auto px-12 py-8">
         <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6">
+          {limitReached && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-warning-subtle px-4 py-3 text-sm">
+              <span>{entitlement?.message}</span>
+              <span className="flex gap-3">
+                <Link to="/settings/billing" className="font-medium underline underline-offset-2">
+                  プランを見る
+                </Link>
+                <span className="text-text-tertiary">
+                  アーカイブすると枠が空きます
+                </span>
+              </span>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-6">
             <div className="relative w-90">
               <Search
@@ -163,7 +191,7 @@ export function ProjectListPage() {
           ) : rows.length === 0 ? (
             <EmptyState archived={archived} filtered={keyword.trim() !== ''} />
           ) : (
-            <ProjectTable rows={rows} />
+            <ProjectTable rows={rows} frozenProjectIds={frozenProjectIds} />
           )}
         </div>
       </div>
@@ -172,7 +200,14 @@ export function ProjectListPage() {
 }
 
 /** テーブル本体 (Figma node 84:78)。行全体がスケジュールへのリンクになる。 */
-export function ProjectTable({ rows }: { rows: ProjectSummary[] }) {
+export function ProjectTable({
+  rows,
+  frozenProjectIds = [],
+}: {
+  rows: ProjectSummary[];
+  /** プラン上限超過で閲覧のみになっているプロジェクト (§7.11) */
+  frozenProjectIds?: string[];
+}) {
   return (
     <div className="border-border overflow-hidden rounded-2xl border bg-background">
       <div className="border-border bg-surface-subtle text-text-secondary grid h-13 grid-cols-[72px_1fr_200px_180px_56px] items-center border-b text-xs font-medium">
@@ -185,7 +220,7 @@ export function ProjectTable({ rows }: { rows: ProjectSummary[] }) {
       <ul>
         {rows.map((p) => (
           <li key={p.id}>
-            <ProjectRow project={p} />
+            <ProjectRow project={p} frozen={frozenProjectIds.includes(p.id)} />
           </li>
         ))}
       </ul>
@@ -193,7 +228,14 @@ export function ProjectTable({ rows }: { rows: ProjectSummary[] }) {
   );
 }
 
-function ProjectRow({ project: p }: { project: ProjectSummary }) {
+function ProjectRow({
+  project: p,
+  frozen,
+}: {
+  project: ProjectSummary;
+  /** プラン上限超過で閲覧のみになっているか (削除はされていない、§7.11) */
+  frozen?: boolean;
+}) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const isArchived = p.archivedAt !== null;
@@ -224,7 +266,14 @@ function ProjectRow({ project: p }: { project: ProjectSummary }) {
         <DelayStatusIcon overdueCount={p.overdueCount} />
       </span>
       <span className="flex min-w-0 flex-col gap-1 pr-4">
-        <span className="truncate text-sm font-bold">{p.name}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-bold">{p.name}</span>
+          {frozen && (
+            <Badge variant="secondary" size="sm" className="shrink-0">
+              閲覧のみ
+            </Badge>
+          )}
+        </span>
         <span className="text-text-secondary truncate text-xs">{p.clientName ?? '—'}</span>
       </span>
       <span className="text-text-secondary text-body">

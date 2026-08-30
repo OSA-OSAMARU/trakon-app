@@ -40,11 +40,14 @@ export function AppSidebar({
   projects,
   user,
   onOpenProfile,
+  planBadge,
 }: {
   projects: SidebarProject[];
   /** 読込中・未ログインは null（フッターを Skeleton にする） */
   user: SidebarUser | null;
   onOpenProfile: () => void;
+  /** プランバッジ。契約状態から注入する。null なら非表示 (Free) */
+  planBadge?: { label: string; variant: 'brand' | 'secondary' } | null;
 }) {
   return (
     <aside className="border-sidebar-border bg-sidebar text-sidebar-foreground flex h-full w-56 shrink-0 flex-col border-r">
@@ -122,9 +125,11 @@ export function AppSidebar({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-body font-medium">{user.displayName}</span>
               <span className="text-text-tertiary block truncate text-mini">アカウント設定</span>
-              <Badge variant="brand" size="sm" className="mt-1 font-bold">
-                PRO
-              </Badge>
+              {planBadge && (
+                <Badge variant={planBadge.variant} size="sm" className="mt-1 font-bold">
+                  {planBadge.label}
+                </Badge>
+              )}
             </span>
             <MoreHorizontal className="text-text-tertiary size-[18px] shrink-0" aria-hidden />
           </button>
