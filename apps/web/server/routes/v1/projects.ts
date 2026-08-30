@@ -34,6 +34,7 @@ import { listProjectPlans } from '../../services/plans.js';
 import { listProjectPlansQuerySchema } from '../../schemas/projects.js';
 import { ApiException } from '../../lib/errors.js';
 import { membersRoute } from './members.js';
+import { projectInvitationsRoute } from './projectInvitations.js';
 import { plansRoute } from './plans.js';
 import { shareLinksRoute } from './shareLinks.js';
 
@@ -197,6 +198,8 @@ export const projectsRoute = new Hono()
 
   // ----------------------------- /projects/:projectId/members -----------------------------
   .route('/:projectId/members', membersRoute)
+  // 招待 (ロール指定つき、§7.12.5)
+  .route('/:projectId/invitations', projectInvitationsRoute)
 
   // ----------------------------- /projects/:projectId/items/:itemId/plans -----------------------------
   .route('/:projectId/items/:itemId/plans', plansRoute)

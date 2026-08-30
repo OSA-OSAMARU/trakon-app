@@ -155,6 +155,10 @@ export function getMailer(): Mailer {
 }
 
 /** テスト用: モック差し込みポイント */
-export function __setMailerForTest(m: Mailer): void {
-  cached = m;
+/**
+ * テスト用の差し込み口。Mailer の一部メソッドだけを渡せるよう Partial を受け、
+ * 残りは dummy で埋める (メソッド追加のたびに既存テストが壊れないようにするため)。
+ */
+export function __setMailerForTest(m: Partial<Mailer>): void {
+  cached = { ...createDummyMailer(), ...m };
 }

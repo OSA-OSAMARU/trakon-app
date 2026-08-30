@@ -1,7 +1,9 @@
 import { prisma } from '@trakon/db';
+import type { ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import { hashToken } from '../lib/tokens.js';
+import { ensureOrganizationMember } from './organizations.js';
 
 export type InvitationVerifyDTO = {
   project: { id: string; name: string };
@@ -17,7 +19,7 @@ export type InvitationVerifyDTO = {
 
 export type InvitationAcceptDTO = {
   project: { id: string; name: string };
-  member: { id: string; memberType: 'client' | 'production' };
+  member: { id: string; memberType: 'client' | 'production'; roleType: ProjectRole };
 };
 
 /**
@@ -85,23 +87,38 @@ export async function acceptInvitation(input: {
     );
   }
 
+  // TODO(上限判定): 招待作成時に空きがあっても受諾までに満席になりうるため、
+  // ここで座席上限を再チェックする (§7.11.1)。判定は課金テーブル導入後に差し込む。
+
   const result = await prisma.$transaction(async (tx) => {
     const updatedMember = await tx.projectMember.update({
       where: { id: inv.invitedMember.id },
-      data: { userId: user.id },
+      // 招待時に指定されたロールを付与する (FR-ROLE-03)
+      data: { userId: user.id, roleType: inv.roleType },
     });
     await tx.invitation.update({
       where: { id: inv.id },
       data: { acceptedAt: new Date() },
     });
+    // 組織の会員アカウントとして追加する (= 座席を 1 つ消費する)
+    await ensureOrganizationMember(tx, {
+      organizationId: inv.organizationId,
+      userId: user.id,
+      orgRole: 'member',
+    });
     await tx.auditLog.create({
       data: {
         actorUserId: user.id,
-        action: 'login',
+        action: 'org_member_added',
         resourceType: 'invitation',
         resourceId: inv.id,
         result: 'success',
-        extra: { projectId: inv.project.id, memberId: updatedMember.id },
+        extra: {
+          projectId: inv.project.id,
+          memberId: updatedMember.id,
+          organizationId: inv.organizationId,
+          roleType: inv.roleType,
+        },
       },
     });
     return updatedMember;
@@ -109,9 +126,15 @@ export async function acceptInvitation(input: {
 
   return {
     project: { id: inv.project.id, name: inv.project.name },
-    member: { id: result.id, memberType: result.memberType as 'client' | 'production' },
+    member: {
+      id: result.id,
+      memberType: result.memberType as 'client' | 'production',
+      roleType: result.roleType as ProjectRole,
+    },
   };
 }
+
+
 
 async function findActiveInvitation(rawToken: string) {
   const tokenHash = hashToken(rawToken);
