@@ -407,7 +407,9 @@ export function BallDetailModal({
                   onValueChange={setTab}
                   className="-mx-6 flex min-h-0 flex-1 flex-col"
                 >
-                  <TabsList className="border-border h-auto w-full justify-start gap-6 rounded-none border-b bg-transparent px-6 p-0">
+                  {/* 左右の余白はヘッダー・本文と同じ 24px (Sheet の p-6) に揃える。
+                      p-0 を後ろに置くと px-6 が打ち消されるので py-0 で上下だけ落とす。 */}
+                  <TabsList className="border-border h-auto w-full justify-start gap-6 rounded-none border-b bg-transparent px-6 py-0">
                     <DrawerTab value="overview">概要</DrawerTab>
                     <DrawerTab value="history">履歴 {events.length}</DrawerTab>
                   </TabsList>
