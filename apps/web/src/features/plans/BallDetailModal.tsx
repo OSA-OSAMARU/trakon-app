@@ -676,12 +676,20 @@ function DetailRow({ className, children }: { className?: string; children: Reac
   return <div className={cn(DETAIL_ROW, className)}>{children}</div>;
 }
 
-/** サイドモーダルのタブ (Figma node 37:25)。下線だけのシンプルな見た目にする。 */
+/**
+ * サイドモーダルのタブ (Figma node 37:25)。下線だけのシンプルな見た目にする。
+ *
+ * TabsTrigger の基底は全辺 1px の枠を持つため、色は下辺だけに当てる
+ * (border-foreground だと 4 辺が着色されて選択中のタブが黒枠で囲まれる)。
+ * 下線は -mb-px で TabsList の罫線に重ね、太さ・位置とも罫線に揃える
+ * (Figma も 1px の全幅罫線と同じ位置に選択中の線を置いている)。
+ * 選択中は文字色を変えず太字だけで示す。
+ */
 function DrawerTab({ value, children }: { value: string; children: React.ReactNode }) {
   return (
     <TabsTrigger
       value={value}
-      className="data-[state=active]:border-foreground data-[state=active]:text-foreground text-text-secondary h-12 flex-none rounded-none border-b-2 border-transparent px-0 text-body font-medium data-[state=active]:bg-transparent data-[state=active]:font-bold"
+      className="text-text-secondary data-[state=active]:border-b-text-secondary h-12 flex-none rounded-none border-0 border-b border-b-transparent px-0 text-body font-medium -mb-px data-[state=active]:bg-transparent data-[state=active]:font-bold"
     >
       {children}
     </TabsTrigger>

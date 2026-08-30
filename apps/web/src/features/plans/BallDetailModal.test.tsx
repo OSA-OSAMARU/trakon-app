@@ -254,6 +254,29 @@ describe('BallDetailModal (integration)', () => {
     expect(list.firstElementChild!.className).toContain('px-4 py-3');
   });
 
+  it('タブは選択中も枠を持たず、下線を罫線と同じ太さ・位置に重ねる', async () => {
+    setupReads({
+      plan: makePlan({ ballState: 'tossed' }),
+      events: [makeEvent()],
+    });
+    renderModal();
+
+    const overview = await screen.findByRole('tab', { name: '概要' });
+    const history = screen.getByRole('tab', { name: /履歴/ });
+
+    // TabsTrigger の基底は全辺 1px の枠を持つ。border-foreground だと 4 辺が着色されて
+    // 選択中のタブが黒枠で囲まれてしまうため、幅を落として下辺だけに色を当てる。
+    expect(overview.className).toContain('border-0');
+    expect(overview.className).not.toContain('data-[state=active]:border-foreground');
+    expect(overview.className).toContain('data-[state=active]:border-b-text-secondary');
+    // 下線は TabsList の罫線 (1px) と同じ太さ・位置に重ねる
+    expect(overview.className).toContain('border-b');
+    expect(overview.className).toContain('-mb-px');
+    // 選択中でも文字色は変えず、太字だけで示す (両タブのクラスは完全に同一)
+    expect(overview.className).toBe(history.className);
+    expect(overview.className).not.toContain('data-[state=active]:text-foreground');
+  });
+
   it('履歴: 自動連鎖バッジと完了の取り消し/完了イベントを描画する', async () => {
     // ballHolder を他人にして完了/TOSS ボタンを出さず、履歴ラベルの衝突を避ける。
     setupReads({
