@@ -275,6 +275,11 @@ describe('BallDetailModal (integration)', () => {
     // 選択中でも文字色は変えず、太字だけで示す (両タブのクラスは完全に同一)
     expect(overview.className).toBe(history.className);
     expect(overview.className).not.toContain('data-[state=active]:text-foreground');
+
+    // タブ行の左右余白はヘッダー・本文と同じ 24px (p-0 を後ろに置くと px-6 が消える)
+    const list = overview.parentElement!;
+    expect(list.className).toContain('px-6');
+    expect(list.className).not.toContain('p-0');
   });
 
   it('履歴: 自動連鎖バッジと完了の取り消し/完了イベントを描画する', async () => {
