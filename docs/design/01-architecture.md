@@ -5,7 +5,7 @@
 | 章番号 | 01 |
 | ステータス | **v1.0 確定** |
 | 確定日 | 2026-05-09 |
-| 上位ドキュメント | [TRAKON PRD v1.2](../prd/trakon-prd.md) |
+| 上位ドキュメント | [TRAKON PRD v1.4](../prd/trakon-prd.md) |
 | 主参照 PRD 節 | §2.6（3層構造）、§4.2（NFR）、§9.1（基本方針）、§10（フェーズ） |
 
 ---
@@ -233,7 +233,7 @@ sequenceDiagram
 | `plans.deleted_at` | 物理削除（MVP §6.3）で未使用 | 論理削除に切替 | 列は最初から定義、Phase 0 のコードは無視 |
 | `ball_events.event_type` | **#131：review_requested / approved / sent_back / review_request_undone / approval_undone / tossed（＋レガシー completed / toss_undone / completion_undone）** | Phase 1 で共同/単独予定向けに拡張 | 型として最初から enum 定義、CHECK は許可値の追加で拡張 |
 | `audit_logs.action` | `login / toss / complete` に加え **#131 の request_review / approve / send_back 系・share_* 系** | 全アクション記録 | 列構造は Phase 1 仕様で先に確定 |
-| `organization_id`（全主要テーブル） | NULL 許容 | NOT NULL 化（移行スクリプト） | Phase 0 から列存在 |
+| `organization_id`（全主要テーブル） | NULL 許容 | **Phase 0.5（v1.2）で `organizations` を実体化し `projects.organization_id` を NOT NULL 化済み**（章2 §2.2.6 / §2.9.3 M101・M102） | Phase 0 から列存在。**先に列を確保しておいた判断が実際に効いた事例** |
 | `share_links.organization_off_revoked` | 列定義あり・常に false | Phase 2 で組織OFF反映時に参照開始 | 列は最初から定義（章2 §2.4 share_links）。`share_links` テーブル本体は v1.3 で Phase 0 物理化 |
 | `comments` / `attachments` テーブル | 作らない | 新規作成 | 同上 |
 | ダッシュボード `/dashboard` | 空状態（カウンタゼロ表示） | SC-09 を実装 | URL は Phase 0 から確保 |
@@ -309,3 +309,4 @@ sequenceDiagram
 | 2026-05-09 | Draft（たたき台） | §1.7 議論ポイントを未確定で起稿 |
 | 2026-05-09 | **v1.0 確定** | §1.7 全7論点を AskUserQuestion で確定、リポジトリ構成を Vercel 単一プロジェクト方式に更新 |
 | 2026-05-09 | **v1.1 確定** | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§1.6.1 事前確保表から `share_links` テーブルを除外し、`organization_off_revoked` 列の Phase 2 参照ノートに置換。§1.8 PRD 整合チェックで §9.2 を Phase 0 機能に再分類。 |
+| 2026-08-30 | **v1.2 整合修正** | 上位ドキュメントを PRD v1.4 へ更新。§1.6.1 の `organization_id` 行を「Phase 0.5 で NOT NULL 化済み」に更新（Phase 境界の事前確保が機能した事例として記録）。構成・技術スタック自体は v1.0 から変更なし（Stripe は外部 SaaS として章6 §6.2.2 に追加）。 |

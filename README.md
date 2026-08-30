@@ -17,9 +17,9 @@
 
 | 項目 | 状態 |
 |---|---|
-| PRD | v1.2（[docs/prd/trakon-prd.md](docs/prd/trakon-prd.md)） |
-| 基本設計 | **v1.1 確定**（全6章、[docs/design/00-index.md](docs/design/00-index.md)）／実装差分は [implementation-notes](docs/design/implementation-notes.md) |
-| 実装 | **Phase 0（MVP）完了** ✅ — 商用デプロイ準備中 |
+| PRD | v1.4（[docs/prd/trakon-prd.md](docs/prd/trakon-prd.md)） |
+| 基本設計 | **v1.2 確定**（全7章、[docs/design/00-index.md](docs/design/00-index.md)）／実装差分は [implementation-notes](docs/design/implementation-notes.md) |
+| 実装 | **Phase 0（MVP）完了** ✅ — **Phase 0.5（有料プラン・組織・権限ロール）実装中** |
 | 運用手順 | [docs/operations.md](docs/operations.md) — Vercel / Supabase / Resend / Sentry / Better Stack |
 
 ### Sub-Phase 進捗
@@ -41,7 +41,7 @@
 ドキュメント階層は **基本原則 > PRD > 基本設計書 > 実装仕様書** の順で運用する。判断が分かれた場合は上位ドキュメントへ立ち返る。
 
 ### 要件定義（PRD）
-- [docs/prd/trakon-prd.md](docs/prd/trakon-prd.md) — TRAKON PRD v1.2
+- [docs/prd/trakon-prd.md](docs/prd/trakon-prd.md) — TRAKON PRD v1.4
 
 ### 基本設計書
 - [docs/design/00-index.md](docs/design/00-index.md) — 目次・改訂履歴・前提整理
@@ -51,6 +51,7 @@
 - [docs/design/04-frontend.md](docs/design/04-frontend.md) — 画面・コンポーネント・状態管理
 - [docs/design/05-security.md](docs/design/05-security.md) — 認証・認可・監査・OWASP 対策
 - [docs/design/06-infrastructure.md](docs/design/06-infrastructure.md) — Vercel/Supabase 構成・CI/CD・運用
+- [docs/design/07-billing.md](docs/design/07-billing.md) — 料金プラン・Stripe 連携・利用権限判定・権限ロール
 
 ---
 
@@ -265,9 +266,10 @@ Playwright による実ブラウザ E2E は将来 Phase へ先送りし、当面
 
 | Phase | 概要 | 状態 |
 |---|---|---|
-| **Phase 0** | MVP：縦型スケジュール上でボールの受け渡しを可視化 | 設計完了・実装着手前 |
-| Phase 1 | ディレクターツール化（ダッシュボード・予定種別・差し戻し・通知・PDF・非会員URL共有） | 未着手 |
-| Phase 2 | チームコラボ・組織・権限・MFA | 未着手 |
+| **Phase 0** | MVP：縦型スケジュール上でボールの受け渡しを可視化 | **完了** ✅ |
+| **Phase 0.5** | 商用リリース：有料プラン（Stripe）・組織・プロジェクト権限ロール・ロール付き招待 | **実装中** |
+| Phase 1 | ディレクターツール化（ダッシュボード・予定種別・差し戻し・通知・PDF） | 未着手 |
+| Phase 2 | チームコラボ・組織レベル統制・MFA | 未着手 |
 | Phase 3 | プロジェクト OS（テンプレート・KPI・公開 API） | 未着手 |
 
 ---

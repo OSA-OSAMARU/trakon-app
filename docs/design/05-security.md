@@ -3,9 +3,9 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 05 |
-| ステータス | **v1.1 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
+| ステータス | **v1.2 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
 | 確定日 | 2026-05-24 |
-| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [02-database.md](02-database.md) ／ [03-api.md](03-api.md) ／ [04-frontend.md](04-frontend.md) |
+| 上位ドキュメント | [TRAKON PRD v1.4](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [02-database.md](02-database.md) ／ [03-api.md](03-api.md) ／ [04-frontend.md](04-frontend.md) |
 | 主参照 PRD 節 | §9 全節（§9.1〜§9.11）／§4.3 SR要約（v1.3 で SR-AUTH-10 追加）／§4.1.1 FR-AUTH-10〜12／§10.2 Phase 0 セキュリティ成功基準 |
 
 ---
@@ -469,32 +469,70 @@ URL 階層に沿ったミドルウェアチェーン：
 
 ```
 auth                                         (5.3.7、JWT 検証 → currentUser)
-└── requireProjectMember(:projectId)         (currentProject + currentMember を context に)
+└── requireProjectMember(:projectId)         (projectId / organizationId / memberId / role を context に)
+    ├── requireProjectWritable()             (v1.2：契約の利用権限レベルと凍結状態を検証)
+    ├── requireProjectAction(action)         (v1.2：ロール別操作マトリクスを検証)
     └── requireItemInProject(:itemId)        (currentItem を context に)
         └── requirePlanInItem(:planId)       (currentPlan を context に)
             └── ハンドラ
 ```
+
+> **v1.2：順序を「参加確認 → 書き込み可否（課金・凍結）→ ロール」に固定する。** これにより、課金・凍結のエラーはプロジェクト参加者にしか見えない（非参加者には先に 404 が返る）。
 
 各ミドルウェアの責務：
 
 | ガード | 検証内容 | 失敗時 |
 |---|---|---|
 | `requireProjectMember` | `currentUser.id` が `project_members WHERE project_id=:projectId AND deleted_at IS NULL` に存在 | **404**（PRD §9.1 機密第一、参加していないプロジェクトの存在を漏らさない） |
-| `requireProjectDirector` | 上記 + Phase 1 で `role_type='director'`。Phase 0 は member_type='production' で代用 | 403 |
+| ~~`requireProjectDirector`~~ | **v1.2 で廃止**。`requireProjectAction()` に置換 | — |
+| **`requireProjectAction(action)`** | `packages/shared` のロール別操作マトリクス（§5.4.2）でロールが操作を許可しているか | **404**（既存の集約方針を維持。参加していることは判明済みだが、認可失敗は 404 に寄せる） |
+| **`requireProjectWritable()`** | 契約の利用権限レベルが「利用可能」であり、対象プロジェクトが凍結されていないか | **403** `SUBSCRIPTION_READ_ONLY` / `PROJECT_FROZEN`（**404 に混ぜない**。章3 §3.2.4b） |
+| **`requireOrgMember()` / `requireOrgRole(...)`** | 既定の所属組織を解決し、組織ロール（owner / admin / member）を検証 | 404 / 403 |
 | `requireItemInProject` | `:itemId` が `project_items WHERE project_id=:projectId AND deleted_at IS NULL` に存在 | 404 |
 | `requirePlanInItem` | `:planId` が `plans WHERE item_id=:itemId AND deleted_at IS NULL` に存在 | 404 |
 
-### 5.4.2. ロール別操作マトリクス（章3 §3.4 と Phase 0 ロール定義）
+### 5.4.2. ロールの解決と操作マトリクス（v1.2 全面改訂）
 
-Phase 0 は role_type を実装しないため、簡易ロール導出：
+> **v1.1 までの記述を撤回する。** Phase 0 では `role_type` を実装せず「`member_type='production'` かつ `users.id = projects.created_by` を director とみなす」簡易導出を定めていたが、v1.2 で `project_members.role_type` を実体化したため、この導出は使わない。
 
-| Phase 0 のロール導出 | 判定 |
-|---|---|
-| **director** | `project_members.member_type='production'` かつ `users.id = projects.created_by` |
-| **member** | `project_members.member_type='production'` かつ director ではない |
-| **client** | `project_members.member_type='client'` |
+**ロールの解決（唯一の根拠）**
 
-> Phase 1 で `project_members.role_type` カラムを使った正規化に移行（章2 §2.4.3）。
+```
+role = (プロジェクト作成者である場合) → 'admin'      // FR-ROLE-04：ロックアウト防止の最終防衛線
+     : project_members.role_type                     // 'admin' | 'editor' | 'viewer'
+```
+
+`member_type`（production / client / partner）と `job_title`（職種 18 値）は**表示専用であり、権限の判定に使ってはならない**（PRD SR-AUTHZ-05）。
+
+**ロール別操作マトリクス**
+
+定義は `packages/shared/src/domain/projectRole.ts` の**単一テーブル**に置き、ミドルウェア・サービス層・フロントエンドがすべてここを参照する。詳細な対応表は章7 §7.12.2、API レベルの物理化は章3 §3.4 を参照。
+
+要点：
+
+| 操作の分類 | admin | editor | viewer |
+|---|:---:|:---:|:---:|
+| 閲覧 | ○ | ○ | ○ |
+| 予定の作成・編集・削除 | ○ | ○ | × |
+| 制作物・プロジェクト設定・参加者管理・共有リンク | ○ | × | × |
+| 完了フロー（確認依頼・承認・差し戻し・各取り消し） | ○ | ○※ | ○※ |
+| **TOSS ／ TOSS 取り消し** | **○** | **×** | **×** |
+
+※ **Ball Holder 本人であること**が条件。管理者は Ball Holder でなくても実行できる（上位権限）。
+
+**ボール操作の 2 段判定**
+
+```
+1. ロールがその操作を許可しているか（マトリクス）
+2. 管理者なら通す
+3. それ以外は Ball Holder 本人であること
+```
+
+> **設計判断の記録**：TOSS を管理者限定にすると担当者が自分でボールを次工程へ渡せなくなり、管理者が進行のボトルネックになりうる。この副作用を認識した上で権限メモに忠実な運用を選択した（章7 §7.12.4、PRD 基本原則 第十六条「例外は記録される」）。方針を見直す場合はマトリクスの 1 テーブルを変更すれば足りる。
+
+**組織ロール（別系統）**
+
+課金操作（プラン契約・変更・解約・支払方法変更・組織メンバー管理）は `organization_members.org_role` が `owner` または `admin` であることを条件とする（PRD SR-AUTHZ-06）。**プロジェクトロールとは独立**であり、同一の判定関数に混ぜない。
 
 ### 5.4.3. リソースガード（IDOR 防止）
 
@@ -664,6 +702,16 @@ app.use('/share/:token/*', async (c, next) => {
 | Resend API キー | Vercel Environment Variables |
 | Sentry DSN（公開可だが） | Vercel Environment Variables、FE は VITE_ プレフィックスで露出 |
 | Supabase JWT 検証用公開鍵 / secret | Vercel Environment Variables |
+| **Stripe Secret Key**（v1.2） | Vercel Environment Variables（**FE には絶対露出しない**） |
+| **Stripe Webhook Secret**（v1.2） | Vercel Environment Variables |
+| **Stripe Price ID / Tax Rate ID / Portal Configuration ID**（v1.2） | Vercel Environment Variables（秘匿情報ではないが、**本番とテストで値が異なるため env で分離する**） |
+
+**v1.2：決済シークレットの取り扱い（PRD SR-BILL-04）**
+
+- Secret Key・Webhook Secret を、**仕様書・チャット・メール・ソースコード・スクリーンショットに一切記載しない**。値の受け渡しは環境変数またはシークレットマネージャへの直接登録に限定する
+- **テスト環境と本番環境の値を完全に分離**する。テスト用に本番の ID を流用しない
+- Stripe ダッシュボードの API キー・Webhook Secret が写り込むスクリーンショットを共有しない
+- **クライアント公開鍵（Publishable Key）は使用しない**。ホスト型 Checkout へのサーバーサイドリダイレクトのみで完結し、ブラウザ側で Stripe SDK を動かさないため
 
 #### 命名規則と公開境界
 
@@ -708,6 +756,20 @@ PRD SR-AUDIT-01 の全項目のうち、**以下を記録**：
 | `share_create` **(v1.1 非会員URL前倒し)** | 非会員URL 発行成功 | `POST /projects/:projectId/share-links` | actor_user_id = currentUser.id |
 | `share_revoke` **(v1.1)** | 非会員URL 個別失効 | `DELETE /projects/:projectId/share-links/:shareLinkId` | actor_user_id = currentUser.id |
 | `share_access` **(v1.1)** | 非会員URL 経由のアクセス（GET/POST すべて） | `requireShareToken` ミドルウェア | actor_user_id = NULL、share_link_id 設定、IP/UA 記録（FR-SHARE-04） |
+| `checkout_started` **(v1.2)** | Checkout Session 作成 | `POST /billing/checkout-session` | extra に plan_code・checkout_attempt_id |
+| `trial_started` / `trial_blocked` / `trial_released` **(v1.2)** | トライアル付与／重複判定による拒否／手動解除 | Webhook・運用手順 | `trial_released` は運用者が手動で 1 行記録する |
+| `subscription_created` / `subscription_updated` / `subscription_canceled` **(v1.2)** | 契約の作成・更新・解約 | Stripe Webhook | **actor_user_id = NULL**、extra.source='stripe_webhook' |
+| `plan_changed` **(v1.2)** | プラン変更の確定 | Webhook（`invoice.paid` 等） | extra に変更前後の plan_code |
+| `payment_failed` / `payment_recovered` **(v1.2)** | 支払い失敗／復旧 | Stripe Webhook | actor_user_id = NULL |
+| `org_member_added` / `org_member_removed` / `org_role_changed` **(v1.2)** | 会員アカウントの追加・除外・組織ロール変更 | 招待受諾／組織メンバー API | 座席の増減を追跡できる |
+| `invitation_created` / `invitation_revoked` **(v1.2)** | 招待の作成・取り消し | `POST/DELETE /projects/:projectId/invitations` | extra に role_type |
+| `project_role_changed` **(v1.2)** | プロジェクトロールの変更 | `PATCH /projects/:projectId/members/:memberId` | PRD SR-AUTHZ-04（ロール変更は監査必須） |
+| `retained_projects_changed` **(v1.2)** | 上限超過時の維持プロジェクト選択 | `POST /organizations/me/retained-projects` | — |
+
+> **v1.2 の実装上の注意**
+>
+> - `audit_logs.resource_id` は uuid 型。Stripe の顧客 ID・契約 ID は入らないため、課金系は `resource_type='subscription'` / `resource_id=organization_id` とし、Stripe 側の ID は `extra` に入れる
+> - **許可 action は CHECK 制約で列挙されている。値の追加を忘れると INSERT が失敗し、同一トランザクション内の業務処理ごと巻き戻る**（章2 §2.4.7）
 | `share_request_review` / `share_approve` / `share_send_back` **(#131)** | 非会員URL 経由の確認依頼／承認／差し戻し | `POST /share/:token/plans/:planId/{request-review,approve,send-back}` | actor_user_id = NULL、share_link_id 設定。~~`share_toss` / `share_complete` は廃止~~（許可値は残す） |
 
 > **#131 改訂**：会員の状態機械操作 5 種と共有の 3 種を Phase 0 記録対象に追加。旧 `share_toss` / `share_complete` は対応ルート廃止に伴い新規記録なし（CHECK には残す）。`auto_toss` は #117 廃止で新規記録なし。
@@ -780,7 +842,9 @@ export const auditLogger: AuditLogger = {
 
 | 観点 | 方針 |
 |---|---|
-| 監査ログに含めない | パスワード、メール本文、添付ファイル中身、Stripe 等の決済情報 |
+| 監査ログに含めない | パスワード、メール本文、添付ファイル中身、**決済情報（カード番号・カード識別子・API シークレット・Webhook シークレット）** |
+| **決済まわりで保持してよいもの**（v1.2） | 内部 ID（組織 ID）、Stripe 側の顧客 ID・契約 ID・請求書 ID、**表示用のカードブランド名と下 4 桁のみ**。カード識別子（fingerprint）は**保存しない**（章7 §7.9.2） |
+| **Webhook の受信内容**（v1.2） | 受信台帳（`stripe_events.payload`）に保存するのは処理に必要な範囲のみ。シークレットは含まれないが、保存前に想定外のフィールドが混ざらないよう検証する |
 | 監査ログに含める | actor_user_id、resource_type/id、IP、UA、操作結果 |
 | `extra` カラム（jsonb）| 業務上必要な補助情報のみ。例：差し戻し理由（Phase 1）、出力範囲。**自由入力は載せない方針** |
 
@@ -972,6 +1036,13 @@ Content-Security-Policy:
 | §9.11 SR-PRIVACY-01〜04 | §5.9 全節 |
 | §10.2 Phase 0 成功基準 7., 8., 9., 10. | §5.5.1（TLS）、§5.5.2（暗号化）、§5.6（監査ログ）、§5.4.5（非会員URL共有） |
 | §9.2 非会員URL共有 / FR-SHARE-01〜06 / SR-AUTH-08 | §5.4.5 で実装（v1.1 改訂で Phase 0 化）。トークン生成・保管・検証・スコープ判定・クローラ防止・監査ログを統合 |
+| §9.4 SR-AUTHZ-03, 05（v1.4） | §5.4.2 でロールの解決を `role_type` 一本に正規化（v1.2） |
+| §9.4 SR-AUTHZ-04, 06（v1.4） | §5.6.1 に `project_role_changed` / `org_role_changed` を追加、課金操作を組織ロールに限定（v1.2） |
+| §9.12 SR-BILL-01, 06 | 章3 §3.2.4c（Webhook の認可例外）／章7 §7.5（署名検証・冪等性・順序逆転） |
+| §9.12 SR-BILL-02, 05 | §5.6.4（カード情報・シークレットを保持しない／ログに残さない）（v1.2） |
+| §9.12 SR-BILL-03 | 章7 §7.4.2（success URL のみを根拠に権限付与しない） |
+| §9.12 SR-BILL-04 | §5.5.3（決済シークレットの取り扱い）（v1.2） |
+| §9.12 SR-BILL-07 | 章7 §7.8（Portal Session URL を保存せず都度生成） |
 
 ### Phase 1+ 持ち越し
 
@@ -997,3 +1068,4 @@ Content-Security-Policy:
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§5.1 で非会員URL共有を本章節（Phase 0）扱いに変更、§5.2 公開範囲・デフォルト非公開の Phase 区切りを更新、§5.4.5 非会員URL共有のセキュリティ実装を新設（トークン生成・保管・検証・スコープ判定・クローラ防止・期限失効優先順位）、§5.6.1 監査ログ Phase 0 必須に `share_*` 5アクションを追加、§5.12 Phase 1+ 持ち越しを組織レベル統制（Phase 2）のみに整理。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | §5.3.5 招待トークン × OAuth 組合せルール追記／§5.3.9 OAuth 認証セクション新規（フロー・PKCE/state・同一メール1認証制約・メール変更同期）／§5.4.3 IDOR にカンバン DnD toMemberId 検証 / successor_plan_id 検証 / oauth_identities 検証を追加／§5.6.1 監査ログに `auto_toss` を追加（system actor 識別）／§5.11 論点 11〜14 追加。 |
 | 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | §5.4.3 IDOR の役割 ID 検証を 3 役割へ更新／§5.4.4 状態遷移ガードを状態機械（request-review/approve/send-back/toss ほか）へ刷新／§5.4.5 共有スコープガードから「現 Ball Holder のみ」制限を撤廃（scope 内かつ状態機械が許す限り可、TOSS は共有不可）／§5.6.1 監査ログに会員 5 種・共有 3 種を追加、`auto_toss`・`share_toss`・`share_complete` を廃止扱いに／§5.6.2 呼び出し場所を ballActions/shareAccess へ更新／§5.11 論点 14 を #131 反映（auto_chain を共有匿名記録へ再利用）。共有画面の閲覧専用（#59）撤回。 |
+| 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §5.4.1 ガード階層に `requireProjectWritable` / `requireProjectAction` / `requireOrgMember` / `requireOrgRole` を追加し `requireProjectDirector` を廃止／**§5.4.2 の Phase 0 簡易ロール導出（member_type + created_by）を撤回**し `role_type` による正規化へ全面改訂（TOSS は管理者のみ）／§5.5.3 に Stripe シークレットの取り扱いを追加／§5.6.1 監査ログ記録対象に課金系 10 値・組織/ロール系 7 値を追加／§5.6.4 に決済情報の保持方針（カード識別子を保存しない）を明記／§5.12 に SR-BILL-01〜07 の整合を追加。 |
