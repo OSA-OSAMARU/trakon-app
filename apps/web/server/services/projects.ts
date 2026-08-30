@@ -3,6 +3,7 @@ import { pickLatestBallEvent, type BallEventType, type ProjectRole } from '@trak
 
 import { ApiException } from '../lib/errors.js';
 import { resolvePrimaryOrganization } from './organizations.js';
+import { getEntitlement } from './billing/entitlement.js';
 import type { CreateProjectBody, UpdateProjectBody } from '../schemas/projects.js';
 
 export type ProjectSummaryDTO = {
@@ -225,6 +226,21 @@ export async function createProject(input: {
 
   // プロジェクトは必ずいずれかの組織に属する (§7.3.1)。プロジェクト数上限の判定単位。
   const { organizationId } = await resolvePrimaryOrganization(prisma, currentUserId);
+
+  // プランのプロジェクト数上限 (§7.11.1)。課金エラーは 404 に混ぜず 409 で返す。
+  const entitlement = await getEntitlement(prisma, organizationId);
+  if (!entitlement.canCreateProject) {
+    throw new ApiException(
+      'PROJECT_LIMIT_REACHED',
+      409,
+      `${entitlement.limits.projectLimit} 件を超えるプロジェクトは作成できません。プランを変更するか、既存のプロジェクトをアーカイブしてください。`,
+      {
+        planCode: entitlement.effectivePlanCode,
+        projectLimit: entitlement.limits.projectLimit,
+        projectCount: entitlement.usage.projectCount,
+      },
+    );
+  }
 
   // 作成者のメールがメンバー入力に被ると uq_pm_project_email 違反になるため除外
   // (メール未登録の参加者は衝突しないためそのまま残す)。

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 import {
   requireProjectAction,
+  requireProjectWritable,
   requireProjectMember,
 } from '../../middleware/projectAuth.js';
 import { ApiException } from '../../lib/errors.js';
@@ -30,7 +31,7 @@ export const membersRoute = new Hono()
     return c.json({ data: members });
   })
 
-  .post('/', requireProjectMember(), requireProjectAction('member.create'), async (c) => {
+  .post('/', requireProjectMember(), requireProjectWritable(), requireProjectAction('member.create'), async (c) => {
     const project = c.get('project');
     const body = addMembersBodySchema.parse(await c.req.json());
     const created = await addMembers({ projectId: project.projectId, body });
@@ -38,7 +39,7 @@ export const membersRoute = new Hono()
   })
 
   // 並び替え (#111)。静的セグメント /reorder は :memberId より優先される。
-  .post('/reorder', requireProjectMember(), requireProjectAction('member.update'), async (c) => {
+  .post('/reorder', requireProjectMember(), requireProjectWritable(), requireProjectAction('member.update'), async (c) => {
     const project = c.get('project');
     const body = reorderMembersBodySchema.parse(await c.req.json());
     const members = await reorderMembers({
@@ -51,6 +52,7 @@ export const membersRoute = new Hono()
   .patch(
     '/:memberId',
     requireProjectMember(),
+    requireProjectWritable(),
     requireProjectAction('member.update'),
     async (c) => {
       const project = c.get('project');
@@ -65,6 +67,7 @@ export const membersRoute = new Hono()
   .delete(
     '/:memberId',
     requireProjectMember(),
+    requireProjectWritable(),
     requireProjectAction('member.remove'),
     async (c) => {
       const project = c.get('project');

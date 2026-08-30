@@ -14,6 +14,7 @@ import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 import { ApiException } from '../lib/errors.js';
 import { getMailer } from '../lib/mailer.js';
 import { defaultInvitationExpiresAt, generateInvitationToken } from '../lib/tokens.js';
+import { getEntitlement } from './billing/entitlement.js';
 
 export type InvitationDTO = {
   id: string;
@@ -93,6 +94,22 @@ export async function createInvitation(
     select: { id: true, name: true },
   });
   if (!project) throw new ApiException('NOT_FOUND', 404, 'Project not found.');
+
+  // 座席 (会員アカウント) の上限 (§7.11.1)。
+  // 未受諾の招待も座席を消費するので countSeats に含まれている。
+  const entitlement = await getEntitlement(prisma, input.organizationId);
+  if (!entitlement.canInviteMember) {
+    throw new ApiException(
+      'SEAT_LIMIT_REACHED',
+      409,
+      `会員アカウントの上限 (${entitlement.limits.seatLimit} 名) に達しています。プランを変更するか、既存のメンバー・招待を整理してください。`,
+      {
+        planCode: entitlement.effectivePlanCode,
+        seatLimit: entitlement.limits.seatLimit,
+        seatCount: entitlement.usage.seatCount,
+      },
+    );
+  }
 
   const inviter = await prisma.user.findUnique({
     where: { id: input.actorUserId },

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 
 import { ApiException } from '../../lib/errors.js';
 import { resolveRequestOrigin } from '../../lib/requestOrigin.js';
-import { requireProjectAction, requireProjectMember } from '../../middleware/projectAuth.js';
+import { requireProjectAction, requireProjectMember, requireProjectWritable } from '../../middleware/projectAuth.js';
 import { createInvitationBodySchema } from '../../schemas/projectInvitations.js';
 import {
   createInvitation,
@@ -18,13 +18,13 @@ import {
  * 消費するため、一覧も管理者に限定する。
  */
 export const projectInvitationsRoute = new Hono()
-  .get('/', requireProjectMember(), requireProjectAction('member.invite'), async (c) => {
+  .get('/', requireProjectMember(), requireProjectWritable(), requireProjectAction('member.invite'), async (c) => {
     const project = c.get('project');
     const invitations = await listPendingInvitations(project.projectId);
     return c.json({ data: invitations });
   })
 
-  .post('/', requireProjectMember(), requireProjectAction('member.invite'), async (c) => {
+  .post('/', requireProjectMember(), requireProjectWritable(), requireProjectAction('member.invite'), async (c) => {
     const project = c.get('project');
     const body = createInvitationBodySchema.parse(await c.req.json());
     const result = await createInvitation({
@@ -43,6 +43,7 @@ export const projectInvitationsRoute = new Hono()
   .delete(
     '/:invitationId',
     requireProjectMember(),
+    requireProjectWritable(),
     requireProjectAction('member.invite'),
     async (c) => {
       const project = c.get('project');

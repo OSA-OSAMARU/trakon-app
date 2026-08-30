@@ -4,6 +4,7 @@ import type { ProjectRole } from '@trakon/shared';
 import { ApiException } from '../lib/errors.js';
 import { hashToken } from '../lib/tokens.js';
 import { ensureOrganizationMember } from './organizations.js';
+import { getEntitlement } from './billing/entitlement.js';
 
 export type InvitationVerifyDTO = {
   project: { id: string; name: string };
@@ -87,8 +88,19 @@ export async function acceptInvitation(input: {
     );
   }
 
-  // TODO(上限判定): 招待作成時に空きがあっても受諾までに満席になりうるため、
-  // ここで座席上限を再チェックする (§7.11.1)。判定は課金テーブル導入後に差し込む。
+  // 招待作成時に空きがあっても、受諾までに満席になっている可能性がある (§7.11.1)。
+  // この招待自体が 1 座席を消費しているので、受諾は「招待 1 → 会員 1」の振り替えに
+  // すぎない。したがって自分の分を差し引いた消費数で判定する。
+  const entitlement = await getEntitlement(prisma, inv.organizationId);
+  const seatLimit = entitlement.limits.seatLimit;
+  if (seatLimit !== null && entitlement.usage.seatCount - 1 >= seatLimit) {
+    throw new ApiException(
+      'SEAT_LIMIT_REACHED',
+      409,
+      '会員アカウントの上限に達しているため参加できません。招待元にご連絡ください。',
+      { seatLimit, seatCount: entitlement.usage.seatCount },
+    );
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const updatedMember = await tx.projectMember.update({

@@ -4,6 +4,8 @@ import { prisma } from '@trakon/db';
 import { canProjectRole, type ProjectAction, type ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
+import { getEntitlement } from '../services/billing/entitlement.js';
+import { getFrozenProjectIds } from '../services/billing/freeze.js';
 
 export type ProjectMembership = {
   projectId: string;
@@ -120,4 +122,44 @@ function notFound(c: Context) {
     404,
     `Resource not found: ${c.req.method} ${c.req.path}`,
   );
+}
+
+/**
+ * 契約の利用権限とプロジェクトの凍結状態を検証する (設計書 §7.11 / §3.2.4b)。
+ *
+ * **ミドルウェアの順序は requireProjectMember() → requireProjectWritable() →
+ * requireProjectAction() に固定する。** これにより、課金・凍結のエラーは
+ * プロジェクト参加者にしか見えない (非参加者には先に 404 が返る)。
+ *
+ * 課金・上限・凍結は自分の組織の状態であり秘匿する必要がないため、
+ * **404 に集約しない**。403 + 専用コードで返し、復旧手段を案内できるようにする。
+ */
+export function requireProjectWritable(): MiddlewareHandler {
+  return async (c, next) => {
+    const project = c.get('project');
+
+    const entitlement = await getEntitlement(prisma, project.organizationId);
+    if (entitlement.level !== 'full') {
+      throw new ApiException('SUBSCRIPTION_READ_ONLY', 403, entitlement.message, {
+        reason: entitlement.reason,
+        planCode: entitlement.effectivePlanCode,
+        graceEndsAt: entitlement.graceEndsAt,
+      });
+    }
+
+    // 上限超過分は削除せず凍結する。超過していなければ追加クエリは走らない。
+    if (entitlement.over.projects > 0) {
+      const frozen = await getFrozenProjectIds(project.organizationId);
+      if (frozen.includes(project.projectId)) {
+        throw new ApiException(
+          'PROJECT_FROZEN',
+          403,
+          'プランの上限を超えているため、このプロジェクトは閲覧のみになっています。維持するプロジェクトを選び直すか、プランを変更してください。',
+          { planCode: entitlement.effectivePlanCode, projectLimit: entitlement.limits.projectLimit },
+        );
+      }
+    }
+
+    await next();
+  };
 }

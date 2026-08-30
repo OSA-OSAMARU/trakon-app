@@ -184,7 +184,20 @@ const prismaMock = {
     findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
       userStore[where.userId] ? { organizationId: `org-${where.userId}`, orgRole: 'owner' } : null,
     ),
+    count: vi.fn(async () => 1),
   },
+  // プロジェクト数上限の判定 (§7.11.1)。既定は Team (無制限) にして
+  // 上限そのものの検証は統合テストへ寄せる。
+  billingSubscription: {
+    findUnique: vi.fn(async () => ({
+      planCode: 'team',
+      status: 'active',
+      cancelAtPeriodEnd: false,
+      currentPeriodEnd: null,
+      gracePeriodEndsAt: null,
+    })),
+  },
+  invitation: { count: vi.fn(async () => 0) },
   // コールバック形式 ($transaction(fn)) のみ service は使用。
   $transaction: vi.fn(async (arg: unknown) => {
     if (Array.isArray(arg)) return Promise.all(arg);
