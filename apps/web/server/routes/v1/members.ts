@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 
 import {
-  requireProjectDirector,
+  requireProjectAction,
   requireProjectMember,
 } from '../../middleware/projectAuth.js';
 import { ApiException } from '../../lib/errors.js';
@@ -21,7 +21,7 @@ import {
 /**
  * `/projects/:projectId/members` の各エンドポイント。
  * `requireAuth()` + `attachCurrentUserId()` は親 projectsRoute で適用済み。
- * 認可は requireProjectMember / requireProjectDirector を個別に付与する。
+ * 認可は requireProjectMember / requireProjectAction を個別に付与する。
  */
 export const membersRoute = new Hono()
   .get('/', requireProjectMember(), async (c) => {
@@ -30,7 +30,7 @@ export const membersRoute = new Hono()
     return c.json({ data: members });
   })
 
-  .post('/', requireProjectMember(), requireProjectDirector(), async (c) => {
+  .post('/', requireProjectMember(), requireProjectAction('member.create'), async (c) => {
     const project = c.get('project');
     const body = addMembersBodySchema.parse(await c.req.json());
     const created = await addMembers({ projectId: project.projectId, body });
@@ -38,7 +38,7 @@ export const membersRoute = new Hono()
   })
 
   // 並び替え (#111)。静的セグメント /reorder は :memberId より優先される。
-  .post('/reorder', requireProjectMember(), requireProjectDirector(), async (c) => {
+  .post('/reorder', requireProjectMember(), requireProjectAction('member.update'), async (c) => {
     const project = c.get('project');
     const body = reorderMembersBodySchema.parse(await c.req.json());
     const members = await reorderMembers({
@@ -51,7 +51,7 @@ export const membersRoute = new Hono()
   .patch(
     '/:memberId',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('member.update'),
     async (c) => {
       const project = c.get('project');
       const memberId = c.req.param('memberId');
@@ -65,7 +65,7 @@ export const membersRoute = new Hono()
   .delete(
     '/:memberId',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('member.remove'),
     async (c) => {
       const project = c.get('project');
       const userId = c.get('currentUserId');

@@ -46,6 +46,7 @@ model User {
   ballEvents         BallEvent[]
   organizationsOwned Organization[]       @relation("OrganizationOwner")
   orgMemberships     OrganizationMember[]
+  invitationsSent    Invitation[]         @relation("InvitationInvitedBy")
 
   @@index([authUserId], map: "idx_users_auth_user_id")
   @@map("users")
@@ -65,9 +66,10 @@ model Organization {
   updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz
 
-  owner    User                 @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, map: "fk_orgs_owner_user_id")
-  members  OrganizationMember[]
-  projects Project[]
+  owner      User                 @relation("OrganizationOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, map: "fk_orgs_owner_user_id")
+  members    OrganizationMember[]
+  projects   Project[]
+  Invitation Invitation[]
 
   @@map("organizations")
 }
@@ -157,8 +159,9 @@ model ProjectMember {
   memberType       String    @map("member_type")
   /// 職種 (#147)。JOB_TITLES の 18 値 (CHECK 制約)。表示用で権限には影響しない
   jobTitle         String?   @map("job_title")
-  /// Phase 1+ で権限細分化に使用
-  roleType         String?   @map("role_type")
+  /// 権限ロール 'admin' | 'editor' | 'viewer' (CHECK 制約)。
+  /// **操作権限の唯一の根拠**。member_type / job_title は表示専用で権限に影響しない。
+  roleType         String    @default("editor") @map("role_type")
   sortOrder        Int       @default(0) @map("sort_order")
   isActive         Boolean   @default(true) @map("is_active")
   deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
@@ -304,7 +307,12 @@ model Invitation {
   email           String
   /// SHA-256 ハッシュ。生トークンは保存しない
   tokenHash       String    @unique(map: "uq_inv_token_hash") @map("token_hash")
-  roleType        String?   @map("role_type")
+  /// 受諾時に付与する権限ロール 'admin' | 'editor' | 'viewer' (CHECK 制約)
+  roleType        String    @default("editor") @map("role_type")
+  /// 座席カウントの単位。未受諾かつ有効期限内の招待は 1 座席を消費する
+  organizationId  String    @map("organization_id") @db.Uuid
+  /// 招待者 (監査用)
+  invitedByUserId String?   @map("invited_by_user_id") @db.Uuid
   expiresAt       DateTime  @map("expires_at") @db.Timestamptz
   acceptedAt      DateTime? @map("accepted_at") @db.Timestamptz
   revokedAt       DateTime? @map("revoked_at") @db.Timestamptz
@@ -312,6 +320,8 @@ model Invitation {
 
   project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_inv_project_id")
   invitedMember ProjectMember @relation(fields: [invitedMemberId], references: [id], onDelete: Cascade, map: "fk_inv_invited_member_id")
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade, map: "fk_inv_organization_id")
+  invitedBy     User?         @relation("InvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull, map: "fk_inv_invited_by_user_id")
 
   @@index([projectId], map: "idx_inv_project_id")
   @@map("invitations")

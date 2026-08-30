@@ -2,6 +2,7 @@ import { prisma, type Prisma } from '@trakon/db';
 import { deriveBallHolder, type BallEventType, type BallHolderResult, type PlanState } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
+import { canProjectRole, type ProjectRole } from '@trakon/shared';
 import { toPlanDTO, type PlanDTO } from './plans.js';
 
 export type TossResult = {
@@ -104,10 +105,35 @@ function assertActive(plan: PlanWithIncludes): void {
   }
 }
 
-/** 現在の Ball Holder または director でなければ 403。 */
-function assertHolderOrDirector(plan: PlanWithIncludes, currentMemberId: string, isDirector: boolean): void {
-  if (!isDirector && ballHolderMemberId(plan) !== currentMemberId) {
-    throw new ApiException('FORBIDDEN', 403, 'Only the ball holder or director can perform this action.');
+/**
+ * ボール操作の 2 段判定 (設計書 §7.12.2)。
+ *   1. ロールがその操作を許可しているか (TOSS は管理者のみ)
+ *   2. 管理者なら通す (ボール保持者でなくても可 = 上位権限)
+ *   3. それ以外はボール保持者本人であること
+ */
+function assertBallAction(
+  plan: PlanWithIncludes,
+  currentMemberId: string,
+  role: ProjectRole,
+  action: 'plan.complete' | 'plan.toss',
+): void {
+  assertRoleAllows(role, action);
+  if (role === 'admin') return;
+  if (ballHolderMemberId(plan) !== currentMemberId) {
+    throw new ApiException('FORBIDDEN', 403, 'Only the ball holder can perform this action.');
+  }
+}
+
+/** ロール単体の可否。取り消し系のように保持者条件が別のものはこちらだけを使う。 */
+function assertRoleAllows(role: ProjectRole, action: 'plan.complete' | 'plan.toss'): void {
+  if (!canProjectRole(role, action)) {
+    throw new ApiException(
+      'FORBIDDEN',
+      403,
+      action === 'plan.toss'
+        ? 'TOSS はプロジェクト管理者のみが実行できます。'
+        : 'この操作を行う権限がありません。',
+    );
   }
 }
 
@@ -139,7 +165,7 @@ export async function requestReviewPlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<{ plan: PlanDTO }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -154,7 +180,7 @@ export async function requestReviewPlan(input: {
     if (!plan.approverMemberId) {
       throw new ApiException('NO_APPROVER', 422, '承認者が設定されていません。承認者なしの予定は直接承認してください。');
     }
-    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+    assertBallAction(plan, input.currentMemberId, input.role, 'plan.complete');
 
     await createEvent({ tx, planId: plan.id, eventType: 'review_requested', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
     await recordAudit({ tx, actorUserId: input.currentUserId, action: 'request_review', planId: plan.id });
@@ -171,7 +197,7 @@ export async function undoRequestReviewPlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<{ plan: PlanDTO }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -179,10 +205,11 @@ export async function undoRequestReviewPlan(input: {
     if (currentBallState(plan) !== 'review_pending') {
       throw new ApiException('INVALID_STATE', 409, '確認待ちの予定のみ確認依頼を取り消せます。');
     }
-    // 実施者・承認者・director が取り消せる (誤操作の救済)。
+    // 実施者・承認者・管理者が取り消せる (誤操作の救済)。
+    assertRoleAllows(input.role, 'plan.complete');
     const involved = [plan.executorMemberId, plan.approverMemberId];
-    if (!input.isDirector && !involved.includes(input.currentMemberId)) {
-      throw new ApiException('FORBIDDEN', 403, 'Only the executor, approver, or director can undo a review request.');
+    if (input.role !== 'admin' && !involved.includes(input.currentMemberId)) {
+      throw new ApiException('FORBIDDEN', 403, 'Only the executor, approver, or admin can undo a review request.');
     }
     await createEvent({ tx, planId: plan.id, eventType: 'review_request_undone', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
     await recordAudit({ tx, actorUserId: input.currentUserId, action: 'undo_request_review', planId: plan.id });
@@ -200,7 +227,7 @@ export async function approvePlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<CompleteResult> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -218,7 +245,7 @@ export async function approvePlan(input: {
         throw new ApiException('INCOMPLETE_PLAN', 422, '実施者を設定してください。');
       }
     }
-    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+    assertBallAction(plan, input.currentMemberId, input.role, 'plan.complete');
 
     await createEvent({ tx, planId: plan.id, eventType: 'approved', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
     // 後続が無い予定は承認で完了 (TOSS 先が無い)。
@@ -242,7 +269,7 @@ export async function undoApprovePlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<{ plan: PlanDTO }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -252,10 +279,11 @@ export async function undoApprovePlan(input: {
     if (state !== 'approved' && !wasApprovedComplete) {
       throw new ApiException('INVALID_STATE', 409, '承認済みの予定のみ承認を取り消せます。');
     }
-    // 承認者 or 進行責任者 or director。
+    // 承認者 or 進行責任者 or 管理者。
+    assertRoleAllows(input.role, 'plan.complete');
     const involved = [plan.approverMemberId, plan.progressManagerMemberId];
-    if (!input.isDirector && !involved.includes(input.currentMemberId)) {
-      throw new ApiException('FORBIDDEN', 403, 'Only the approver, progress manager, or director can undo an approval.');
+    if (input.role !== 'admin' && !involved.includes(input.currentMemberId)) {
+      throw new ApiException('FORBIDDEN', 403, 'Only the approver, progress manager, or admin can undo an approval.');
     }
     await createEvent({ tx, planId: plan.id, eventType: 'approval_undone', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
     if (plan.status === 'completed') {
@@ -276,7 +304,7 @@ export async function sendBackPlan(input: {
   note?: string | null;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<{ plan: PlanDTO }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -285,7 +313,7 @@ export async function sendBackPlan(input: {
       throw new ApiException('INVALID_STATE', 409, '確認待ちの予定のみ差し戻せます。');
     }
     // 承認者 (= 現ホルダー) または director。
-    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+    assertBallAction(plan, input.currentMemberId, input.role, 'plan.complete');
     await createEvent({
       tx,
       planId: plan.id,
@@ -313,7 +341,7 @@ export async function sendBackToPredecessorPlan(input: {
   note?: string | null;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<{ plan: PlanDTO; predecessor: PlanDTO }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -323,7 +351,7 @@ export async function sendBackToPredecessorPlan(input: {
       throw new ApiException('INVALID_STATE', 409, '実施中または差し戻し中の予定のみ前工程へ差し戻せます。');
     }
     // 認可: 後続予定の現ボール保持者 (実施者/承認者) または director。
-    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+    assertBallAction(plan, input.currentMemberId, input.role, 'plan.complete');
 
     // 先行予定 = この予定を successor に指す予定 (successorPlanId は UNIQUE のため最大1件)。
     const predecessor = await tx.plan.findFirst({
@@ -370,7 +398,7 @@ export async function tossPlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<TossResult> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -384,8 +412,9 @@ export async function tossPlan(input: {
     if (!plan.progressManagerMemberId) {
       throw new ApiException('INCOMPLETE_PLAN', 422, '進行責任者を設定してください。');
     }
-    // 認可: 進行責任者 (= 現ホルダー) または director。
-    assertHolderOrDirector(plan, input.currentMemberId, input.isDirector);
+    // 認可: TOSS は管理者のみ (設計書 §7.12.2)。
+    // 管理者はボール保持者 (進行責任者) でなくても実行できる。
+    assertBallAction(plan, input.currentMemberId, input.role, 'plan.toss');
 
     const successor = await tx.plan.findFirst({
       where: { id: plan.successorPlanId, deletedAt: null },
@@ -425,9 +454,12 @@ export async function undoTossPlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
+  role: ProjectRole;
 }): Promise<{ plan: PlanDTO }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
+    // TOSS の裏返しなので TOSS と同じ権限にする (Phase 0 はノーチェックだった)。
+    assertRoleAllows(input.role, 'plan.toss');
     if (currentBallState(plan) !== 'tossed') {
       throw new ApiException('NOT_TOSSED', 409, 'Ball is not in a tossed state.');
     }
@@ -463,7 +495,7 @@ export async function completePlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<CompleteResult> {
   return approvePlan(input);
 }
@@ -474,7 +506,7 @@ export async function undoCompletePlan(input: {
   planId: string;
   currentUserId: string;
   currentMemberId: string;
-  isDirector: boolean;
+  role: ProjectRole;
 }): Promise<{ plan: PlanDTO }> {
   return undoApprovePlan(input);
 }

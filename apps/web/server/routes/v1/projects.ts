@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { requireAuth } from '../../middleware/auth.js';
 import {
   attachCurrentUserId,
-  requireProjectDirector,
+  requireProjectAction,
   requireProjectMember,
 } from '../../middleware/projectAuth.js';
 import {
@@ -68,7 +68,7 @@ export const projectsRoute = new Hono()
     return c.json({ data: detail });
   })
 
-  .patch('/:projectId', requireProjectMember(), requireProjectDirector(), async (c) => {
+  .patch('/:projectId', requireProjectMember(), requireProjectAction('project.update'), async (c) => {
     const userId = c.get('currentUserId');
     const project = c.get('project');
     const body = updateProjectBodySchema.parse(await c.req.json());
@@ -84,7 +84,7 @@ export const projectsRoute = new Hono()
   .post(
     '/:projectId/archive',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('project.archive'),
     async (c) => {
       const userId = c.get('currentUserId');
       const project = c.get('project');
@@ -99,7 +99,7 @@ export const projectsRoute = new Hono()
   .post(
     '/:projectId/unarchive',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('project.archive'),
     async (c) => {
       const userId = c.get('currentUserId');
       const project = c.get('project');
@@ -121,7 +121,7 @@ export const projectsRoute = new Hono()
   .post(
     '/:projectId/items',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('item.create'),
     async (c) => {
       const project = c.get('project');
       const body = createItemBodySchema.parse(await c.req.json());
@@ -134,7 +134,7 @@ export const projectsRoute = new Hono()
   .post(
     '/:projectId/items/reorder',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('item.update'),
     async (c) => {
       const project = c.get('project');
       const body = reorderItemsBodySchema.parse(await c.req.json());
@@ -157,7 +157,7 @@ export const projectsRoute = new Hono()
   .patch(
     '/:projectId/items/:itemId',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('item.update'),
     async (c) => {
       const project = c.get('project');
       const itemId = c.req.param('itemId');
@@ -171,7 +171,7 @@ export const projectsRoute = new Hono()
   .delete(
     '/:projectId/items/:itemId',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('item.delete'),
     async (c) => {
       const project = c.get('project');
       const itemId = c.req.param('itemId');

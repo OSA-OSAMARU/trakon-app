@@ -249,8 +249,8 @@ describe('createProject', () => {
     endDate: '2026-07-31',
     items: [{ name: '台本' }, { name: '撮影' }],
     members: [
-      { name: '田中', email: 'tanaka@example.com', organizationName: 'A社', memberType: 'client' as const },
-      { name: '鈴木', email: 'suzuki@example.com', organizationName: '', memberType: 'production' as const },
+      { name: '田中', email: 'tanaka@example.com', organizationName: 'A社', memberType: 'client' as const, roleType: 'viewer' as const },
+      { name: '鈴木', email: 'suzuki@example.com', organizationName: '', memberType: 'production' as const, roleType: 'editor' as const },
     ],
   };
 
@@ -265,7 +265,7 @@ describe('createProject', () => {
       startDate: '2026-07-01',
       endDate: '2026-07-31',
       status: 'active',
-      role: 'director', // createdBy === currentUserId
+      role: 'admin', // createdBy === currentUserId (FR-ROLE-04)
       createdBy: 'u-1',
     });
     // counts: メンバー = 作成者 1 + 招待先 2、制作物 = 2
@@ -293,8 +293,8 @@ describe('createProject', () => {
     const dup = {
       ...body,
       members: [
-        { name: '本人重複', email: 'kawazu@example.com', organizationName: '', memberType: 'production' as const },
-        { name: '田中', email: 'tanaka@example.com', organizationName: '', memberType: 'client' as const },
+        { name: '本人重複', email: 'kawazu@example.com', organizationName: '', memberType: 'production' as const, roleType: 'editor' as const },
+        { name: '田中', email: 'tanaka@example.com', organizationName: '', memberType: 'client' as const, roleType: 'viewer' as const },
       ],
     };
 
@@ -342,7 +342,7 @@ describe('listProjects', () => {
 
     expect(res.total).toBe(1);
     expect(res.items.map((p) => p.id)).toEqual(['p-own']);
-    expect(res.items[0]?.role).toBe('director');
+    expect(res.items[0]?.role).toBe('admin');
   });
 
   it('archived=true でアーカイブ済みのみ返す', async () => {
@@ -359,7 +359,7 @@ describe('listProjects', () => {
     expect(res.items[0]?.id).toBe('p-archived');
     expect(res.items[0]?.archivedAt).not.toBeNull();
     // 作成者でないので member ロール
-    expect(res.items[0]?.role).toBe('member');
+    expect(res.items[0]?.role).toBe('editor');
   });
 
   it('limit / offset でページングする', async () => {
@@ -388,13 +388,13 @@ describe('getProjectDetail', () => {
 
     expect(res.id).toBe('p-1');
     expect(res.counts).toEqual({ memberCount: 2, itemCount: 1 });
-    expect(res.role).toBe('director');
+    expect(res.role).toBe('admin');
   });
 
-  it('作成者以外には role=member を返す', async () => {
+  it('作成者以外には member 行の role_type を返す (既定は editor)', async () => {
     seedProject({ id: 'p-1', createdBy: 'u-owner' });
     const res = await getProjectDetail('p-1', 'u-viewer');
-    expect(res.role).toBe('member');
+    expect(res.role).toBe('editor');
   });
 
   it('存在しない / 削除済みは 404 NOT_FOUND', async () => {

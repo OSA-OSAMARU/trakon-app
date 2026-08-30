@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 
 import { ApiException } from '../../lib/errors.js';
 import {
-  requireProjectDirector,
+  requireProjectAction,
   requireProjectMember,
 } from '../../middleware/projectAuth.js';
 import { resolveRequestOrigin } from '../../lib/requestOrigin.js';
@@ -28,7 +28,7 @@ export const shareLinksRoute = new Hono()
   .post(
     '/',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('share_link.create'),
     async (c) => {
       const project = c.get('project');
       const body = createShareLinkBodySchema.parse(await c.req.json());
@@ -45,7 +45,7 @@ export const shareLinksRoute = new Hono()
   .delete(
     '/:shareLinkId',
     requireProjectMember(),
-    requireProjectDirector(),
+    requireProjectAction('share_link.revoke'),
     async (c) => {
       const project = c.get('project');
       const userId = c.get('currentUserId');

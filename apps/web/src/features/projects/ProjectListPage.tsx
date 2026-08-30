@@ -1,3 +1,4 @@
+import { canProjectRole } from '@trakon/shared';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -196,7 +197,8 @@ function ProjectRow({ project: p }: { project: ProjectSummary }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const isArchived = p.archivedAt !== null;
-  const isDirector = p.role === 'director';
+  // 権限判定は shared のロール別操作マトリクスに委ねる (§4.5)
+  const canManage = canProjectRole(p.role, 'project.archive');
 
   const mutation = useMutation({
     mutationFn: () => (isArchived ? projectsApi.unarchive(p.id) : projectsApi.archive(p.id)),
@@ -232,7 +234,7 @@ function ProjectRow({ project: p }: { project: ProjectSummary }) {
         {p.progressManager?.name ?? '—'}
       </span>
       <span className="relative flex items-center justify-center gap-1">
-        {isDirector && (
+        {canManage && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

@@ -1,5 +1,5 @@
 import { prisma } from '@trakon/db';
-import type { JobTitle, MemberType } from '@trakon/shared';
+import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import { assertExactIdSet } from './items.js';
@@ -15,6 +15,8 @@ export type MemberDTO = {
   memberType: MemberType;
   /** 職種 (#147)。表示用で権限には影響しない */
   jobTitle: JobTitle | null;
+  /** 権限ロール (FR-ROLE-01)。操作権限の唯一の根拠 */
+  roleType: ProjectRole;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -28,6 +30,7 @@ function toDTO(m: {
   organizationName: string;
   memberType: string;
   jobTitle: string | null;
+  roleType: string;
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
@@ -40,6 +43,7 @@ function toDTO(m: {
     organizationName: m.organizationName,
     memberType: m.memberType as MemberType,
     jobTitle: (m.jobTitle as JobTitle | null) ?? null,
+    roleType: m.roleType as ProjectRole,
     sortOrder: m.sortOrder,
     createdAt: m.createdAt.toISOString(),
     updatedAt: m.updatedAt.toISOString(),
@@ -102,6 +106,7 @@ export async function addMembers(input: {
           organizationName: m.organizationName,
           memberType: m.memberType,
           jobTitle: m.jobTitle ?? null,
+          roleType: m.roleType,
           sortOrder: baseOrder + idx,
         },
       });
@@ -144,6 +149,11 @@ export async function updateMember(input: {
   });
   if (!existing) throw new ApiException('NOT_FOUND', 404, 'Member not found.');
 
+  // 管理者を 0 名にはできない (FR-ROLE-03)
+  if (input.body.roleType && input.body.roleType !== 'admin' && existing.roleType === 'admin') {
+    await assertNotLastAdmin(input.projectId, input.memberId);
+  }
+
   const updated = await prisma.projectMember.update({
     where: { id: input.memberId },
     data: {
@@ -152,10 +162,43 @@ export async function updateMember(input: {
       memberType: input.body.memberType ?? undefined,
       // null は「クリアする」意味なのでそのまま渡す
       jobTitle: input.body.jobTitle === undefined ? undefined : input.body.jobTitle,
+      roleType: input.body.roleType ?? undefined,
       sortOrder: input.body.sortOrder ?? undefined,
     },
   });
   return toDTO(updated);
+}
+
+/**
+ * プロジェクトの管理者が 0 名にならないことを保証する (FR-ROLE-03)。
+ *
+ * 作成者は role_type によらず常に管理者として扱われる (FR-ROLE-04) ため、
+ * 作成者の member 行が残っていれば管理者は必ず 1 名以上いる。
+ */
+async function assertNotLastAdmin(projectId: string, excludeMemberId: string): Promise<void> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { createdBy: true },
+  });
+  const remainingAdmins = await prisma.projectMember.count({
+    where: {
+      projectId,
+      deletedAt: null,
+      id: { not: excludeMemberId },
+      OR: [
+        { roleType: 'admin' },
+        // 作成者は role_type によらず常に管理者 (FR-ROLE-04)
+        ...(project ? [{ userId: project.createdBy }] : []),
+      ],
+    },
+  });
+  if (remainingAdmins === 0) {
+    throw new ApiException(
+      'LAST_ADMIN',
+      409,
+      'プロジェクトの管理者は 1 名以上必要です。先に他の参加者を管理者にしてください。',
+    );
+  }
 }
 
 export async function deleteMember(input: {
@@ -175,6 +218,11 @@ export async function deleteMember(input: {
       409,
       'Director cannot remove themselves from the project.',
     );
+  }
+
+  // 管理者を 0 名にはできない (FR-ROLE-03)
+  if (existing.roleType === 'admin') {
+    await assertNotLastAdmin(input.projectId, input.memberId);
   }
 
   // plans 連動 (MEMBER_HAS_ACTIVE_PLANS) は Sub-Phase 0.3 で plans 追加後に実装

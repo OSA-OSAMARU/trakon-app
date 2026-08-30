@@ -26,6 +26,7 @@ const stubMember: ProjectMember = {
   organizationName: '株式会社A',
   memberType: 'production',
   jobTitle: null,
+  roleType: 'editor',
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -60,6 +61,7 @@ describe('membersApi', () => {
           organizationName: '株式会社A',
           memberType: 'production',
           jobTitle: null,
+          roleType: 'editor',
         },
       ],
     };

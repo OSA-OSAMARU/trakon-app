@@ -54,7 +54,7 @@ const projects: ProjectSummary[] = [
     endDate: '2026-07-01',
     status: 'active',
     archivedAt: null,
-    role: 'director',
+    role: 'admin',
     clientName: null,
     progressManager: null,
     overdueCount: 0,

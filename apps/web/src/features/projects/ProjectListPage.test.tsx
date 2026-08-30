@@ -31,7 +31,7 @@ const baseProject: ProjectSummary = {
   endDate: '2026-07-31',
   status: 'active',
   archivedAt: null,
-  role: 'director',
+  role: 'admin',
   clientName: null,
   progressManager: null,
   overdueCount: 0,
@@ -44,7 +44,7 @@ const secondProject: ProjectSummary = {
   ...baseProject,
   id: 'p2',
   name: '二つ目の案件',
-  role: 'member',
+  role: 'editor',
   status: 'closed',
 };
 

@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 
 import { server } from '@/test/handlers';
 import { renderWithProviders } from '@/test/render';
+import type { ProjectRole } from '@trakon/shared';
+
 import type { ProjectMember } from '@/features/projects/membersApi';
 import { BallDetailModal } from './BallDetailModal';
 import type { BallEvent, Plan, PlanDetail } from './api';
@@ -49,6 +51,7 @@ const meMember: ProjectMember = {
   organizationName: 'Acme',
   memberType: 'production',
   jobTitle: null,
+  roleType: 'editor',
   sortOrder: 0,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -122,14 +125,14 @@ function makeEvent(overrides: Partial<BallEvent> = {}): BallEvent {
 // =============================================================================
 // MSW 共通ハンドラ登録
 // =============================================================================
-type SyncOpts = { role?: 'director' | 'member' };
+type SyncOpts = { role?: ProjectRole };
 
 /**
  * sync(本人) / project(role) / plan detail をまとめて登録する。
  * action 系 (toss/complete/...) は各テストで個別に server.use する。
  */
 function setupReads(detail: PlanDetail, opts: SyncOpts = {}) {
-  const role = opts.role ?? 'member';
+  const role = opts.role ?? 'editor';
   server.use(
     http.post('*/api/v1/auth/me/sync', () =>
       HttpResponse.json({
@@ -337,10 +340,13 @@ describe('BallDetailModal (integration)', () => {
   // ボール状態ごとの表示差分
   // ---------------------------------------------------------------------------
   it('approved 状態: TOSS 待ちバナーと TOSS ボタンを表示する (進行責任者=本人)', async () => {
-    setupReads({
-      plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
-      events: [makeEvent({ eventType: 'approved' })],
-    });
+    setupReads(
+      {
+        plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
+        events: [makeEvent({ eventType: 'approved' })],
+      },
+      { role: 'admin' }, // TOSS は管理者のみ (FR-ROLE-02)
+    );
     renderModal();
 
     // 状態バッジ (承認済み・TOSS待ち)。
@@ -364,8 +370,9 @@ describe('BallDetailModal (integration)', () => {
   // ---------------------------------------------------------------------------
   // 認可分岐
   // ---------------------------------------------------------------------------
-  it('認可: 進行責任者でない一般メンバーには TOSS ボタンを表示しない', async () => {
-    // 進行責任者・承認者を他人にする。role は member。
+  it('認可: 編集者には TOSS ボタンを無効化して理由を出す (隠さない)', async () => {
+    // TOSS は管理者のみ (FR-ROLE-02)。ただし中心動線なので黙って消すと壊れたと
+    // 誤解されるため、無効化 + 理由テキストで示す (設計書 §4.5.2)。
     setupReads({
       plan: makePlan({
         ballState: 'approved',
@@ -380,7 +387,8 @@ describe('BallDetailModal (integration)', () => {
 
     // 詳細が描画されるまで待つ
     expect(await screen.findByText('承認済み・TOSS待ち')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '次の工程へトス' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '次の工程へトス' })).toBeDisabled();
+    expect(screen.getByText('TOSS は管理者のみが実行できます')).toBeInTheDocument();
   });
 
   it('認可: 進行責任者でなくてもディレクターなら TOSS できる', async () => {
@@ -394,7 +402,7 @@ describe('BallDetailModal (integration)', () => {
         }),
         events: [makeEvent({ eventType: 'approved' })],
       },
-      { role: 'director' },
+      { role: 'admin' },
     );
     renderModal();
 
@@ -407,7 +415,7 @@ describe('BallDetailModal (integration)', () => {
         plan: makePlan({ ballState: 'in_progress', executor: null, approver: null }),
         events: [],
       },
-      { role: 'director' },
+      { role: 'admin' },
     );
     renderModal();
 
@@ -418,10 +426,13 @@ describe('BallDetailModal (integration)', () => {
   // TOSS mutation
   // ---------------------------------------------------------------------------
   it('TOSS 成功: toss エンドポイントへ POST する', async () => {
-    setupReads({
-      plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
-      events: [makeEvent({ eventType: 'approved' })],
-    });
+    setupReads(
+      {
+        plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
+        events: [makeEvent({ eventType: 'approved' })],
+      },
+      { role: 'admin' },
+    );
     const tossed = makePlan({ ballState: 'tossed', ballHolder: memberRef(otherMember) });
     let tossCalled = false;
     server.use(
@@ -444,10 +455,13 @@ describe('BallDetailModal (integration)', () => {
   });
 
   it('TOSS 失敗: サーバ 4xx でも例外で落ちずに描画が保たれる', async () => {
-    setupReads({
-      plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
-      events: [makeEvent({ eventType: 'approved' })],
-    });
+    setupReads(
+      {
+        plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
+        events: [makeEvent({ eventType: 'approved' })],
+      },
+      { role: 'admin' },
+    );
     let tossCalled = false;
     server.use(
       http.post(
@@ -631,12 +645,15 @@ describe('BallDetailModal (integration)', () => {
   // ---------------------------------------------------------------------------
   // TOSS の取り消し (toss-undo)
   // ---------------------------------------------------------------------------
-  it('TOSS の取り消し: tossed 状態は誰でも toss-undo できる', async () => {
-    // ballHolder を他人にし role=member でも取り消せる (#50)。
-    setupReads({
-      plan: makePlan({ ballState: 'tossed', ballHolder: memberRef(otherMember) }),
-      events: [makeEvent()],
-    });
+  it('TOSS の取り消し: tossed 状態は管理者が toss-undo できる', async () => {
+    // 管理者はボール保持者が他人でも取り消せる (#50 の救済は管理者が行う)。
+    setupReads(
+      {
+        plan: makePlan({ ballState: 'tossed', ballHolder: memberRef(otherMember) }),
+        events: [makeEvent()],
+      },
+      { role: 'admin' },
+    );
     let undoCalled = false;
     server.use(
       http.post(

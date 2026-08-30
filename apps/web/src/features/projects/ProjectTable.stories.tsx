@@ -12,7 +12,7 @@ const project = (over: Partial<ProjectSummary> & { id: string; name: string }): 
   endDate: '2026-08-31',
   status: 'active',
   archivedAt: null,
-  role: 'director',
+  role: 'admin',
   createdBy: 'u1',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-10T00:00:00.000Z',
@@ -37,7 +37,7 @@ const ROWS: ProjectSummary[] = [
     progressManager: { id: 'm3', name: '杉野 遥' },
     overdueCount: 1,
   }),
-  project({ id: 'p5', name: '展示会ツール制作', clientName: '株式会社北極星精機', role: 'member' }),
+  project({ id: 'p5', name: '展示会ツール制作', clientName: '株式会社北極星精機', role: 'editor' }),
   project({ id: 'p6', name: 'ECサイト改善', clientName: '木庭生活用品株式会社' }),
 ];
 

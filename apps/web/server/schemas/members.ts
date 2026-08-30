@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { JOB_TITLES, MEMBER_TYPES } from '@trakon/shared';
+import { JOB_TITLES, MEMBER_TYPES, PROJECT_ROLES } from '@trakon/shared';
 
 // メールは任意 (スケジュール担当者としての登録)。空文字は「未登録」= undefined に正規化。
 const optionalEmail = z.preprocess(
@@ -21,6 +21,8 @@ export const memberInputSchema = z.object({
   organizationName: z.string().trim().max(255).default(''),
   memberType: z.enum(MEMBER_TYPES),
   jobTitle: optionalJobTitle,
+  /** 権限ロール (FR-ROLE-01)。未指定は編集者 */
+  roleType: z.enum(PROJECT_ROLES).default('editor'),
 });
 export type MemberInput = z.infer<typeof memberInputSchema>;
 
@@ -35,6 +37,8 @@ export const updateMemberBodySchema = z.object({
   memberType: z.enum(MEMBER_TYPES).optional(),
   // null で明示的にクリアできる
   jobTitle: z.enum(JOB_TITLES).nullable().optional(),
+  /** 権限ロールの変更 (FR-ROLE-03)。最後の管理者は降格できない */
+  roleType: z.enum(PROJECT_ROLES).optional(),
   sortOrder: z.number().int().min(0).max(10_000).optional(),
 });
 export type UpdateMemberBody = z.infer<typeof updateMemberBodySchema>;

@@ -66,7 +66,7 @@ const detail = (over: Partial<ProjectDetail> = {}): ProjectDetail => ({
   endDate: '2026-12-31',
   status: 'active',
   archivedAt: null,
-  role: 'director',
+  role: 'admin',
   createdBy: 'user-1',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -342,7 +342,7 @@ describe('ProjectEditPage (integration)', () => {
   it('director の場合はアーカイブ操作ができる (確認 → POST → 一覧へ遷移)', async () => {
     const user = setup();
     let archiveCalled = false;
-    stubGets({ project: { role: 'director', archivedAt: null } });
+    stubGets({ project: { role: 'admin', archivedAt: null } });
     server.use(
       http.post('*/api/v1/projects/p1/archive', () => {
         archiveCalled = true;
@@ -367,7 +367,7 @@ describe('ProjectEditPage (integration)', () => {
   it('アーカイブ済み director では復元操作ができる (POST unarchive)', async () => {
     const user = setup();
     let unarchiveCalled = false;
-    stubGets({ project: { role: 'director', archivedAt: '2026-06-01T00:00:00.000Z' } });
+    stubGets({ project: { role: 'admin', archivedAt: '2026-06-01T00:00:00.000Z' } });
     server.use(
       http.post('*/api/v1/projects/p1/unarchive', () => {
         unarchiveCalled = true;
@@ -388,7 +388,7 @@ describe('ProjectEditPage (integration)', () => {
   });
 
   it('非 director ではアーカイブセクションを表示しない', async () => {
-    stubGets({ project: { role: 'member' } });
+    stubGets({ project: { role: 'editor' } });
     renderEdit();
 
     await screen.findByText('トップページ');

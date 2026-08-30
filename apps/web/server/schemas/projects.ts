@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { JOB_TITLES, MEMBER_TYPES } from '@trakon/shared';
+import { JOB_TITLES, MEMBER_TYPES, PROJECT_ROLES } from '@trakon/shared';
 
 const isoDate = z
   .string()
@@ -25,6 +25,8 @@ const memberInput = z.object({
   organizationName: z.string().trim().max(255).default(''),
   memberType: z.enum(MEMBER_TYPES),
   jobTitle: optionalJobTitle,
+  /** 権限ロール (FR-ROLE-01)。未指定は編集者 */
+  roleType: z.enum(PROJECT_ROLES).default('editor'),
 });
 
 const itemInput = z.object({

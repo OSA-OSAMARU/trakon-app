@@ -123,7 +123,8 @@ export async function createMember(args: {
   name?: string;
   email?: string;
   organizationName?: string;
-  memberType?: 'client' | 'production';
+  memberType?: 'client' | 'production' | 'partner';
+  roleType?: 'admin' | 'editor' | 'viewer';
   sortOrder?: number;
 }) {
   const tag = uniq();
@@ -135,6 +136,7 @@ export async function createMember(args: {
       email: args.email ?? `member-${tag}@example.test`,
       organizationName: args.organizationName ?? 'Acme',
       memberType: args.memberType ?? 'production',
+      roleType: args.roleType ?? 'editor',
       sortOrder: args.sortOrder ?? 0,
     },
   });
@@ -230,12 +232,37 @@ export async function setupProjectWithDirector(opts: {
     name: user.fullName,
     email: user.email,
     memberType: opts.memberType ?? 'production',
+    // 作成者は常に管理者 (FR-ROLE-04)。列にも明示しておく
+    roleType: 'admin',
   });
   const token = await signTestJwt({
     authUserId: user.authUserId,
     email: user.email,
   });
   return { user, project, member, token };
+}
+
+/**
+ * 既存プロジェクトに、指定ロールの参加者を 1 人追加してトークンまで用意する。
+ * ロール別の認可を網羅的に検証するために使う。
+ */
+export async function addProjectMemberWithRole(args: {
+  projectId: string;
+  roleType: 'admin' | 'editor' | 'viewer';
+  memberType?: 'client' | 'production' | 'partner';
+}) {
+  const user = await createUser();
+  const member = await createMember({
+    projectId: args.projectId,
+    userId: user.id,
+    name: user.fullName,
+    email: user.email,
+    memberType: args.memberType ?? 'production',
+    roleType: args.roleType,
+    sortOrder: 1,
+  });
+  const token = await signTestJwt({ authUserId: user.authUserId, email: user.email });
+  return { user, member, token };
 }
 
 /** プロジェクトに参加していない別ユーザー + そのトークンを用意する。 */
