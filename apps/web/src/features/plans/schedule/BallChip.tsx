@@ -117,6 +117,12 @@ export function BallChip({
 
   const statusStatus = completed ? 'completed' : plan.ballState;
 
+  // 単日のように背の低いカードでは、Figma (node 11:2) の上下パディング 11/12px を
+  // 入れるとタイトル 1 行 (14px * 1.5 = 20px) が収まらず、下端へ押し出されて見える。
+  // 収まらない高さのときだけパディングを畳み、タイトルを上下中央に置く。
+  // pb-[0.11em] は Noto Sans JP の行ボックス非対称の補正 (ui/button.tsx と同じ理由)。
+  const tight = height < 11 + 20 + 12;
+
   return (
     <div
       {...(clickable
@@ -138,7 +144,8 @@ export function BallChip({
       onPointerEnter={editing ? () => onHoverChange?.(plan.id) : undefined}
       onPointerLeave={editing ? () => onHoverChange?.(null) : undefined}
       className={cn(
-        'shadow-card group absolute flex flex-col overflow-hidden rounded-lg border pt-[11px] pr-[15px] pb-[12px] pl-[15px]',
+        'shadow-card group absolute flex flex-col overflow-hidden rounded-lg border px-[15px]',
+        tight ? 'justify-center pb-[0.11em]' : 'pt-[11px] pb-[12px]',
         surfaceClass,
         borderClass,
         ringClass,

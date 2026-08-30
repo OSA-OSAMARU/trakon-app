@@ -14,6 +14,11 @@ import { cn } from './utils';
  *   default 40px … ヘッダーの主要操作
  *   lg      44px … フォームの標準 (node 78:18「標準高さ 44px」)
  * 左右余白は「通常 18px 以上 / 主要操作 24px 以上」(同 node 78:18)。
+ *
+ * ラベルを含むサイズには pb-[0.11em] を入れている。Noto Sans JP は行ボックスが
+ * 上下非対称 (hhea ascent 1.16em / descent 0.288em) で、字面の中心が行ボックスの
+ * 中心より約 0.056em 下に来る。items-center だけだとラベルが沈んで見えるため、
+ * その 2 倍を下パディングで相殺して光学的に中央へ戻す (アイコンのみの size は対象外)。
  */
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-3 whitespace-nowrap rounded-md font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 aria-invalid:border-destructive",
@@ -30,9 +35,9 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        sm: 'h-9 gap-2 px-3.5 text-body has-[>svg]:px-3',
-        default: 'h-10 px-4.5 text-body has-[>svg]:px-4',
-        lg: 'h-11 px-6 text-body has-[>svg]:px-5',
+        sm: 'h-9 gap-2 px-3.5 pb-[0.11em] text-body has-[>svg]:px-3',
+        default: 'h-10 px-4.5 pb-[0.11em] text-body has-[>svg]:px-4',
+        lg: 'h-11 px-6 pb-[0.11em] text-body has-[>svg]:px-5',
         icon: 'size-10',
         'icon-sm': 'size-9',
       },

@@ -108,6 +108,17 @@ const PLANS: Plan[] = [
     ballState: 'review_pending',
     ballHolder: ishihara,
   }),
+  // 単日の予定 (高さが最小のカード)。上下パディングの畳み込みを目視するため常設する。
+  plan({
+    id: 'p7',
+    itemId: 'card',
+    title: 'ロゴ入稿',
+    category: 'other',
+    colorTheme: null,
+    scheduledDate: iso(1),
+    dueDate: iso(1),
+    executor: aoki,
+  }),
 ];
 
 const ITEMS = [
