@@ -59,3 +59,26 @@ Sub-Phase 0.0〜0.6 の実装過程で、基本設計書 v1.1 から意図的に
 - `.github/workflows/release-deploy.yml`：GitHub Release → Production デプロイ
 - `apps/web/server/lib/mailer.ts`：dummy / Resend ファクトリ
 - `apps/web/server/lib/sentry.ts` / `apps/web/src/lib/sentry.ts`：FE/BE Sentry init
+
+---
+
+## Phase 0.5（有料プラン・組織・権限ロール）実装時の補足
+
+設計書 v1.2 の記述と実装が一致していることを前提に、**実装で初めて確定した細部**だけを残す。
+
+| 項目 | 設計書 v1.2 | 実装 | 理由 / 影響 |
+|---|---|---|---|
+| 請求期間の読み取り | 「Subscription の current_period_*」 | Subscription 直下と Subscription Item の**両方**を見る | Stripe の API バージョンによって置き場所が異なるため、どちらでも読めるようにした |
+| Price → プランの判定 | 環境変数の Price ID と突き合わせる | 同左（`planCodeFromPriceId`） | Price ID をソースコードに書かない方針の帰結。**env が未設定だと free 扱いになる**ので、本番では env 検証で必須にしている |
+| 座席の再チェック（受諾時） | 「受諾時に再チェックする」 | この招待自身が消費している 1 座席を差し引いて判定する | 受諾は「招待 1 → 会員 1」の振り替えにすぎず、差し引かないと自分自身で上限に当たってしまう |
+| 反映待ちのポーリング | 「状態が変わったら停止」 | 加えて **30 秒でタイムアウト**する | Webhook が遅延・欠落したときにポーリングが止まらなくなるのを防ぐ |
+| `POST /plans` 系のガード | §3.4 の認可マトリクスに記載 | 新規に `requireProjectAction` を追加 | Phase 0 では「参加者なら誰でも」で**ノーガードだった**。型エラーにならないため、認可置換で最も漏れやすい箇所 |
+| MSW の既定ハンドラ | 記述なし | `GET /billing/subscription` だけ既定を置く | 共通レイアウトが毎回呼ぶため。既定が無いと全ページのテストが未ハンドルで落ちる |
+
+### 未実施（環境要因）
+
+- **マイグレーションの適用と統合テストの実行**：ローカルの Docker が起動しておらず、
+  `pnpm db:deploy` と `pnpm test:integration` を実行できていない。
+  型チェック・lint・ユニットテスト（クライアント / サーバー）はすべて通っている。
+  マイグレーション適用と統合テストは DB を起動できる環境で必ず実施すること。
+- **Stripe テスト環境での E2E**：`docs/operations.md` §6.1 の 18 項目。

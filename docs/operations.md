@@ -134,6 +134,79 @@ psql "$DIRECT_URL" \
 
 ---
 
+### 2.10 Stripe（有料プラン / Phase 0.5）
+
+設計書 [07-billing.md](design/07-billing.md) §7.3 / §7.5、PRD §9.12。
+
+> **【重要】Secret Key と Webhook Secret を、この文書・チャット・メール・
+> スクリーンショットに一切記載しない**（PRD SR-BILL-04）。値は Vercel の
+> 環境変数へ直接登録する。テストモードと本番モードで ID はすべて別値になるため、
+> **テスト環境で本番 ID を流用しない**。
+
+**A. 商品カタログ（テスト / 本番でそれぞれ実施）**
+
+1. Product を 2 件作る：`Personal` と `Team`（プラン名は「Team」。"Teams" ではない）
+2. 各 Product に月額 Price を 1 件ずつ作る
+   - Personal: 980 JPY / month
+   - Team: 9,800 JPY / month
+   - 通貨は JPY（ゼロデシマル通貨なので小数点処理は不要）
+   - **`tax_behavior` は `inclusive`（税込）**
+3. **Price 作成後、`tax_behavior` が実際に `inclusive` になっているか API で確認する。**
+   ダッシュボードの画面上では確認できない（Stripe 実装仕様書 §4.1）。
+
+   ```bash
+   stripe prices retrieve <PRICE_ID> | grep tax_behavior
+   ```
+
+4. 手動 Tax Rate を 1 件作る：日本国内向け消費税 10%・**内税（inclusive）**
+   - 自動税計算（Stripe Tax）は使わない。この Tax Rate は請求書に消費税の内訳を
+     表示するためのもので、課金総額は変えない
+
+**B. Customer Portal**
+
+1. Portal の構成（Configuration）を作る
+2. **許可する**：支払方法の変更 / 請求書・領収情報の閲覧 / 期間終了時解約
+3. **無効化する**：プラン変更、数量（quantity）の変更
+   - トライアルの扱い・日割り請求・Team の会員数・Personal のプロジェクト数を
+     いずれも TRAKON 側で確認する必要があるため。Portal 単独でのプラン変更を
+     許すとこれらの条件確認をバイパスしてしまう（設計書 §7.8）
+4. 構成 ID を `STRIPE_PORTAL_CONFIGURATION_ID` に登録する（既定構成に依存しない）
+
+**C. Webhook（Event destinations）**
+
+1. 送信先を登録する：`https://<環境のドメイン>/api/v1/stripe/webhook`
+2. 購読イベント（設計書 §7.5.2）：
+   - `checkout.session.completed`
+   - `customer.subscription.created` / `updated` / `deleted` / `trial_will_end`
+   - `invoice.paid` / `payment_failed` / `payment_action_required` / `updated`
+3. 署名シークレットを `STRIPE_WEBHOOK_SECRET` に登録する
+4. 支払い失敗時の再試行（スマートリトライ）が **7 日間・最大 4 回**であることを確認する
+5. カード決済失敗時の顧客向け自動メールが有効になっていることを確認する
+6. 適格請求書（インボイス制度）の登録番号が登録されていることを確認する
+
+**D. 環境変数（Vercel に直接登録）**
+
+`STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PERSONAL_MONTHLY_PRICE_ID` /
+`STRIPE_TEAM_MONTHLY_PRICE_ID` / `STRIPE_JP_TAX_RATE_ID` / `STRIPE_PORTAL_CONFIGURATION_ID`
+
+クライアント公開鍵（Publishable Key）は**不要**。ホスト型 Checkout へサーバーサイドで
+リダイレクトするだけで、ブラウザ側で Stripe SDK を動かさないため。
+
+**E. ローカルでの疎通確認**
+
+```bash
+stripe listen --forward-to localhost:3001/api/v1/stripe/webhook
+```
+
+表示される `whsec_...` をローカルの `STRIPE_WEBHOOK_SECRET` に設定してから
+`pnpm dev` を起動する。別ターミナルでイベントを流して反映を確認する：
+
+```bash
+stripe trigger customer.subscription.updated
+```
+
+---
+
 ## 3. デプロイ Run-book
 
 ### 3.1 通常リリース
@@ -206,6 +279,86 @@ pnpm db:migrate        # 再適用
 3. PR でレビュー
 4. main マージ後、Release で本番に適用
 
+### トライアル重複判定の手動解除（Phase 0.5）
+
+設計書 [07-billing.md](design/07-billing.md) §7.9.3。
+
+無料トライアルは 1 アカウント・1 組織につき原則 1 回。判定は
+ユーザー ID / 正規化メール / 組織 ID / 過去の顧客 ID で行う。
+**法人カードの共有などで誤判定があり得るため、運営が手動で解除できる。**
+
+> 管理画面は用意していない（Phase 0.5 の意図的なスコープ外）。Supabase の
+> SQL Editor から直接更新する。**行は削除せず `released_*` を埋める**（履歴を残すため）。
+
+1. 対象を特定する
+
+   ```sql
+   SELECT id, organization_id, user_id, email_normalized, email_domain,
+          claimed_at, released_at
+     FROM billing_trial_claims
+    WHERE email_normalized = lower('対象のメールアドレス')
+      AND released_at IS NULL;
+   ```
+
+2. 解除する（`released_by` には対応した運用者が分かる文字列を入れる）
+
+   ```sql
+   UPDATE billing_trial_claims
+      SET released_at = now(),
+          released_reason = '法人カード共有による誤判定のため解除（問い合わせ #____）',
+          released_by = '運用者名'
+    WHERE id = '<対象の id>';
+   ```
+
+3. 監査ログを 1 行残す
+
+   ```sql
+   INSERT INTO audit_logs (action, resource_type, resource_id, result, extra)
+   VALUES ('trial_released', 'subscription', '<organization_id>', 'success',
+           jsonb_build_object('releasedBy', '運用者名', 'reason', '誤判定のため'));
+   ```
+
+4. ユーザーに再度お申し込みいただく
+
+> `email_domain` の一致は**記録のみで自動拒否には使っていない**ため、
+> 同一ドメインというだけで解除が必要になることはない。
+
+### 支払い失敗時の対応（Phase 0.5）
+
+1. 支払い失敗は Webhook（`invoice.payment_failed`）で自動的に検知され、
+   契約は「支払遅延」になり **猶予期限（初回失敗 + 7 日）** が設定される
+2. 猶予期間中は**通常どおり利用できる**。アプリ内バナーと通知メールで案内される
+3. ユーザーが Customer Portal でカードを更新し、再試行が成功すると自動復旧する
+4. 7 日間・最大 4 回の再試行がすべて失敗すると `unpaid` となり、
+   編集を停止して閲覧のみになる。**データは削除しない**
+5. 状態を確認する場合：
+
+   ```sql
+   SELECT organization_id, plan_code, status,
+          last_payment_failed_at, grace_period_ends_at
+     FROM billing_subscriptions
+    WHERE status IN ('past_due', 'unpaid');
+   ```
+
+> 猶予期限は**初回失敗時に一度だけ**設定し、再試行のたびに延ばさない（設計書 §7.10.2）。
+
+### Webhook の再送・詰まりの調査（Phase 0.5）
+
+受信は `stripe_events` に台帳として残る。イベント ID に一意制約があるため、
+同じイベントを二重に処理することはない。
+
+```sql
+-- 失敗・スキップしたイベント
+SELECT stripe_event_id, event_type, status, error, received_at
+  FROM stripe_events
+ WHERE status IN ('failed', 'skipped')
+ ORDER BY received_at DESC
+ LIMIT 50;
+```
+
+`failed` のものは Stripe 側からの再送で自動的に解消することが多い（処理は冪等）。
+解消しない場合は Stripe ダッシュボードの Webhook 画面から手動で再送する。
+
 ### 招待リンクの調査
 
 監査ログから追跡可能：
@@ -216,3 +369,52 @@ FROM audit_logs al
 WHERE al.share_link_id = '<uuid>'
 ORDER BY al.occurred_at DESC;
 ```
+
+---
+
+## 6. 本番公開前チェックリスト（有料プラン / Phase 0.5）
+
+Stripe 実装仕様書 §16 / §17 に対応する。**すべて満たしてからリリースする。**
+
+### 6.1 Stripe テスト環境での確認
+
+テスト環境は Product / Price / Tax Rate / Webhook をすべて新規に作る（本番 ID の流用は禁止）。
+
+| # | 項目 | 確認 |
+|---|---|:---:|
+| 1 | Personal の新規加入 | ☐ |
+| 2 | Team の新規加入 | ☐ |
+| 3 | 120 時間のトライアル中であること | ☐ |
+| 4 | トライアル終了後の初回請求書生成・決済成功 | ☐ |
+| 5 | トライアル終了後の初回請求書生成・決済失敗 | ☐ |
+| 6 | Checkout の途中離脱（契約が作られないこと） | ☐ |
+| 7 | Checkout 成功後にブラウザを閉じても反映されること | ☐ |
+| 8 | Webhook の重複受信で副作用が 1 回だけであること | ☐ |
+| 9 | Webhook の順序逆転で最終状態が壊れないこと | ☐ |
+| 10 | Personal → Team のプラン変更（決済成功まで昇格しないこと） | ☐ |
+| 11 | Team → Personal のプラン変更（次回更新時に適用） | ☐ |
+| 12 | トライアル中の解約 | ☐ |
+| 13 | 通常解約（期間終了までの利用継続を含む） | ☐ |
+| 14 | Customer Portal でのカード変更 | ☐ |
+| 15 | 支払い失敗後の復旧 | ☐ |
+| 16 | Free 上限超過状態での解約（**データが消えないこと**） | ☐ |
+| 17 | 再契約（既存顧客・保存データの再利用） | ☐ |
+| 18 | テスト環境と本番環境の ID が混在していないこと | ☐ |
+
+**時間経過を伴う 3 項目（トライアル 120 時間の経過 / 請求サイクルの更新 /
+支払い失敗 7 日後の unpaid 移行）は Stripe Test Clocks で圧縮して確認する。**
+自動テストには入れていない（外部依存と実行時間のため）。
+
+### 6.2 本番公開の合格条件
+
+- [ ] 本番の Product / Price が作成済みで、**使用禁止 Price をコード上で参照していない**
+      （過去に作られた誤り Price・アーカイブ済み Price。ID は Stripe ダッシュボードで確認）
+- [ ] 各 Price の `tax_behavior` が実際に `inclusive` であることを **API で確認済み**
+      （ダッシュボード画面では確認できない）
+- [ ] 本番 Webhook エンドポイントを登録し、疎通と署名検証を確認済み
+- [ ] 購読イベントすべてについて DB への反映を確認済み
+- [ ] §6.1 のテスト項目 18 件をテスト環境で実施しパス
+- [ ] 本番の環境変数（Secret 含む）が Vercel へ直接登録済みで、
+      **文書・チャット上に値が残っていない**
+- [ ] Customer Portal の本番設定で**プラン変更が無効化**されていることを確認済み
+- [ ] テスト環境と本番環境の ID（Product / Price / Customer）が混在していない
