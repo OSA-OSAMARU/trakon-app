@@ -39,6 +39,8 @@ const TABLES = [
   'project_items',
   'project_members',
   'projects',
+  'organization_members',
+  'organizations',
   'oauth_identities',
   'users',
 ];
