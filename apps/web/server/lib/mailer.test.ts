@@ -204,3 +204,148 @@ describe('__setMailerForTest', () => {
     expect(sendInvitation).toHaveBeenCalledTimes(1);
   });
 });
+
+// =============================================================================
+// 課金系の通知 (§7.10)
+// =============================================================================
+describe('課金系の通知メール', () => {
+  const billingEnv = {
+    APP_ENV: 'prod',
+    RESEND_API_KEY: 'sk-test-123',
+    RESEND_FROM_EMAIL: 'noreply@trakon.test',
+  };
+
+  const lastPayload = () =>
+    (sendMock.mock.calls.at(-1) as unknown[])?.[0] as {
+      to: string;
+      subject: string;
+      html: string;
+      text: string;
+    };
+
+  it('トライアル終了予告は終了時刻と自動請求を伝える', async () => {
+    setEnv(billingEnv);
+    const { getMailer } = await importMailer();
+
+    await getMailer().sendTrialWillEnd({
+      to: 'owner@example.test',
+      organizationName: '株式会社テスト',
+      trialEnd: new Date('2026-09-06T00:00:00Z'),
+    });
+
+    const payload = lastPayload();
+    expect(payload.to).toBe('owner@example.test');
+    expect(payload.subject).toContain('無料トライアル終了');
+    expect(payload.html).toContain('株式会社テスト');
+    expect(payload.text).toContain('自動で請求');
+  });
+
+  it('トライアル終了時刻が不明でも送れる', async () => {
+    setEnv(billingEnv);
+    const { getMailer } = await importMailer();
+
+    await getMailer().sendTrialWillEnd({
+      to: 'owner@example.test',
+      organizationName: 'テスト組織',
+      trialEnd: null,
+    });
+
+    expect(lastPayload().text).toContain('間もなく');
+  });
+
+  it('支払い失敗は猶予期限と「データは削除されない」ことを伝える', async () => {
+    setEnv(billingEnv);
+    const { getMailer } = await importMailer();
+
+    await getMailer().sendPaymentFailed({
+      to: 'owner@example.test',
+      organizationName: 'テスト組織',
+      graceEndsAt: new Date('2026-09-08T00:00:00Z'),
+      actionRequired: false,
+    });
+
+    const payload = lastPayload();
+    expect(payload.subject).toContain('お支払いを確認できませんでした');
+    expect(payload.text).toContain('までにお支払い方法を更新');
+    expect(payload.text).toContain('データは削除されません');
+  });
+
+  it('追加認証が必要な場合は件名と本文を切り替える', async () => {
+    setEnv(billingEnv);
+    const { getMailer } = await importMailer();
+
+    await getMailer().sendPaymentFailed({
+      to: 'owner@example.test',
+      organizationName: 'テスト組織',
+      graceEndsAt: null,
+      actionRequired: true,
+    });
+
+    const payload = lastPayload();
+    expect(payload.subject).toContain('追加の確認が必要');
+    expect(payload.text).toContain('カード会社の追加認証');
+  });
+
+  it('解約完了はデータを消していないことを伝える', async () => {
+    setEnv(billingEnv);
+    const { getMailer } = await importMailer();
+
+    await getMailer().sendSubscriptionCanceled({
+      to: 'owner@example.test',
+      organizationName: 'テスト組織',
+    });
+
+    const payload = lastPayload();
+    expect(payload.subject).toContain('解約手続きが完了');
+    expect(payload.text).toContain('削除していません');
+  });
+
+  it('決済情報 (カード番号・Stripe の ID) を本文に含めない (SR-BILL-05)', async () => {
+    setEnv(billingEnv);
+    const { getMailer } = await importMailer();
+
+    await getMailer().sendPaymentFailed({
+      to: 'owner@example.test',
+      organizationName: 'テスト組織',
+      graceEndsAt: new Date('2026-09-08T00:00:00Z'),
+      actionRequired: false,
+    });
+
+    const payload = lastPayload();
+    expect(payload.html).not.toMatch(/cus_|sub_|in_|price_|pi_/);
+  });
+
+  it('送信に失敗したら例外にする (呼び出し元が警告に変換する)', async () => {
+    setEnv(billingEnv);
+    sendMock.mockResolvedValueOnce({ data: null, error: { message: 'rate limited' } });
+    const { getMailer } = await importMailer();
+
+    await expect(
+      getMailer().sendSubscriptionCanceled({ to: 'x@example.test', organizationName: 'o' }),
+    ).rejects.toThrow(/rate limited/);
+  });
+
+  it('env 未設定なら課金系も dummy として出力する', async () => {
+    setEnv({ APP_ENV: 'local' });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { getMailer } = await importMailer();
+    const mailer = getMailer();
+
+    await mailer.sendTrialWillEnd({ to: 'a@example.test', organizationName: 'o', trialEnd: null });
+    await mailer.sendPaymentFailed({
+      to: 'a@example.test',
+      organizationName: 'o',
+      graceEndsAt: null,
+      actionRequired: false,
+    });
+    await mailer.sendSubscriptionCanceled({ to: 'a@example.test', organizationName: 'o' });
+
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.map((c) => String(c[0]))).toEqual([
+      expect.stringContaining('trial_will_end'),
+      expect.stringContaining('payment_failed'),
+      expect.stringContaining('subscription_canceled'),
+    ]);
+    logSpy.mockRestore();
+  });
+});
