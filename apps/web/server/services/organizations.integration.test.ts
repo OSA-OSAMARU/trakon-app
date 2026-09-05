@@ -47,8 +47,10 @@ describe('ensureOrganizationForUser', () => {
       expect(await prisma.organizationMember.count({ where: { userId: user.id } })).toBe(1);
     });
 
-    it('表示名が長くても組織名の長さ制限に収まる', async () => {
-      const user = await createUser({ withOrganization: false, displayName: 'あ'.repeat(300) });
+    it('表示名が最大長でも組織名の長さ制限に収まる', async () => {
+      // users.display_name は 50 文字までなので、実際に来る最長ケースで確かめる。
+      // 想定外に長い表示名を切り詰める防御的な挙動は organizations.test.ts が見る
+      const user = await createUser({ withOrganization: false, displayName: 'あ'.repeat(50) });
 
       const { organizationId } = await ensureOrganizationForUser(prisma, {
         userId: user.id,
@@ -57,6 +59,7 @@ describe('ensureOrganizationForUser', () => {
 
       const org = await prisma.organization.findUniqueOrThrow({ where: { id: organizationId } });
       expect(org.name.length).toBeLessThanOrEqual(255);
+      expect(org.name).toBe(`${'あ'.repeat(50)} の組織`);
     });
   });
 });
