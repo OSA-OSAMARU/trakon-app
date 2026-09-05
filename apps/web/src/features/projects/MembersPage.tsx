@@ -3,8 +3,12 @@ import {
   JOB_TITLE_LABEL,
   MEMBER_TYPES,
   MEMBER_TYPE_LABEL,
+  PROJECT_ROLES,
+  PROJECT_ROLE_DESCRIPTION,
+  PROJECT_ROLE_LABEL,
   type JobTitle,
   type MemberType,
+  type ProjectRole,
 } from '@trakon/shared';
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -12,7 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare, GripVertical } from 'lucide-react';
+import { Loader2, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare, GripVertical, Mail, X } from 'lucide-react';
 import { MemberKanbanTab } from '@/features/plans/MemberKanbanTab';
 import { toast } from 'sonner';
 
@@ -61,6 +65,7 @@ import { moveItem, useDragReorder } from '@/lib/reorder';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { membersApi, membersQueryKey, type ProjectMember } from './membersApi';
+import { invitationsApi, invitationsQueryKey } from './invitationsApi';
 
 export function MembersPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -139,6 +144,7 @@ export function MembersPage() {
 function ManageTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [removing, setRemoving] = useState<ProjectMember | null>(null);
 
   const query = useQuery({
@@ -184,15 +190,57 @@ function ManageTab({ projectId }: { projectId: string }) {
     reorderMut.mutate(moveItem(members, from, to).map((m) => m.id));
   });
 
+  // ロール変更 (FR-ROLE-03)。最後の管理者の降格はサーバーが LAST_ADMIN 409 で拒否する。
+  const roleMut = useMutation({
+    mutationFn: ({ memberId, roleType }: { memberId: string; roleType: ProjectRole }) =>
+      membersApi.update(projectId, memberId, { roleType }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) });
+      toast.success('権限を変更しました');
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '権限の変更に失敗しました'),
+  });
+
+  // 未受諾の招待 (座席を消費している) を一覧に混ぜて表示する
+  const invitationsQuery = useQuery({
+    queryKey: invitationsQueryKey.list(projectId),
+    queryFn: () => invitationsApi.list(projectId),
+  });
+  const pendingByMemberId = new Map(
+    (invitationsQuery.data ?? []).map((inv) => [inv.memberId, inv]),
+  );
+
+  const revokeMut = useMutation({
+    mutationFn: (invitationId: string) => invitationsApi.revoke(projectId, invitationId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: invitationsQueryKey.list(projectId) });
+      qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) });
+      toast.success('招待を取り消しました');
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '招待の取り消しに失敗しました'),
+  });
+
+  // 管理者が 0 名になる操作は UI 側でも無効化する (サーバーでも 409 で弾く)
+  const adminCount = members.filter((m) => m.roleType === 'admin').length;
+  const isLastAdmin = (m: ProjectMember) => m.roleType === 'admin' && adminCount <= 1;
+
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">参加者一覧</CardTitle>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus className="size-4" />
-            参加者を追加
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
+              <Mail className="size-4" />
+              招待を送る
+            </Button>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="size-4" />
+              参加者を追加
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -210,6 +258,7 @@ function ManageTab({ projectId }: { projectId: string }) {
                 <TableHead>メール</TableHead>
                 <TableHead>職種</TableHead>
                 <TableHead>区分</TableHead>
+                <TableHead>権限</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
@@ -244,16 +293,59 @@ function ManageTab({ projectId }: { projectId: string }) {
                     </TableCell>
                     <TableCell>
                       {MEMBER_TYPE_LABEL[m.memberType]}
+                      {pendingByMemberId.has(m.id) && (
+                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          招待中
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setRemoving(m)}
-                        aria-label="削除"
+                      <Select
+                        value={m.roleType}
+                        onValueChange={(v) =>
+                          roleMut.mutate({ memberId: m.id, roleType: v as ProjectRole })
+                        }
+                        disabled={roleMut.isPending || isLastAdmin(m)}
                       >
-                        <Trash2 className="size-4" />
-                      </Button>
+                        <SelectTrigger className="h-8 w-32" aria-label={`${m.name} の権限`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PROJECT_ROLES.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {PROJECT_ROLE_LABEL[r]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {isLastAdmin(m) && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          管理者は 1 名以上必要です
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {pendingByMemberId.has(m.id) ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => revokeMut.mutate(pendingByMemberId.get(m.id)!.id)}
+                          disabled={revokeMut.isPending}
+                          aria-label="招待を取り消す"
+                        >
+                          <X className="size-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setRemoving(m)}
+                          disabled={isLastAdmin(m)}
+                          aria-label="削除"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -266,6 +358,12 @@ function ManageTab({ projectId }: { projectId: string }) {
       <AddMembersDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
+        projectId={projectId}
+      />
+
+      <InviteMemberDialog
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
         projectId={projectId}
       />
 
@@ -456,5 +554,145 @@ function NotFound({ projectId: _ }: { projectId: string | undefined }) {
     <div className="mx-auto max-w-3xl px-8 py-20 text-center text-sm text-muted-foreground">
       プロジェクトが見つかりませんでした。
     </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// 招待ダイアログ (UC-31)
+//
+// 招待は組織の座席を 1 つ消費する。上限に達している場合はサーバーが
+// SEAT_LIMIT_REACHED 409 を返すので、その旨をそのまま表示する。
+// -----------------------------------------------------------------------------
+const inviteSchema = z.object({
+  email: z.string().trim().email('メール形式が不正').max(320),
+  name: z.string().trim().max(100),
+  organizationName: z.string().trim().max(255),
+  memberType: z.enum(MEMBER_TYPES),
+  jobTitle: z.string(),
+  roleType: z.enum(PROJECT_ROLES),
+});
+type InviteValues = z.infer<typeof inviteSchema>;
+
+function InviteMemberDialog({
+  open,
+  onClose,
+  projectId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  projectId: string;
+}) {
+  const qc = useQueryClient();
+  const form = useForm<InviteValues>({
+    resolver: zodResolver(inviteSchema),
+    defaultValues: {
+      email: '',
+      name: '',
+      organizationName: '',
+      memberType: 'production',
+      jobTitle: '',
+      roleType: 'editor',
+    },
+  });
+
+  const mutation = useMutation({
+    mutationFn: (values: InviteValues) =>
+      invitationsApi.create(projectId, {
+        email: values.email,
+        roleType: values.roleType,
+        ...(values.name ? { name: values.name } : {}),
+        organizationName: values.organizationName,
+        memberType: values.memberType,
+        jobTitle: (values.jobTitle || null) as JobTitle | null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) });
+      qc.invalidateQueries({ queryKey: invitationsQueryKey.list(projectId) });
+      toast.success('招待メールを送信しました');
+      form.reset();
+      onClose();
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '招待の送信に失敗しました'),
+  });
+
+  const roleType = form.watch('roleType');
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>参加者を招待</DialogTitle>
+          <DialogDescription>
+            招待メールを送り、受諾すると会員アカウントとして参加します。
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          id="invite-member-form"
+          className="grid gap-4"
+          onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
+        >
+          <Field label="メールアドレス" error={form.formState.errors.email?.message}>
+            <Input type="email" autoComplete="off" {...form.register('email')} />
+          </Field>
+
+          <Field label="氏名 (任意)" error={form.formState.errors.name?.message}>
+            <Input {...form.register('name')} />
+          </Field>
+
+          <Field label="所属 (任意)" error={form.formState.errors.organizationName?.message}>
+            <Input {...form.register('organizationName')} />
+          </Field>
+
+          <Field label="区分">
+            <Select
+              value={form.watch('memberType')}
+              onValueChange={(v) => form.setValue('memberType', v as MemberType)}
+            >
+              <SelectTrigger aria-label="区分">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MEMBER_TYPES.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {MEMBER_TYPE_LABEL[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="権限">
+            <Select
+              value={roleType}
+              onValueChange={(v) => form.setValue('roleType', v as ProjectRole)}
+            >
+              <SelectTrigger aria-label="権限">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROJECT_ROLES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {PROJECT_ROLE_LABEL[r]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{PROJECT_ROLE_DESCRIPTION[roleType]}</p>
+          </Field>
+        </form>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            キャンセル
+          </Button>
+          <Button type="submit" form="invite-member-form" disabled={mutation.isPending}>
+            {mutation.isPending && <Loader2 className="size-4 animate-spin" />}
+            招待を送る
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

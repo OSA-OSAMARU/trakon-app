@@ -59,10 +59,29 @@ function fieldByName(scope: HTMLElement, name: string): HTMLInputElement {
   return el;
 }
 
-/** members 一覧 GET をスタブする。 */
+/** members 一覧 GET をスタブする。招待一覧は既定で空。 */
 function stubMembers(members: ProjectMember[]) {
   server.use(
     http.get('*/api/v1/projects/p1/members', () => HttpResponse.json({ data: members })),
+    http.get('*/api/v1/projects/p1/invitations', () => HttpResponse.json({ data: [] })),
+  );
+}
+
+/** 未受諾の招待をスタブする (座席を消費している招待)。 */
+function stubInvitations(invitations: Array<{ id: string; memberId: string; email: string }>) {
+  server.use(
+    http.get('*/api/v1/projects/p1/invitations', () =>
+      HttpResponse.json({
+        data: invitations.map((i) => ({
+          ...i,
+          roleType: 'editor',
+          memberName: '招待中',
+          invitedByUserId: null,
+          expiresAt: '2026-12-31T00:00:00.000Z',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        })),
+      }),
+    ),
   );
 }
 
@@ -76,6 +95,7 @@ describe('MembersPage 管理タブ (integration)', () => {
           resolve = r;
         }),
       ),
+      http.get('*/api/v1/projects/p1/invitations', () => HttpResponse.json({ data: [] })),
     );
 
     const { container } = renderMembers(MANAGE);
@@ -314,5 +334,85 @@ describe('MembersPage かんばんタブ + 共通 (integration)', () => {
     await user.click(screen.getByRole('tab', { name: /管理/ }));
 
     expect(await screen.findByText('参加者一覧')).toBeInTheDocument();
+  });
+});
+
+// =============================================================================
+// 権限ロール・招待 (Phase 0.5)
+// =============================================================================
+describe('MembersPage 権限ロール (integration)', () => {
+  it('権限セレクトを変更すると PATCH でロールが送られる', async () => {
+    stubMembers([
+      member({ id: 'm1', name: '管理 太郎', roleType: 'admin' }),
+      member({ id: 'm2', name: '編集 花子', roleType: 'editor' }),
+    ]);
+    let patched: unknown = null;
+    server.use(
+      http.patch('*/api/v1/projects/p1/members/m2', async ({ request }) => {
+        patched = await request.json();
+        return HttpResponse.json({ data: member({ id: 'm2', roleType: 'viewer' }) });
+      }),
+    );
+    renderMembers(MANAGE);
+
+    const select = await screen.findByRole('combobox', { name: '編集 花子 の権限' });
+    await userEvent.click(select);
+    await userEvent.click(await screen.findByRole('option', { name: '閲覧者' }));
+
+    await waitFor(() => expect(patched).toEqual({ roleType: 'viewer' }));
+  });
+
+  it('管理者が 1 名しかいない場合はその権限セレクトと削除を無効化する', async () => {
+    stubMembers([
+      member({ id: 'm1', name: '管理 太郎', roleType: 'admin' }),
+      member({ id: 'm2', name: '編集 花子', roleType: 'editor' }),
+    ]);
+    renderMembers(MANAGE);
+
+    expect(await screen.findByRole('combobox', { name: '管理 太郎 の権限' })).toBeDisabled();
+    expect(screen.getByText('管理者は 1 名以上必要です')).toBeInTheDocument();
+    // 編集者側は操作できる
+    expect(screen.getByRole('combobox', { name: '編集 花子 の権限' })).not.toBeDisabled();
+  });
+
+  it('未受諾の招待は「招待中」バッジと取り消しボタンを出す', async () => {
+    stubMembers([member({ id: 'm1', name: '招待 太郎', roleType: 'editor' })]);
+    stubInvitations([{ id: 'inv1', memberId: 'm1', email: 'invitee@example.test' }]);
+    let revoked = false;
+    server.use(
+      http.delete('*/api/v1/projects/p1/invitations/inv1', () => {
+        revoked = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderMembers(MANAGE);
+
+    expect(await screen.findByText('招待中')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '招待を取り消す' }));
+
+    await waitFor(() => expect(revoked).toBe(true));
+  });
+
+  it('招待ダイアログからロール付きで招待を送れる', async () => {
+    stubMembers([member({ id: 'm1', roleType: 'admin' })]);
+    let posted: unknown = null;
+    server.use(
+      http.post('*/api/v1/projects/p1/invitations', async ({ request }) => {
+        posted = await request.json();
+        return HttpResponse.json({ data: {} }, { status: 201 });
+      }),
+    );
+    renderMembers(MANAGE);
+
+    await userEvent.click(await screen.findByRole('button', { name: /招待を送る/ }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(fieldByName(dialog, 'email'), 'invitee@example.test');
+    await userEvent.click(within(dialog).getByRole('combobox', { name: '権限' }));
+    await userEvent.click(await screen.findByRole('option', { name: '管理者' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: '招待を送る' }));
+
+    await waitFor(() =>
+      expect(posted).toMatchObject({ email: 'invitee@example.test', roleType: 'admin' }),
+    );
   });
 });

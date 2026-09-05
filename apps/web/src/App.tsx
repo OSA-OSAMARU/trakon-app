@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes, Navigate as Nav, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
+import { Toaster } from '@/components/ui/sonner';
+
 import { AuthCallbackPage } from './app/AuthCallbackPage';
 import { DashboardPage } from './app/DashboardPage';
 import { ResetPasswordPage } from './app/ResetPasswordPage';
@@ -23,43 +25,48 @@ import { SharePage } from './features/shareLinks/SharePage';
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<SC01LoginPage />} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} />
-      <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
-      <Route path="/share/:token" element={<SharePage />} />
+    <>
+      {/*
+       * Toaster はルーター直下に置く。認証後レイアウトの中に置いていたため、
+       * /login・/invitations/:token・/share/:token など公開ページでは
+       * トーストが描画されない状態だった (設計書 §4.11 の PRD 整合メモ)。
+       */}
+      <Toaster richColors position="bottom-center" />
+      <Routes>
+        <Route path="/login" element={<SC01LoginPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
+        <Route path="/share/:token" element={<SharePage />} />
 
-      {/* 未ログインでも閲覧可能な会社情報・法務ページ */}
-      <Route path="/company" element={<CompanyPage />} />
-      <Route path="/terms" element={<TermsPage />} />
-      <Route path="/privacy" element={<PrivacyPage />} />
-      <Route path="/commerce" element={<CommercePage />} />
+        {/* 未ログインでも閲覧可能な会社情報・法務ページ */}
+        <Route path="/company" element={<CompanyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/commerce" element={<CommercePage />} />
 
-      <Route
-        element={
-          <RequireAuth>
-            <SidebarLayout />
-          </RequireAuth>
-        }
-      >
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/projects" element={<ProjectListPage />} />
-        <Route path="/projects/new" element={<ProjectCreatePage />} />
-        <Route path="/projects/:projectId/edit" element={<ProjectEditPage />} />
-        <Route path="/projects/:projectId/members" element={<MembersPage />} />
-        <Route path="/projects/:projectId/share-links" element={<ShareLinksPage />} />
         <Route
-          path="/projects/:projectId/items/:itemId"
-          element={<ItemSchedulePage />}
-        />
-        {/* /projects/:projectId は先頭の制作物スケジュール (縦型カレンダー) へ */}
-        <Route path="/projects/:projectId" element={<ProjectRedirectToSchedule />} />
-      </Route>
+          element={
+            <RequireAuth>
+              <SidebarLayout />
+            </RequireAuth>
+          }
+        >
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/projects" element={<ProjectListPage />} />
+          <Route path="/projects/new" element={<ProjectCreatePage />} />
+          <Route path="/projects/:projectId/edit" element={<ProjectEditPage />} />
+          <Route path="/projects/:projectId/members" element={<MembersPage />} />
+          <Route path="/projects/:projectId/share-links" element={<ShareLinksPage />} />
+          <Route path="/projects/:projectId/items/:itemId" element={<ItemSchedulePage />} />
+          {/* /projects/:projectId は先頭の制作物スケジュール (縦型カレンダー) へ */}
+          <Route path="/projects/:projectId" element={<ProjectRedirectToSchedule />} />
+        </Route>
 
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </>
   );
 }
 
