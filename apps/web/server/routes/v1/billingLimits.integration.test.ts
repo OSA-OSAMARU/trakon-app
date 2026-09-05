@@ -7,6 +7,7 @@ import {
   addProjectMemberWithRole,
   createOrgMember,
   createProject,
+  createProjectWithAdmin,
   createUser,
   primaryOrganizationId,
   setBillingSubscription,
@@ -23,14 +24,20 @@ import { api } from '../../test/request.js';
 let ownerToken: string;
 let ownerUserId: string;
 let organizationId: string;
+let owner: Awaited<ReturnType<typeof createUser>>;
 
 beforeEach(async () => {
   __setMailerForTest({});
-  const owner = await createUser();
+  owner = await createUser();
   ownerUserId = owner.id;
   organizationId = await primaryOrganizationId(owner.id);
   ownerToken = await signTestJwt({ authUserId: owner.authUserId, email: owner.email });
 });
+
+/** オーナーを管理者として参加させたプロジェクトを作る (要認可のテスト用)。 */
+function ownedProject(over: { name?: string; archivedAt?: Date | null } = {}) {
+  return createProjectWithAdmin({ user: owner, ...over });
+}
 
 describe('プロジェクト数上限', () => {
   describe('異常系', () => {
@@ -101,10 +108,10 @@ describe('プロジェクト数上限', () => {
 
 describe('プロジェクトの凍結', () => {
   it('上限超過分は閲覧できるが編集できない (削除もされない)', async () => {
-    const first = await createProject({ createdBy: ownerUserId, name: '維持1' });
-    await createProject({ createdBy: ownerUserId, name: '維持2' });
+    const { project: first } = await ownedProject({ name: '維持1' });
+    await ownedProject({ name: '維持2' });
     // 上限を超えた 3 件目を直接作る (作成 API は 409 になるため)
-    const third = await createProject({ createdBy: ownerUserId, name: '超過' });
+    const { project: third } = await ownedProject({ name: '超過' });
 
     // 閲覧はできる
     const read = await api(`/api/v1/projects/${third.id}`, { token: ownerToken });
@@ -132,9 +139,9 @@ describe('プロジェクトの凍結', () => {
   });
 
   it('維持するプロジェクトを選び直すと凍結対象が入れ替わる', async () => {
-    const first = await createProject({ createdBy: ownerUserId, name: '古い1' });
-    await createProject({ createdBy: ownerUserId, name: '古い2' });
-    const third = await createProject({ createdBy: ownerUserId, name: '新しい' });
+    const { project: first } = await ownedProject({ name: '古い1' });
+    await ownedProject({ name: '古い2' });
+    const { project: third } = await ownedProject({ name: '新しい' });
 
     const res = await api<{ data: { frozenIds: string[] } }>(
       '/api/v1/organizations/me/retained-projects',
@@ -171,7 +178,7 @@ describe('プロジェクトの凍結', () => {
 
 describe('契約状態による書き込み停止', () => {
   it('未払いなら閲覧はできるが編集は 403 SUBSCRIPTION_READ_ONLY', async () => {
-    const project = await createProject({ createdBy: ownerUserId });
+    const { project } = await ownedProject();
     await setBillingSubscription({ organizationId, planCode: 'team', status: 'unpaid' });
 
     const read = await api(`/api/v1/projects/${project.id}`, { token: ownerToken });
@@ -187,7 +194,7 @@ describe('契約状態による書き込み停止', () => {
   });
 
   it('支払い猶予期間中は通常どおり編集できる', async () => {
-    const project = await createProject({ createdBy: ownerUserId });
+    const { project } = await ownedProject();
     await setBillingSubscription({
       organizationId,
       planCode: 'team',
@@ -205,7 +212,7 @@ describe('契約状態による書き込み停止', () => {
   });
 
   it('非参加者には課金エラーではなく 404 が先に返る (秘匿を維持する)', async () => {
-    const project = await createProject({ createdBy: ownerUserId });
+    const { project } = await ownedProject();
     await setBillingSubscription({ organizationId, planCode: 'team', status: 'unpaid' });
     const outsider = await createUser();
     const token = await signTestJwt({
@@ -225,7 +232,7 @@ describe('契約状態による書き込み停止', () => {
 
 describe('座席上限', () => {
   it('Free で 2 人目を招待しようとすると 409 SEAT_LIMIT_REACHED', async () => {
-    const project = await createProject({ createdBy: ownerUserId });
+    const { project } = await ownedProject();
 
     const res = await api<{ error: { code: string; details?: { seatLimit: number } } }>(
       `/api/v1/projects/${project.id}/invitations`,
@@ -239,7 +246,7 @@ describe('座席上限', () => {
 
   it('Team は 5 名まで招待でき、未受諾の招待も座席を消費する', async () => {
     await setBillingSubscription({ organizationId, planCode: 'team', status: 'active' });
-    const project = await createProject({ createdBy: ownerUserId });
+    const { project } = await ownedProject();
 
     // オーナー 1 + 招待 4 = 5 席
     for (let i = 0; i < 4; i += 1) {
@@ -262,7 +269,7 @@ describe('座席上限', () => {
 
   it('招待を取り消すと座席が解放される', async () => {
     await setBillingSubscription({ organizationId, planCode: 'personal', status: 'active' });
-    const project = await createProject({ createdBy: ownerUserId });
+    const { project } = await ownedProject();
     // Personal は 1 席。オーナーで埋まっているので招待できない
     const blocked = await api(`/api/v1/projects/${project.id}/invitations`, {
       method: 'POST',
@@ -299,7 +306,7 @@ describe('座席上限', () => {
 describe('組織メンバー管理', () => {
   it('会員を除外すると座席が解放されるが、プロジェクト参加者行は残る', async () => {
     await setBillingSubscription({ organizationId, planCode: 'team', status: 'active' });
-    const project = await createProject({ createdBy: ownerUserId });
+    const { project } = await ownedProject();
     const member = await addProjectMemberWithRole({ projectId: project.id, roleType: 'editor' });
     await createOrgMember({ organizationId, userId: member.user.id });
 

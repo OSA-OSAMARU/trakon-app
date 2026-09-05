@@ -15,6 +15,7 @@ import { __setStripeForTest } from './stripeClient.js';
 const prismaMock = vi.hoisted(() => ({
   billingSubscription: { findUnique: vi.fn(), update: vi.fn() },
   organizationMember: { count: vi.fn() },
+  invitation: { count: vi.fn() },
   project: { count: vi.fn(), findMany: vi.fn() },
   auditLog: { create: vi.fn() },
   $transaction: vi.fn(),
@@ -67,6 +68,7 @@ beforeEach(() => {
   prismaMock.billingSubscription.update.mockReset().mockReturnValue({});
   prismaMock.auditLog.create.mockReset().mockReturnValue({});
   prismaMock.organizationMember.count.mockReset().mockResolvedValue(1);
+  prismaMock.invitation.count.mockReset().mockResolvedValue(0);
   prismaMock.project.count.mockReset().mockResolvedValue(3);
   prismaMock.project.findMany.mockReset().mockResolvedValue([]);
   prismaMock.$transaction.mockReset().mockResolvedValue([]);

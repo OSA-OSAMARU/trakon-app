@@ -8,6 +8,7 @@ import { getFrozenProjectIds, isProjectFrozen, setRetainedProjects } from './fre
 const prismaMock = vi.hoisted(() => ({
   billingSubscription: { findUnique: vi.fn() },
   organizationMember: { count: vi.fn() },
+  invitation: { count: vi.fn() },
   project: { count: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   auditLog: { create: vi.fn() },
   $transaction: vi.fn(),
@@ -25,6 +26,7 @@ const project = (id: string, over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   prismaMock.billingSubscription.findUnique.mockReset().mockResolvedValue(null);
   prismaMock.organizationMember.count.mockReset().mockResolvedValue(1);
+  prismaMock.invitation.count.mockReset().mockResolvedValue(0);
   prismaMock.project.count.mockReset().mockResolvedValue(0);
   prismaMock.project.findMany.mockReset().mockResolvedValue([]);
   prismaMock.project.update.mockReset().mockReturnValue({});

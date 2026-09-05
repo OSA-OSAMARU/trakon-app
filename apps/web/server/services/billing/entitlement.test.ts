@@ -9,6 +9,7 @@ const prismaMock = vi.hoisted(() => ({
   organization: { findUniqueOrThrow: vi.fn() },
   billingSubscription: { findUnique: vi.fn() },
   organizationMember: { count: vi.fn() },
+  invitation: { count: vi.fn() },
   project: { count: vi.fn(), findMany: vi.fn() },
 }));
 vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
@@ -19,6 +20,7 @@ beforeEach(() => {
     .mockResolvedValue({ id: 'org-1', name: 'テスト組織' });
   prismaMock.billingSubscription.findUnique.mockReset().mockResolvedValue(null);
   prismaMock.organizationMember.count.mockReset().mockResolvedValue(1);
+  prismaMock.invitation.count.mockReset().mockResolvedValue(0);
   prismaMock.project.count.mockReset().mockResolvedValue(0);
   prismaMock.project.findMany.mockReset().mockResolvedValue([]);
 });

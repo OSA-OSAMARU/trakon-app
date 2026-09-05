@@ -255,6 +255,38 @@ export async function createBallEvent(args: {
 }
 
 /**
+ * 既存ユーザーをオーナー(管理者)とするプロジェクトを作る。
+ *
+ * `createProject` はプロジェクト行しか作らないため、そのままでは
+ * `requireProjectMember` が通らず 404 になる。同じユーザーで複数の
+ * プロジェクトを作りたい場合はこちらを使う。
+ */
+export async function createProjectWithAdmin(args: {
+  user: { id: string; fullName: string; email: string };
+  name?: string;
+  archivedAt?: Date | null;
+  retainedAt?: Date | null;
+  organizationId?: string;
+}) {
+  const project = await createProject({
+    createdBy: args.user.id,
+    ...(args.name ? { name: args.name } : {}),
+    ...(args.organizationId ? { organizationId: args.organizationId } : {}),
+    archivedAt: args.archivedAt ?? null,
+    retainedAt: args.retainedAt ?? null,
+  });
+  const member = await createMember({
+    projectId: project.id,
+    userId: args.user.id,
+    name: args.user.fullName,
+    email: args.user.email,
+    memberType: 'production',
+    roleType: 'admin',
+  });
+  return { project, member };
+}
+
+/**
  * ユーザー + プロジェクト + そのユーザーをディレクター(=createdBy)として
  * 紐づけた production メンバー + 認証トークンをまとめて用意する。
  */
