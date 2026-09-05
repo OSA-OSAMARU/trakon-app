@@ -19,6 +19,7 @@ type MockMember = {
   email: string;
   organizationName: string;
   memberType: string;
+  roleType: string;
   deletedAt: Date | null;
 };
 type MockProject = { id: string; name: string };
@@ -31,6 +32,8 @@ type MockInvitation = {
   projectId: string;
   invitedMemberId: string;
   email: string;
+  organizationId: string;
+  roleType: string;
 };
 type MockUser = { id: string; email: string };
 type MockAudit = {
@@ -103,6 +106,59 @@ const auditTx = {
   }),
 };
 
+// 受諾で組織の会員 (座席) が増えることを検証するための store。
+type MockOrgMember = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  orgRole: string;
+  isPrimary: boolean;
+  deletedAt: Date | null;
+};
+const orgMemberStore: Record<string, MockOrgMember> = {};
+let orgMemberSeq = 0;
+
+const orgMemberTx = {
+  findUnique: vi.fn(
+    async ({
+      where,
+    }: {
+      where: { organizationId_userId: { organizationId: string; userId: string } };
+    }) => {
+      const key = where.organizationId_userId;
+      return (
+        Object.values(orgMemberStore).find(
+          (m) => m.organizationId === key.organizationId && m.userId === key.userId,
+        ) ?? null
+      );
+    },
+  ),
+  create: vi.fn(
+    async ({
+      data,
+    }: {
+      data: { organizationId: string; userId: string; orgRole?: string; isPrimary?: boolean };
+    }) => {
+      const row: MockOrgMember = {
+        id: `om-${orgMemberSeq++}`,
+        organizationId: data.organizationId,
+        userId: data.userId,
+        orgRole: data.orgRole ?? 'member',
+        isPrimary: data.isPrimary ?? false,
+        deletedAt: null,
+      };
+      orgMemberStore[row.id] = row;
+      return row;
+    },
+  ),
+  update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<MockOrgMember> }) => {
+    const row = orgMemberStore[where.id];
+    if (!row) throw new Error('record not found');
+    Object.assign(row, data);
+    return row;
+  }),
+};
+
 const prismaMock = {
   invitation: {
     findFirst: vi.fn(
@@ -150,6 +206,7 @@ const prismaMock = {
       invitation: invitationTx,
       projectMember: memberTx,
       auditLog: auditTx,
+      organizationMember: orgMemberTx,
     });
   }),
 };
@@ -180,6 +237,7 @@ function seedValidInvitation(
     email: 'invitee@example.com',
     organizationName: '組織X',
     memberType: 'client',
+    roleType: 'editor',
     deletedAt: null,
     ...overrides.member,
   };
@@ -193,6 +251,8 @@ function seedValidInvitation(
     invitedMemberId: member.id,
     // 招待先メールは invitations.email が正 (既定は参加者行のメールに揃える)
     email: member.email,
+    organizationId: 'org-1',
+    roleType: 'editor',
     ...overrides.inv,
   };
   projectStore[project.id] = project;
@@ -217,6 +277,7 @@ afterEach(() => {
   for (const k of Object.keys(memberStore)) delete memberStore[k];
   for (const k of Object.keys(invitationStore)) delete invitationStore[k];
   for (const k of Object.keys(userStore)) delete userStore[k];
+  for (const k of Object.keys(orgMemberStore)) delete orgMemberStore[k];
   auditStore.length = 0;
   vi.clearAllMocks();
 });
@@ -280,7 +341,7 @@ describe('acceptInvitation', () => {
 
     expect(res).toEqual({
       project: { id: project.id, name: project.name },
-      member: { id: member.id, memberType: 'client' },
+      member: { id: member.id, memberType: 'client', roleType: 'editor' },
     });
     // member に user_id が紐付く
     expect(memberStore[member.id]!.userId).toBe('u-1');
@@ -290,12 +351,24 @@ describe('acceptInvitation', () => {
     expect(auditStore).toHaveLength(1);
     expect(auditStore[0]).toMatchObject({
       actorUserId: 'u-1',
-      action: 'login',
+      // 監査 action は 'login' の代用をやめ、専用値を使う (§5.6.1)
+      action: 'org_member_added',
       resourceType: 'invitation',
       resourceId: inv.id,
       result: 'success',
-      extra: { projectId: project.id, memberId: member.id },
+      extra: {
+        projectId: project.id,
+        memberId: member.id,
+        organizationId: 'org-1',
+        roleType: 'editor',
+      },
     });
+    // 招待されたロールが参加者行に反映される (FR-ROLE-03)
+    expect(memberStore[member.id]!.roleType).toBe('editor');
+    // 組織の会員として追加される (= 座席を 1 つ消費する)
+    expect(Object.values(orgMemberStore)).toEqual([
+      expect.objectContaining({ organizationId: 'org-1', userId: 'u-1', orgRole: 'member' }),
+    ]);
   });
 
   it('メール大文字小文字を無視して一致判定する', async () => {
@@ -340,6 +413,7 @@ describe('acceptInvitation', () => {
       name: '既存',
       email: 'invitee@example.com',
       organizationName: '組織X',
+      roleType: 'editor',
       memberType: 'production',
       deletedAt: null,
     };

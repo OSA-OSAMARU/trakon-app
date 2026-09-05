@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { getMailer as GetMailerType, Mailer } from './mailer.js';
+import type { getMailer as GetMailerType } from './mailer.js';
 
 // =============================================================================
 // Mocks
@@ -184,14 +184,23 @@ describe('getMailer (resend)', () => {
 // __setMailerForTest
 // =============================================================================
 describe('__setMailerForTest', () => {
-  it('差し込んだ mailer が getMailer から返る', async () => {
+  it('差し込んだ mailer のメソッドが getMailer から呼ばれる', async () => {
     setEnv({ APP_ENV: 'local' });
     const { getMailer } = await importMailer();
     const { __setMailerForTest } = await import('./mailer.js');
 
-    const fake: Mailer = { sendInvitation: vi.fn(async () => {}) };
-    __setMailerForTest(fake);
+    // Partial で受けて残りは dummy で埋めるため、同一参照ではなく挙動で検証する
+    const sendInvitation = vi.fn(async () => {});
+    __setMailerForTest({ sendInvitation });
 
-    expect(getMailer()).toBe(fake);
+    await getMailer().sendInvitation({
+      to: 'x@example.test',
+      projectName: 'P',
+      inviterName: 'I',
+      acceptUrl: 'https://example.test/invitations/tok',
+      expiresAt: new Date('2026-01-01T00:00:00Z'),
+    });
+
+    expect(sendInvitation).toHaveBeenCalledTimes(1);
   });
 });
