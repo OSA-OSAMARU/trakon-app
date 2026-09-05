@@ -11,6 +11,7 @@ import {
   setBillingSubscription,
 } from '../../test/factories.js';
 import { signTestJwt } from '../../test/auth.js';
+import { TEST_STRIPE } from '../../test/integration.setup.js';
 import { api } from '../../test/request.js';
 
 // =============================================================================
@@ -39,19 +40,14 @@ let ownerToken: string;
 let organizationId: string;
 let ownerUserId: string;
 
+// Stripe の env は integration.setup.ts で設定済み (getServerEnv() のキャッシュ対策)。
 beforeEach(async () => {
-  process.env.STRIPE_SECRET_KEY = 'sk_test_dummy';
-  process.env.STRIPE_PERSONAL_MONTHLY_PRICE_ID = 'price_personal';
-  process.env.STRIPE_TEAM_MONTHLY_PRICE_ID = 'price_team';
-  process.env.STRIPE_JP_TAX_RATE_ID = 'txr_jp';
-  process.env.STRIPE_PORTAL_CONFIGURATION_ID = 'bpc_test';
-
   vi.clearAllMocks();
   checkoutCreate.mockResolvedValue({ id: 'cs_1', url: 'https://checkout.stripe.test/cs_1' });
   portalCreate.mockResolvedValue({ url: 'https://portal.stripe.test/ps_1' });
   subscriptionsRetrieve.mockResolvedValue({
     id: 'sub_1',
-    items: { data: [{ id: 'si_1', price: { id: 'price_team' }, current_period_end: 1_762_000_000 }] },
+    items: { data: [{ id: 'si_1', price: { id: TEST_STRIPE.teamPriceId }, current_period_end: 1_762_000_000 }] },
   });
   subscriptionsUpdate.mockResolvedValue({
     id: 'sub_1',
@@ -136,14 +132,14 @@ describe('POST /billing/checkout-session', () => {
       expect(params).toMatchObject({
         mode: 'subscription',
         // quantity は常に 1 (人数課金しない)
-        line_items: [{ price: 'price_team', quantity: 1 }],
+        line_items: [{ price: TEST_STRIPE.teamPriceId, quantity: 1 }],
         automatic_tax: { enabled: false },
         payment_method_collection: 'always',
       });
       // trial_end は使わない (§7.4.1)
       expect(params.subscription_data).toMatchObject({
         trial_period_days: 5,
-        default_tax_rates: ['txr_jp'],
+        default_tax_rates: [TEST_STRIPE.taxRateId],
       });
       expect(params.subscription_data.trial_end).toBeUndefined();
       expect(params.metadata).toMatchObject({
@@ -236,7 +232,7 @@ describe('POST /billing/portal-session', () => {
 
     expect(res.body.data.url).toBe('https://portal.stripe.test/ps_1');
     // プラン変更を無効化した構成を明示指定する
-    expect(portalCreate.mock.calls[0]?.[0]).toMatchObject({ configuration: 'bpc_test' });
+    expect(portalCreate.mock.calls[0]?.[0]).toMatchObject({ configuration: TEST_STRIPE.portalConfigurationId });
     // URL は DB に残さない
     const sub = await prisma.billingSubscription.findUniqueOrThrow({ where: { organizationId } });
     expect(JSON.stringify(sub)).not.toContain('portal.stripe.test');
