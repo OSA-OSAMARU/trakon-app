@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { Toaster } from '@/components/ui/sonner';
 import { defaultBillingResponse, server } from '@/test/handlers';
 import { renderWithProviders } from '@/test/render';
 import { BillingPage } from './BillingPage';
@@ -43,6 +44,17 @@ function stubBilling(over: Partial<Billing> = {}) {
       HttpResponse.json({ data: { ...defaultBillingResponse, ...over } }),
     ),
     http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
+  );
+}
+
+/** トースト本文を確かめるケースは Toaster も一緒に描画する (本番は App 直下にある)。 */
+function renderWithToaster(route = '/settings/billing') {
+  return renderWithProviders(
+    <>
+      <BillingPage />
+      <Toaster />
+    </>,
+    { route },
   );
 }
 
@@ -96,6 +108,148 @@ describe('BillingPage (integration)', () => {
       await waitFor(() =>
         expect(externalRedirect).toHaveBeenCalledWith('https://checkout.test/session'),
       );
+    });
+  });
+
+  describe('プラン変更', () => {
+    const subscribed = {
+      subscription: {
+        ...defaultBillingResponse.subscription,
+        planCode: 'personal' as const,
+        status: 'active' as const,
+        hasStripeCustomer: true,
+      },
+      entitlement: {
+        ...defaultBillingResponse.entitlement,
+        planCode: 'personal' as const,
+        effectivePlanCode: 'personal' as const,
+        limits: { seatLimit: 1, projectLimit: 10 },
+        message: 'Personal プランを利用中です。',
+      },
+    };
+
+    it('契約中はボタンが「このプランに変更」になり、Checkout ではなく変更 API を呼ぶ', async () => {
+      stubBilling(subscribed);
+      let changedTo: unknown = null;
+      server.use(
+        http.post('*/api/v1/billing/plan', async ({ request }) => {
+          changedTo = await request.json();
+          return HttpResponse.json({ data: { appliedImmediately: false, pendingPlanCode: 'team' } });
+        }),
+      );
+      renderWithToaster();
+
+      const teamCard = await screen.findByTestId('plan-team');
+      await userEvent.click(within(teamCard).getByRole('button', { name: 'このプランに変更' }));
+
+      await waitFor(() => expect(changedTo).toEqual({ planCode: 'team' }));
+      // 決済の確認まで反映されないことを伝える
+      expect(await screen.findByText(/お支払いの確認後に反映されます/)).toBeInTheDocument();
+      expect(externalRedirect).not.toHaveBeenCalled();
+    });
+
+    it('Personal への変更は次回更新時であることを伝える', async () => {
+      stubBilling({
+        subscription: {
+          ...defaultBillingResponse.subscription,
+          planCode: 'team',
+          status: 'active',
+          hasStripeCustomer: true,
+        },
+      });
+      server.use(
+        http.post('*/api/v1/billing/plan', () =>
+          HttpResponse.json({
+            data: { appliedImmediately: false, pendingPlanCode: 'personal' },
+          }),
+        ),
+      );
+      renderWithToaster();
+
+      const personalCard = await screen.findByTestId('plan-personal');
+      await userEvent.click(within(personalCard).getByRole('button', { name: 'このプランに変更' }));
+
+      expect(await screen.findByText(/次回更新時に Personal/)).toBeInTheDocument();
+    });
+
+    it('上限超過で変更できない場合は理由を出す', async () => {
+      stubBilling(subscribed);
+      server.use(
+        http.post('*/api/v1/billing/plan', () =>
+          HttpResponse.json(
+            {
+              error: {
+                code: 'PLAN_DOWNGRADE_BLOCKED',
+                message: 'Personal プランの上限を超えているため変更できません。',
+              },
+            },
+            { status: 409 },
+          ),
+        ),
+      );
+      renderWithToaster();
+
+      const teamCard = await screen.findByTestId('plan-team');
+      await userEvent.click(within(teamCard).getByRole('button', { name: 'このプランに変更' }));
+
+      expect(await screen.findByText(/上限を超えているため変更できません/)).toBeInTheDocument();
+    });
+
+    it('変更予定と支払い方法を表示する', async () => {
+      stubBilling({
+        subscription: {
+          ...defaultBillingResponse.subscription,
+          planCode: 'team',
+          status: 'active',
+          hasStripeCustomer: true,
+          currentPeriodEnd: '2026-10-01T00:00:00.000Z',
+          pendingPlanCode: 'personal',
+          pendingPlanEffectiveAt: '2026-10-01T00:00:00.000Z',
+          paymentMethod: { brand: 'visa', last4: '4242' },
+        },
+      });
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      expect(await screen.findByText('変更予定')).toBeInTheDocument();
+      expect(screen.getByText(/visa •••• 4242/)).toBeInTheDocument();
+      expect(screen.getByText('次回更新')).toBeInTheDocument();
+    });
+  });
+
+  describe('お支払い方法・請求書', () => {
+    it('Customer Portal の URL へ遷移する', async () => {
+      stubBilling({
+        subscription: {
+          ...defaultBillingResponse.subscription,
+          planCode: 'team',
+          status: 'active',
+          hasStripeCustomer: true,
+        },
+      });
+      server.use(
+        http.post('*/api/v1/billing/portal-session', () =>
+          HttpResponse.json({ data: { url: 'https://portal.test/ps' } }),
+        ),
+      );
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'お支払い方法・請求書' }),
+      );
+
+      await waitFor(() =>
+        expect(externalRedirect).toHaveBeenCalledWith('https://portal.test/ps'),
+      );
+    });
+
+    it('顧客が未登録なら導線を出さない', async () => {
+      stubBilling();
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await screen.findByText('現在のプラン');
+      expect(
+        screen.queryByRole('button', { name: 'お支払い方法・請求書' }),
+      ).not.toBeInTheDocument();
     });
   });
 
