@@ -133,6 +133,7 @@ Product は Personal / Team それぞれに 1 件ずつ、計 2 件。実装で�
 - Price は `tax_behavior = inclusive`（税込）で作成する
 - JPY はゼロデシマル通貨のため、金額は整数の `unit_amount`（980 / 9800）で指定する
 - 請求書上に消費税の内訳を表示するため、Checkout の `subscription_data.default_tax_rates` に手動 Tax Rate（日本国内向け消費税 10%・内税）を指定する
+- Checkout では **`managed_payments.enabled = false` を明示的に渡す**。Stripe アカウントの既定で Managed Payments が有効だと Stripe が税を代行する前提になり、`automatic_tax.enabled = true` が必須になる。本設計は税込 Price + 手動 Tax Rate なので噛み合わず、**Checkout Session の作成自体が拒否される**。ダッシュボードの既定に依存しないよう、リクエスト側で無効化する（`STRIPE_PORTAL_CONFIGURATION_ID` を明示指定するのと同じ理由）
 
 > 自動税計算を使わないことと、内訳表示のために手動 Tax Rate を付与することは両立する。手動 Tax Rate は税込価格の内訳を示すためのものであり、課金総額を変えるものではない。
 

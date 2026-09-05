@@ -9,6 +9,13 @@
 //   - automatic_tax は無効。税込 Price + 手動 Tax Rate で内訳を表示する
 //   - success URL への遷移だけを根拠に有料権限を付与してはならない
 //   - Portal Session URL は保存せず都度生成する
+//
+// Managed Payments について:
+//   Stripe アカウントの既定で Managed Payments が有効だと、Stripe が税を代行する
+//   前提になり automatic_tax[enabled]=true が必須になる。本設計は税込 Price +
+//   手動 Tax Rate なので噛み合わず、Checkout Session の作成が弾かれる。
+//   ダッシュボードの既定に依存しないよう、リクエスト側で明示的に無効化する
+//   (STRIPE_PORTAL_CONFIGURATION_ID を明示指定するのと同じ理由)。
 // -----------------------------------------------------------------------------
 import { randomUUID } from 'node:crypto';
 
@@ -85,6 +92,8 @@ export async function createCheckoutSession(input: {
     // quantity は常に 1。人数課金は行わない (§7.2.1)
     line_items: [{ price: priceIdFor(input.planCode), quantity: 1 }],
     automatic_tax: { enabled: false },
+    // アカウント既定で有効でも、この決済では Stripe に税を代行させない
+    managed_payments: { enabled: false },
     payment_method_collection: 'always',
     subscription_data: {
       // trial_end は使わない (§7.4.1)
