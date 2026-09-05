@@ -3,10 +3,10 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 03 |
-| ステータス | **v1.1 確定**（v1.0.1: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
-| 確定日 | 2026-05-24 |
-| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [02-database.md](02-database.md) |
-| 主参照 PRD 節 | §4.1（FR、v1.3 で追加された FR-AUTH-10〜12, FR-SCH-17〜18, FR-BALL-13, FR-DASH 改訂）／§6 UC-01〜08, 12, 15, 16, 24, 25, 26／§7 SC-01, 03〜04, 06〜11, 17／§9.4（ロール別マトリクス） |
+| ステータス | **v1.2 確定**（v1.0.1: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映 / v1.2: 2026-08-30 課金・組織・ロール） |
+| 確定日 | 2026-08-30 |
+| 上位ドキュメント | [TRAKON PRD v1.4](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [02-database.md](02-database.md) ／ [07-billing.md](07-billing.md) |
+| 主参照 PRD 節 | §4.1（FR、v1.3 で追加された FR-AUTH-10〜12, FR-SCH-17〜18, FR-BALL-13, FR-DASH 改訂）／§6 UC-01〜08, 12, 15, 16, 24, 25, 26／§7 SC-01, 03〜04, 06〜11, 17／§4.1.12〜12c（FR-ORG / FR-BILL / FR-ROLE）／§6 UC-27〜31／§9.4（ロール別マトリクス）／§9.12（決済セキュリティ） |
 
 ---
 
@@ -73,9 +73,39 @@ Phase 0 で必要な REST API（Hono on Vercel Functions）の設計を行う。
 | 観点 | 方針 |
 |---|---|
 | **基本方針** | BE 完全実装（Supabase RLS 不使用）。Hono ミドルウェアとサービス層の2層 |
-| **粒度** | プロジェクト参加 × ロール × 対象リソース状態 の複合判定 |
+| **粒度** | プロジェクト参加 × **ロール（admin / editor / viewer）** × 契約状態 × 対象リソース状態 の複合判定 |
+| **ロールの根拠** | **`project_members.role_type` のみ**（v1.2）。`member_type`・`job_title`・作成者かどうかから権限を導出しない。唯一の例外は「作成者は常に admin」（FR-ROLE-04） |
 | **失敗時** | 403 Forbidden + `{ error: { code: 'FORBIDDEN', ... } }`。**自分が参加していないプロジェクトは 404 に集約**（§3.10-3） |
+| **課金・上限・凍結の失敗時** | **404 に集約しない**（v1.2）。409 / 403 + 専用コードで返す（§3.2.4b） |
 | **ガード階層** | URL 階層に沿ってミドルウェアをチェーン（§3.3.2） |
+
+#### 3.2.4b. 課金・上限・凍結のエラー方針（v1.2 追加）
+
+認可失敗を 404 に集約するのは「そのプロジェクトの存在を秘匿する」ためである。**課金・上限・凍結は自分の組織の状態であり秘匿する必要がない**うえ、404 で返すとフロントエンドが「存在しません」と表示してしまい、ユーザーが復旧手段にたどり着けない。
+
+| 事象 | ステータス | コード |
+|---|---|---|
+| プロジェクトに参加していない | 404 | `NOT_FOUND`（既存方針を維持） |
+| プロジェクト数上限に到達 | 409 | `PROJECT_LIMIT_REACHED` |
+| 座席（会員アカウント）上限に到達 | 409 | `SEAT_LIMIT_REACHED` |
+| ダウングレード条件を満たさない | 409 | `PLAN_DOWNGRADE_BLOCKED`（超過分を `details` で返す） |
+| 契約が閲覧のみ状態（未払い等） | 403 | `SUBSCRIPTION_READ_ONLY` |
+| プロジェクトが凍結中 | 403 | `PROJECT_FROZEN` |
+| 最後の管理者を降格・削除しようとした | 409 | `LAST_ADMIN` |
+| Stripe 未設定（環境変数不足） | 503 | `BILLING_NOT_CONFIGURED` |
+
+**ミドルウェアの順序を「参加確認 → 書き込み可否（課金・凍結）→ ロール」に固定する。** これにより課金エラーはプロジェクト参加者にしか見えない。
+
+> 402 Payment Required は採用しない。既存のエラーモデル（§3.2.6）の status→code マップに存在せず、一部プロキシでの扱いも不安定なため。
+
+#### 3.2.4c. 認可モデルの例外：Stripe Webhook（v1.2 追加）
+
+`POST /api/v1/stripe/webhook` は **TRAKON の 3 層認可（認証 → プロジェクト参加 → ロール）に当てはまらない唯一の例外**である。
+
+- 認証ミドルウェアを通さない（Stripe からのサーバー間リクエストであり JWT を持たない）
+- 認可は **Webhook 署名の検証**によって行う
+- 署名検証には**フレームワークが JSON パースする前の生のリクエストボディ**を使う（このルートでは JSON パースを先に行ってはならない）
+- 詳細は章7 §7.5
 
 ### 3.2.5. リクエスト・レスポンス形式
 
@@ -217,78 +247,124 @@ flowchart TB
 | `logger` | `apps/web/server/middleware/logger.ts` | 構造化アクセスログ（pino 等） |
 | `errorBoundary` | `apps/web/server/middleware/error-boundary.ts` | 例外を §3.2.6 のエラー形式に変換、Sentry に送信 |
 | `auth` | `apps/web/server/middleware/auth.ts` | JWT 検証、`currentUser` を context に載せる |
-| `requireProjectMember` | `apps/web/server/middleware/authz.ts` | URL の `:projectId` から参加判定、`currentProject` / `currentMember` を context に。未参加は 404 |
-| `requireProjectDirector` | 〃 | 上記＋ロール `director` 必須。不足は 403 |
+| `requireProjectMember` | `apps/web/server/middleware/projectAuth.ts` | URL の `:projectId` から参加判定。`{ projectId, organizationId, memberId, role, memberType }` を context に。未参加は 404。**v1.2：`role` は `project_members.role_type` から解決する（作成者は常に `admin`）** |
+| ~~`requireProjectDirector`~~ | 〃 | **v1.2 で廃止**。`requireProjectAction()` に置換 |
+| **`requireProjectAction(action)`** | 〃 | **v1.2 新設**。`packages/shared` のロール別操作マトリクス（章7 §7.12.2）を参照し、ロールが操作を許可していなければ **404 に集約**（既存方針を維持） |
+| **`requireProjectWritable()`** | 〃 | **v1.2 新設**。契約の利用権限レベルとプロジェクトの凍結状態を判定。`SUBSCRIPTION_READ_ONLY` / `PROJECT_FROZEN` を 403 で返す。**`requireProjectMember` の直後、`requireProjectAction` の直前**に置く |
+| **`requireOrgMember()`** | `apps/web/server/middleware/orgAuth.ts` | **v1.2 新設**。`currentUserId` から既定の所属組織を解決し `{ organizationId, orgRole }` を context に |
+| **`requireOrgRole(...roles)`** | 〃 | **v1.2 新設**。組織ロール（owner / admin / member）を検証。課金操作を owner / admin に限定する |
 | `requireItemInProject` | 〃 | `:itemId` が `:projectId` 配下に存在することを検証、`currentItem` を context に |
 | `requirePlanInItem` | 〃 | `:planId` が `:itemId` 配下に存在することを検証、`currentPlan` を context に |
-| `auditLog` | `apps/web/server/middleware/audit.ts` | `login` / `toss` / `untoss` / `complete` / `undo_complete` に加え、**#131 の `request_review` / `undo_request_review` / `approve` / `undo_approve` / `send_back`、共有 `share_request_review` / `share_approve` / `share_send_back` を記録** |
+| `auditLog` | `apps/web/server/middleware/audit.ts` | `login` / `toss` / `untoss` / `complete` / `undo_complete` に加え、**#131 の `request_review` / `undo_request_review` / `approve` / `undo_approve` / `send_back`、共有 `share_request_review` / `share_approve` / `share_send_back` を記録**。**v1.2：課金系 10 値・組織/ロール系 7 値を追加（章2 §2.4.7）** |
 
-> **Hono ルート定義例**：
+> **Hono ルート定義例（v1.2）**：
 > ```typescript
-> app.use('/projects/:projectId/*', requireProjectMember);
-> app.use('/projects/:projectId/items/:itemId/*', requireItemInProject);
-> app.use('/projects/:projectId/items/:itemId/plans/:planId/*', requirePlanInItem);
-> app.post('/projects/:projectId/items/:itemId/plans/:planId/toss', tossHandler);
+> app.use('/projects/:projectId/*', requireProjectMember());
+> app.use('/projects/:projectId/items/:itemId/*', requireItemInProject());
+> // 書き込み系は「参加 → 書き込み可否（課金・凍結）→ ロール」の順で重ねる
+> app.post(
+>   '/projects/:projectId/items/:itemId/plans',
+>   requireProjectWritable(),
+>   requireProjectAction('plan.create'),
+>   createPlanHandler,
+> );
+> app.post(
+>   '/projects/:projectId/items/:itemId/plans/:planId/toss',
+>   requireProjectWritable(),
+>   requireProjectAction('plan.toss'),   // 管理者のみ
+>   tossHandler,
+> );
 > ```
+>
+> **v1.2 の移行上の注意**：`requireProjectDirector` の export と `ProjectMembership.isDirector` フィールドを**削除する**ことで、残存する呼び出し箇所をすべて型エラーとして検出する（grep に頼らない）。
+> ただし **Phase 0 時点で「参加者なら誰でも」だった予定の作成・更新・複製・後続紐付けには、新規にガードを追加する必要がある**（型エラーにならないため最も漏れやすい）。
 
 ---
 
 ## 3.4. 認可マトリクス（PRD §9.4 の物理化）
 
-エンドポイントごとに必要な認可。Phase 0 範囲のみ。
+エンドポイントごとに必要な認可。
 
-| エンドポイント | 未認証 | 認証済み一般 | プロジェクト参加 | ディレクター | 備考 |
-|---|:---:|:---:|:---:|:---:|---|
-| `GET /healthz` | ✅ | ✅ | ✅ | ✅ | |
-| `POST /auth/oauth/:provider/start` **(v1.1)** | ✅ | ✅ | — | — | PKCE state 生成、redirect URL 返却 |
-| `POST /auth/oauth/:provider/callback` **(v1.1)** | ✅ | ✅ | — | — | code+state 検証、Supabase Auth セッション確立 |
-| `POST /auth/me/complete-signup` **(v1.1)** | ❌ | ✅ | — | — | Magic-link 後の詳細入力（full_name/display_name/password） |
-| `GET /invitations/:token` | ✅ | ✅ | — | — | トークンが認可代わり |
-| `POST /invitations/:token/accept` | ✅ | ✅ | — | — | 同上＋JWT で users 紐付け |
-| `POST /auth/me/sync`（初回ユーザー作成） | ❌ | ✅ | — | — | JWT は要、users 行は未存在。**v1.1 で OAuth プロバイダの初回登録も同 EP 経由** |
-| `GET /auth/me` | ❌ | ✅ | — | — | |
-| `GET /users/me/dashboard` **(v1.1)** | ❌ | ✅ | — | — | 自分が見える全プロジェクトの「今日のタスク」階層ビュー |
-| `GET /projects` | ❌ | ✅ | — | — | 自分が参加するもののみ |
-| `POST /projects` | ❌ | ✅ | — | — | Phase 2 で組織制限（PRD §9.4 注記 ※1） |
-| `GET /projects/:projectId` | ❌ | ❌ | ✅ | ✅ | |
-| `PATCH /projects/:projectId` | ❌ | ❌ | ❌ | ✅ | |
-| `GET /projects/:projectId/members` | ❌ | ❌ | ✅ | ✅ | |
-| `POST /projects/:projectId/members` | ❌ | ❌ | ❌ | ✅ | |
-| `PATCH /projects/:projectId/members/:memberId` | ❌ | ❌ | ❌ | ✅ | |
-| `DELETE /projects/:projectId/members/:memberId` | ❌ | ❌ | ❌ | ✅ | |
-| `GET /projects/:projectId/items` | ❌ | ❌ | ✅ | ✅ | |
-| `POST /projects/:projectId/items` | ❌ | ❌ | ❌ | ✅ | |
-| `GET /projects/:projectId/items/:itemId` | ❌ | ❌ | ✅ | ✅ | |
-| `PATCH /projects/:projectId/items/:itemId` | ❌ | ❌ | ❌ | ✅ | |
-| `DELETE /projects/:projectId/items/:itemId` | ❌ | ❌ | ❌ | ✅ | |
-| `GET /projects/:projectId/items/:itemId/plans` | ❌ | ❌ | ✅ | ✅ | |
-| `POST /projects/:projectId/items/:itemId/plans` | ❌ | ❌ | ✅ | ✅ | 参加者なら作成可（メンバー含む） |
-| `GET /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅ | ✅ | |
-| `PATCH /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅ | ✅ | **#131：参加者なら編集可。役割は ball の進み具合でロック（実施者/承認者は実施中・差し戻し中のみ変更可、進行責任者は TOSS 前なら可）** |
-| `DELETE /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ❌ | ✅ | Phase 0 物理削除（ディレクターのみ） |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/request-review` **(#131)** | ❌ | ❌ | ✅※holder | ✅※override | 実施中/差し戻し → 確認待ち。実施者が承認者へ確認依頼。承認者あり必須 |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/request-review-undo` **(#131)** | ❌ | ❌ | ✅※involved | ✅※override | 確認待ち → 実施中。実施者/承認者が取り消し |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/approve` **(#131)** | ❌ | ❌ | ✅※holder | ✅※override | 確認待ち → 承認済み（承認者なしは実施中 → 承認済み）。後続なしは承認=完了 |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/approve-undo` **(#131)** | ❌ | ❌ | ✅※involved | ✅※override | 承認済み → 確認待ち/実施中。承認者/進行責任者が取り消し |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/send-back` **(#131)** | ❌ | ❌ | ✅※holder | ✅※override | 確認待ち → 差し戻し。承認者が実施者へ戻す |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/toss` | ❌ | ❌ | ✅※holder | ✅※override | **#131：承認済みの予定のみ・進行責任者（現 Ball Holder）のみ・後続必須**。FROM=進行責任者/TO=後続実施者を履歴記録。カンバン DnD（UC-26）からも呼ばれる |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/toss-undo` | ❌ | ❌ | ✅ | ✅ | TOSS済み → 承認済み（誤TOSS救済 #50。プロジェクトメンバーなら可） |
-| `POST /projects/:projectId/items/:itemId/plans/:planId/complete` | ❌ | ❌ | ✅※holder | ✅※override | **#131：`approve` のエイリアス（後方互換）。~~自動 TOSS 連鎖~~ は #117 廃止** |
-| `PATCH /projects/:projectId/items/:itemId/plans/:planId/successor` **(v1.1 プロトタイプ反映)** | ❌ | ❌ | ✅ | ✅ | 後続予定の紐付け設定／解除（FR-SCH-17） |
-| `GET /projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01／SC-16 一覧 |
-| `POST /projects/:projectId/share-links` **(v1.1)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01, 02／SC-16 発行 |
-| `DELETE /projects/:projectId/share-links/:shareLinkId` **(v1.1)** | ❌ | ❌ | ❌ | ✅ | FR-SHARE-03／SC-16 個別失効 |
-| `GET /share/:token` **(v1.1)** | ✅ | ✅ | — | — | トークンが認可代わり／FR-SHARE-01, 04, 05／UC-23 |
-| `POST /share/:token/plans/:planId/request-review` **(#131)** | ✅ | ✅ | — | — | 非会員（クライアント）による確認依頼／FR-SHARE-05／UC-23。scope 内かつ状態機械が許す限り可 |
-| `POST /share/:token/plans/:planId/approve` **(#131)** | ✅ | ✅ | — | — | 非会員による承認／同上 |
-| `POST /share/:token/plans/:planId/send-back` **(#131)** | ✅ | ✅ | — | — | 非会員による差し戻し／同上 |
+**v1.2 改訂**：「ディレクター」列を**プロジェクトロール（管理者 / 編集者 / 閲覧者）**に置き換えた。ロールは `project_members.role_type` から解決する。列の意味は「そのロールで実行できるか」。
 
-> 凡例：✅ 許可／❌ 拒否（401 or 403／親リソース未参加なら 404）／✅※holder（現 Ball Holder）／✅※involved（当該予定の実施者/承認者/進行責任者のいずれか）／✅※override（ディレクターは追加権限あり）／`/share/:token` 系はトークン自体が認可、有効期限・個別失効・スコープ・対象 plan が share_link.scope に整合することを `requireShareToken` ミドルウェアが検証（章5 §5.x）。
+| エンドポイント | 未認証 | 認証済み一般 | 閲覧者 | 編集者 | 管理者 | 備考 |
+|---|:---:|:---:|:---:|:---:|:---:|---|
+| `GET /healthz` | ✅ | ✅ | ✅ | ✅ | ✅ | |
+| `POST /auth/oauth/:provider/start` **(v1.1)** | ✅ | ✅ | — | — | — | PKCE state 生成、redirect URL 返却 |
+| `POST /auth/oauth/:provider/callback` **(v1.1)** | ✅ | ✅ | — | — | — | code+state 検証、Supabase Auth セッション確立 |
+| `POST /auth/me/complete-signup` **(v1.1)** | ❌ | ✅ | — | — | — | Magic-link 後の詳細入力（full_name/display_name/password） |
+| `GET /invitations/:token` | ✅ | ✅ | — | — | — | トークンが認可代わり |
+| `POST /invitations/:token/accept` | ✅ | ✅ | — | — | — | 同上＋JWT で users 紐付け |
+| `POST /auth/me/sync`（初回ユーザー作成） | ❌ | ✅ | — | — | — | JWT は要、users 行は未存在。**v1.1 で OAuth プロバイダの初回登録も同 EP 経由** |
+| `GET /auth/me` | ❌ | ✅ | — | — | — | |
+| `GET /users/me/dashboard` **(v1.1)** | ❌ | ✅ | — | — | — | 自分が見える全プロジェクトの「今日のタスク」階層ビュー |
+| `GET /projects` | ❌ | ✅ | — | — | — | 自分が参加するもののみ |
+| `POST /projects` | ❌ | ✅※limit | — | — | — | プロジェクト横断のため役割列は対象外。**v1.2：組織の会員なら作成可。プラン上限に達している場合は 409 `PROJECT_LIMIT_REACHED`**。作成者はそのプロジェクトの管理者になる（FR-ROLE-04） |
+| `GET /projects/:projectId` | ❌ | ❌ | ✅ | ✅ | ✅ | |
+| `PATCH /projects/:projectId` | ❌ | ❌ | ❌ | ❌ | ✅ | |
+| `GET /projects/:projectId/members` | ❌ | ❌ | ✅ | ✅ | ✅ | |
+| `POST /projects/:projectId/members` | ❌ | ❌ | ❌ | ❌ | ✅ | |
+| `PATCH /projects/:projectId/members/:memberId` | ❌ | ❌ | ❌ | ❌ | ✅ | |
+| `DELETE /projects/:projectId/members/:memberId` | ❌ | ❌ | ❌ | ❌ | ✅ | |
+| `GET /projects/:projectId/items` | ❌ | ❌ | ✅ | ✅ | ✅ | |
+| `POST /projects/:projectId/items` | ❌ | ❌ | ❌ | ❌ | ✅ | |
+| `GET /projects/:projectId/items/:itemId` | ❌ | ❌ | ✅ | ✅ | ✅ | |
+| `PATCH /projects/:projectId/items/:itemId` | ❌ | ❌ | ❌ | ❌ | ✅ | |
+| `DELETE /projects/:projectId/items/:itemId` | ❌ | ❌ | ❌ | ❌ | ✅ | |
+| `GET /projects/:projectId/items/:itemId/plans` | ❌ | ❌ | ✅ | ✅ | ✅ | |
+| `POST /projects/:projectId/items/:itemId/plans` | ❌ | ❌ | ❌ | ✅ | ✅ | **v1.2：閲覧者は不可（Phase 0 は参加者なら誰でも可だった）** |
+| `GET /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ✅ | ✅ | ✅ | |
+| `PATCH /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ❌ | ✅ | ✅ | **v1.2：閲覧者は不可**。#131 の役割ロック（実施者/承認者は実施中・差し戻し中のみ変更可、進行責任者は TOSS 前なら可）は不変 |
+| `DELETE /projects/:projectId/items/:itemId/plans/:planId` | ❌ | ❌ | ❌ | ✅ | ✅ | **v1.2：編集者も削除可（権限メモ「スケジュール追加/変更/削除」）** |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/request-review` **(#131)** | ❌ | ❌ | ✅※holder | ✅※holder | ✅※override | 実施中/差し戻し → 確認待ち。実施者が承認者へ確認依頼。承認者あり必須 |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/request-review-undo` **(#131)** | ❌ | ❌ | ✅※involved | ✅※involved | ✅※override | 確認待ち → 実施中。実施者/承認者が取り消し |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/approve` **(#131)** | ❌ | ❌ | ✅※holder | ✅※holder | ✅※override | 確認待ち → 承認済み（承認者なしは実施中 → 承認済み）。後続なしは承認=完了 |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/approve-undo` **(#131)** | ❌ | ❌ | ✅※involved | ✅※involved | ✅※override | 承認済み → 確認待ち/実施中。承認者/進行責任者が取り消し |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/send-back` **(#131)** | ❌ | ❌ | ✅※holder | ✅※holder | ✅※override | 確認待ち → 差し戻し。承認者が実施者へ戻す |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/toss` | ❌ | ❌ | ❌ | ❌ | ✅ | **v1.2：TOSS は管理者のみ（章7 §7.12.2）**。承認済み・後続必須は #131 のまま |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/toss-undo` | ❌ | ❌ | ❌ | ❌ | ✅ | **v1.2：TOSS の裏返しなので管理者のみ（Phase 0 はノーチェックだった）** |
+| `POST /projects/:projectId/items/:itemId/plans/:planId/complete` | ❌ | ❌ | ✅※holder | ✅※holder | ✅※override | **#131：`approve` のエイリアス（後方互換）。~~自動 TOSS 連鎖~~ は #117 廃止**。v1.2：完了フローは全ロール可（権限メモ「タスク完了」） |
+| `PATCH /projects/:projectId/items/:itemId/plans/:planId/successor` **(v1.1 プロトタイプ反映)** | ❌ | ❌ | ❌ | ✅ | ✅ | 後続予定の紐付け設定／解除（FR-SCH-17）。**v1.2：閲覧者は不可** |
+| `GET /projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | ❌ | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01／SC-16 一覧 |
+| `POST /projects/:projectId/share-links` **(v1.1)** | ❌ | ❌ | ❌ | ❌ | ✅ | FR-SHARE-01, 02／SC-16 発行 |
+| `DELETE /projects/:projectId/share-links/:shareLinkId` **(v1.1)** | ❌ | ❌ | ❌ | ❌ | ✅ | FR-SHARE-03／SC-16 個別失効 |
+| `GET /share/:token` **(v1.1)** | ✅ | ✅ | — | — | — | トークンが認可代わり／FR-SHARE-01, 04, 05／UC-23 |
+| `POST /share/:token/plans/:planId/request-review` **(#131)** | ✅ | ✅ | — | — | — | 非会員（クライアント）による確認依頼／FR-SHARE-05／UC-23。scope 内かつ状態機械が許す限り可 |
+| `POST /share/:token/plans/:planId/approve` **(#131)** | ✅ | ✅ | — | — | — | 非会員による承認／同上 |
+| `POST /share/:token/plans/:planId/send-back` **(#131)** | ✅ | ✅ | — | — | — | 非会員による差し戻し／同上 |
+
+> 凡例：✅ 許可／❌ 拒否（401 or 403／親リソース未参加なら 404／ロール不足は **404 に集約**）／✅※holder（現 Ball Holder 本人のみ）／✅※involved（当該予定の実施者/承認者/進行責任者のいずれか）／✅※override（**管理者は Ball Holder でなくても実行可**）／✅※limit（プランの上限内でのみ可）／`/share/:token` 系はトークン自体が認可、有効期限・個別失効・スコープ・対象 plan が share_link.scope に整合することを `requireShareToken` ミドルウェアが検証（章5 §5.x）。
 > **#131 改訂**：共有リンクからの操作は「保持者の種別を問わず、scope 内かつ状態機械が許す限り可」。ただし TOSS（進行責任者の次工程操作）は共有リンクからは提供しない。旧 `/share/:token/plans/:planId/{toss,complete}` は廃止（**#59 の「共有＝閲覧専用」方針は撤回**）。
 
 ---
 
-## 3.5. Phase 0 必須エンドポイント一覧
+### 3.4b. v1.2 で追加されるエンドポイントの認可（課金・組織・招待）
+
+| エンドポイント | 未認証 | 組織メンバー | 組織管理者・オーナー | 備考 |
+|---|:---:|:---:|:---:|---|
+| `POST /api/v1/stripe/webhook` | ✅ | — | — | **署名検証が認可**（§3.2.4c）。認証ミドルウェアを通さない |
+| `GET /api/v1/billing/subscription` | ❌ | ✅ | ✅ | 契約状態・利用権限・上限・利用状況を返す |
+| `POST /api/v1/billing/checkout-session` | ❌ | ❌ | ✅ | Checkout Session を作成し URL を返す |
+| `POST /api/v1/billing/portal-session` | ❌ | ❌ | ✅ | Customer Portal Session を都度生成。**URL は保存しない** |
+| `POST /api/v1/billing/plan` | ❌ | ❌ | ✅ | プラン変更（Personal ⇄ Team） |
+| `POST /api/v1/billing/cancel` / `resume` | ❌ | ❌ | ✅ | 解約予約 / 取り消し |
+| `GET /api/v1/organizations/me/members` | ❌ | ✅ | ✅ | 組織の会員アカウント一覧（座席の内訳） |
+| `PATCH /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織ロールの変更 |
+| `DELETE /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織からの除外（座席の解放） |
+| `POST /api/v1/organizations/me/retained-projects` | ❌ | ❌ | ✅ | 上限超過時に維持するプロジェクトを選択（FR-BILL-11） |
+
+招待系はプロジェクト配下に置く（プロジェクトロールで判定する）：
+
+| エンドポイント | 閲覧者 | 編集者 | 管理者 | 備考 |
+|---|:---:|:---:|:---:|---|
+| `GET /projects/:projectId/invitations` | ❌ | ❌ | ✅ | 未受諾の招待一覧 |
+| `POST /projects/:projectId/invitations` | ❌ | ❌ | ✅ | ロールを指定して招待。**座席上限に達していれば 409 `SEAT_LIMIT_REACHED`** |
+| `DELETE /projects/:projectId/invitations/:invitationId` | ❌ | ❌ | ✅ | 招待の取り消し（座席を解放） |
+| `PATCH /projects/:projectId/members/:memberId`（ロール変更を含む） | ❌ | ❌ | ✅ | **最後の管理者は降格不可（409 `LAST_ADMIN`）** |
+
+---
+
+## 3.5. Phase 0 / Phase 0.5 必須エンドポイント一覧
 
 | カテゴリ | メソッド | パス | 関連 UC | 関連 SC |
 |---|---|---|---|---|
@@ -337,6 +413,28 @@ flowchart TB
 > **v1.1 改訂注**：`Share Links` / `Share Access` 6本は v1.0 まで §3.9 Phase 1 で予告していたが、PRD v1.3 で Phase 0 へ前倒しされたため Phase 0 必須として正式採番。詳細仕様は §3.6.9（非会員URL前倒し改訂）を参照。
 
 ---
+
+**v1.2（Phase 0.5：課金・組織・招待）で追加**：
+
+| カテゴリ | メソッド | パス | 関連 UC | 関連 SC |
+|---|---|---|---|---|
+| Stripe | POST | `/stripe/webhook` | UC-27〜30 | — |
+| Billing | GET | `/billing/subscription` | UC-27〜30 | SC-18 |
+| Billing | POST | `/billing/checkout-session` | UC-27 | SC-18 |
+| Billing | POST | `/billing/portal-session` | UC-29, UC-30 | SC-18 |
+| Billing | POST | `/billing/plan` | UC-28 | SC-18 |
+| Billing | POST | `/billing/cancel` | UC-29 | SC-18 |
+| Billing | POST | `/billing/resume` | UC-29 | SC-18 |
+| Organizations | GET | `/organizations/me/members` | UC-22 | SC-15 |
+| Organizations | PATCH | `/organizations/me/members/:userId` | UC-22 | SC-15 |
+| Organizations | DELETE | `/organizations/me/members/:userId` | UC-22 | SC-15 |
+| Organizations | POST | `/organizations/me/retained-projects` | UC-29 | SC-18 |
+| Invitations | GET | `/projects/:projectId/invitations` | UC-31 | SC-11 |
+| Invitations | POST | `/projects/:projectId/invitations` | UC-31 | SC-11 |
+| Invitations | DELETE | `/projects/:projectId/invitations/:invitationId` | UC-31 | SC-11 |
+
+> **`POST /projects/:projectId/invitations` は Phase 0 で未実装だった**（受諾側の `GET/POST /invitations/:token` のみ実装済み）。v1.2 で招待の作成・送信を完成させる（章7 §7.12.5）。
+
 
 ## 3.6. エンドポイント詳細定義
 
@@ -1392,6 +1490,8 @@ export function deriveBallHolder(plan: PlanLike, latestEvent?: BallEventLike | n
 | Projects | POST | `/projects/:projectId/close` | UC-17 |
 | Projects | POST | `/projects/:projectId/archive` | UC-18 |
 | Projects | DELETE | `/projects/:projectId` | UC-18 |
+| Billing | — | Enterprise 契約管理（Stripe 非連携・個別契約） | FR-BILL-14 |
+| Organizations | — | 組織レベル統制設定（非会員URL共有の On/OFF、Phase 2） | FR-ORG-04, 05 |
 | Comments | GET | `/projects/:projectId/items/:itemId/plans/:planId/comments` | UC-19 |
 | Comments | POST | `/projects/:projectId/items/:itemId/plans/:planId/comments` | UC-19 |
 | Attachments | GET | `/projects/:projectId/items/:itemId/plans/:planId/attachments` | UC-19 |
@@ -1438,6 +1538,12 @@ export function deriveBallHolder(plan: PlanLike, latestEvent?: BallEventLike | n
 | §10.2 Phase 0 成功基準 | §3.5 の Phase 0 必須エンドポイントが満たすことを確認（FR-SHARE-01〜06／UC-23／SC-16 を含む） |
 | §10.2 FR-SHARE-01〜06／SR-AUTH-08 | §3.6.9 share-link 管理エンドポイント＋§3.6.10 share access エンドポイントで物理化（v1.1 改訂で Phase 0 化） |
 | FR-BALL-12 MVP 物理削除 | §3.6.7 DELETE 系で物理削除を実装、Phase 1 で論理削除へ |
+| §9.4 ロール別操作マトリクス（v1.4 改訂） | §3.4 をロール軸（管理者/編集者/閲覧者）で全面改訂（v1.2） |
+| FR-ROLE-01〜04、SR-AUTHZ-03, 05 | §3.2.4 認可方式／§3.3.3 `requireProjectAction()`（v1.2） |
+| FR-BILL-01〜13、FR-ORG-01, 02 | §3.4b／§3.5 に課金・組織エンドポイントを追加。設計の詳細は章7（v1.2） |
+| FR-BILL-11（上限・凍結） | §3.2.4b のエラー方針／§3.3.3 `requireProjectWritable()`（v1.2） |
+| SR-BILL-01, 03, 06 | §3.2.4c Stripe Webhook の認可例外（v1.2）。処理設計は章7 §7.5 |
+| FR-AUTH-13、UC-31 | §3.4b／§3.5 の invitations 作成系（v1.2） |
 
 ### Phase 1+ 持ち越し
 
@@ -1448,7 +1554,8 @@ export function deriveBallHolder(plan: PlanLike, latestEvent?: BallEventLike | n
 
 ### PRD 整合メモ（PRD 改訂提案）
 
-- 特になし（章2 で起票した `invitations` テーブル提案は引き続き有効）
+- 章2 で起票した `invitations` テーブル提案は **PRD v1.4 §8.2 で解消済み**
+- 特になし（v1.2 時点）
 
 ---
 
@@ -1462,3 +1569,4 @@ export function deriveBallHolder(plan: PlanLike, latestEvent?: BallEventLike | n
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§3.5 Phase 0 必須エンドポイントに Share Links（GET/POST/DELETE）と Share Access（GET /share/:token、POST /share/:token/plans/:planId/{toss,complete}）を追加、§3.6.9〜10 に詳細仕様を新設、§3.4 認可マトリクスに share-link 行を追加、§3.2.3 未認証許容エンドポイントに `/share/:token` を追加、§3.9 から share 関連 4行を削除、§3.11 PRD 整合チェックと Phase 1+ 持ち越しを更新。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | OAuth start/callback EP 追加 / complete-signup 追加 / GET /users/me/dashboard 追加 / PATCH .../successor 追加 / POST .../toss に toMemberId 追加 / POST .../complete に自動連鎖追加 / GET .../plans レスポンスに category, successorPlanId, source 追加 / 認可マトリクス更新 / deriveBallHolder の BallEvent に source 追加 / §3.10 論点 12〜14 追加。 |
 | 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | Ball Action を状態機械へ刷新：§3.6.8 に request-review(-undo)/approve(-undo)/send-back/toss(-undo)/complete(-undo エイリアス) を定義、toss は「進行責任者・承認済み・後続必須」で FROM/TO を履歴記録、自動連鎖 TOSS は #117 廃止。§3.6.7 PlanDTO に executor/approver/progressManager と ballState 6値、POST/PATCH に役割項目とロックルール。§3.6.10 共有アクセスを request-review/approve/send-back に置換（旧 toss/complete 廃止、閲覧専用撤回）。§3.4 認可マトリクス・§3.5 EP 一覧・§3.8 deriveBallHolder 仕様表・監査アクションを更新。§3.10 論点 12〜13 改訂。 |
+| 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §3.2.4 認可方式をロール軸へ改訂し §3.2.4b 課金エラー方針・§3.2.4c Webhook の認可例外を新設／§3.3.3 に `requireProjectAction` / `requireProjectWritable` / `requireOrgMember` / `requireOrgRole` を追加し `requireProjectDirector` を廃止／§3.4 認可マトリクスをロール列で全面改訂（TOSS は管理者のみ、予定作成・編集は閲覧者不可）／§3.4b・§3.5 に billing / organizations / invitations 作成系を追加／§3.9 に Enterprise と組織統制を持ち越しとして明記。 |

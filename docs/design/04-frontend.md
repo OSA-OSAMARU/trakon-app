@@ -3,9 +3,9 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 04 |
-| ステータス | **v1.1 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
+| ステータス | **v1.2 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
 | 確定日 | 2026-05-24 |
-| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [03-api.md](03-api.md) |
+| 上位ドキュメント | [TRAKON PRD v1.4](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [03-api.md](03-api.md) |
 | 主参照 PRD 節 | §7（SC-01〜SC-17、v1.3 で SC-09 改訂・SC-17 新規）／§4.1.1（FR-AUTH-10〜12）／§4.1.4（FR-SCH-17, 18）／§4.1.7（FR-DASH 改訂）／§4.4（UXR）／§13.1（画面遷移図）／§2.6（3層構造）／NFR-UX-01〜03、NFR-A11Y-01、NFR-MOBILE-01 |
 
 ---
@@ -170,8 +170,11 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 | `/projects/:projectId/edit` | SC-10 プロジェクト編集 | ✅ | `ProjectEditPage` |
 | **`/projects/:projectId/members`** **(v1.1 役割変更)** | **SC-17 メンバーかんばん（既定）／SC-11 参加者管理（タブで切替）** | ✅ | **`MemberKanbanPage`**（タブで `ProjectMembersManagePage` に切替） |
 | `/projects/:projectId/members?tab=manage` **(v1.1)** | SC-11 参加者管理 | ✅ | `ProjectMembersManagePage` |
-| `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（ディレクターのみ） |
+| `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（**v1.2：プロジェクト管理者のみ**） |
 | `/account` | アカウント基本情報 | ✅ | `AccountPage`（最小） |
+| **`/settings`** **(v1.2)** | **SC-15 アカウント／組織設定（タブ：プロフィール／プランと請求／組織メンバー）** | ✅ | **`SettingsLayout`** |
+| **`/settings/billing`** **(v1.2)** | **SC-18 プランと請求** | ✅ | **`BillingPage`** |
+| **`/settings/organization`** **(v1.2)** | **組織の会員アカウント管理（座席の内訳・組織ロール）** | ✅ | **`OrganizationMembersPage`** |
 | `*` | 404 | — | `NotFoundPage` |
 
 > Phase 1 で予約：ダッシュボードの「進行判定フィルター」タブ（FR-DASH-08）。
@@ -179,6 +182,8 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 > **v1.1 ルーティング方針変更点（プロトタイプ反映）**：① SC-01 ログイン関連 7 状態を **`/login` に統合**（プロトタイプ仕様、`useSearchParams` で screen 切替）／② `/dashboard` を **Phase 0 必須化** し、`/` リダイレクト先を変更／③ `/projects/:projectId/members` の既定タブを **メンバーかんばん（SC-17）** に変更、SC-11 参加者管理は `?tab=manage` で切替。
 >
 > **v1.1 ルーティング方針変更点（非会員URL前倒し）**：④ `/share/:token` を Phase 0 公開ルートに追加／⑤ `/projects/:projectId/share-links` を Phase 0 ディレクター画面として追加。
+>
+> **v1.2 ルーティング方針変更点（課金・組織・ロール）**：⑥ `/settings` 配下に SC-15／SC-18／組織メンバー管理を追加。既存の `ProfileModal`（モーダル形式のアカウント設定）は当面残し、モーダル内から `/settings/billing` への導線を設ける／⑦ **ロールによるルートガードは設けない**。画面自体は開けるが、操作 UI をロールで出し分ける（§4.5.x）／⑧ Checkout からの復帰は `/settings/billing?checkout=success` を「反映待ち」表示 + 契約状態のポーリングとして扱い、**この遷移だけを根拠に有料機能を有効化しない**（PRD SR-BILL-03）。
 
 ### 4.3.2. ルートツリー（v1.1 更新）
 
@@ -200,8 +205,12 @@ RootLayout（グローバルヘッダー）
 │   │   ├── /items/:itemId → ItemSchedulePage（SC-06）
 │   │   ├── /edit → ProjectEditPage（SC-10）
 │   │   ├── /members → MemberKanbanPage（SC-17 既定）or ProjectMembersManagePage（?tab=manage、SC-11）
-│   │   └── /share-links → ShareLinkAdminPage（SC-16、ディレクターのみ、v1.1 非会員URL前倒し）
-│   └── /account → AccountPage
+│   │   └── /share-links → ShareLinkAdminPage（SC-16、プロジェクト管理者のみ、v1.1 非会員URL前倒し）
+│   ├── /account → AccountPage
+│   └── /settings（v1.2）
+│       ├── index → プロフィール（SC-15）
+│       ├── /billing → BillingPage（SC-18、v1.2）
+│       └── /organization → OrganizationMembersPage（v1.2）
 └── * → NotFoundPage
 ```
 
@@ -843,8 +852,30 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 | `Toast` | 成功・警告通知 | shadcn/ui Sonner |
 | `FormField` | React Hook Form + ラベル + エラー一体化 | shadcn/ui Form |
 | `RequireAuth` | 認証ガード | カスタム |
-| `AppSidebar` | 全ページ共通の左サイドバー（表示専用） | カスタム |
+| `AppSidebar` | 全ページ共通の左サイドバー（表示専用）。**v1.2：プランバッジは props で受け取る（ハードコードしない）** | カスタム |
 | `PageHeader` | ページヘッダー（パンくず／タイトル／アクション／ツールバー行） | カスタム |
+| **`useProjectRole(projectId)`** **(v1.2)** | **プロジェクトロールの集約フック**。`{ role, isAdmin, can(action), canBall(action, isHolder) }` を返す。`packages/shared` のロール別操作マトリクスを参照する | カスタム（hook） |
+| **`useEntitlement()`** **(v1.2)** | 契約状態・利用権限レベル・上限・利用状況を取得するフック。`GET /billing/subscription` をラップする | カスタム（hook） |
+
+> **v1.2：権限判定を 1 箇所に集約する。** Phase 0 では `project.role === 'director'` の判定が画面ごとに散らばっていた（プロジェクト一覧・プロジェクト編集・ボール詳細）。ロールが 3 値になるとこの分散は破綻するため、`useProjectRole` に寄せる。
+>
+> **利用権限（Entitlement）はフロントエンドで再計算しない。** バックエンドが返した判定結果をそのまま表示に使う。判定関数自体は `packages/shared` にあるため import は可能だが、二重実装は必ずずれるので行わない（章7 §7.6.4）。
+
+### 4.5.2. ロール・課金状態による UI の出し分け（v1.2 新規）
+
+| 種類 | 方針 | 理由 |
+|---|---|---|
+| **ロール起因**（編集者・閲覧者に権限がない） | **隠す**（Phase 0 の既存方針を踏襲） | メンバー管理・共有リンク・プロジェクト設定は入口ごと見せない方が迷わせない |
+| **ただし TOSS ボタンだけは例外** | **無効化 + 理由テキスト**「TOSS は管理者のみが実行できます」 | 現行 UI で TOSS は中心動線。黙って消すと「壊れた」と誤解される |
+| **課金起因**（閲覧のみ・凍結・上限到達） | **隠さず無効化 + 理由 + 復旧導線（CTA）** | 隠すと復旧手段にたどり着けない。CTA は「プランを見る」「維持するプロジェクトを選ぶ」「お支払い方法を更新」 |
+| 入力欄 | 無効化 + フィールド下に理由テキスト（Phase 0 の既存方針） | — |
+
+課金起因の状態表現：
+
+- **上限到達**：プロジェクト一覧上部にアラート。新規作成ボタンを無効化し、「アップグレード」「アーカイブして枠を空ける」の 2 つの導線を出す
+- **凍結**：一覧行に「閲覧のみ」バッジ。プロジェクト内には固定バナーを出し、編集 UI を一括で無効化する
+- **支払い失敗（猶予中）**：アプリ全体の共通レイアウトにバナーを出し、猶予期限と「お支払い方法を更新」を示す
+- **Checkout 復帰**：「反映待ち」を表示し、契約状態をポーリングする。**この画面遷移だけを根拠に有料機能を有効化しない**
 
 ### 4.5.1. TRAKON 固有コンポーネント（`src/components/trakon/`）
 
@@ -1213,6 +1244,10 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 | FR-BALL-03 | §4.4.5 Ball Holder バッジ、§4.7 楽観更新 |
 | FR-BALL-12 | §4.4.7 SC-08 削除は物理削除＋FE 確認モーダル |
 | §13.1 画面遷移図 | §4.3.3 に Phase 0 抜粋版で記載 |
+| §7 SC-15, SC-18（v1.4） | §4.3.1 に `/settings` `/settings/billing` `/settings/organization` を追加（v1.2） |
+| FR-ROLE-01〜04 | §4.5 `useProjectRole`／§4.5.2 出し分け方針（v1.2） |
+| FR-BILL-05, 10, 11 | §4.5.2 の状態表現（反映待ち・凍結・支払い失敗）（v1.2） |
+| FR-AUTH-13、UC-31 | SC-11 参加者管理にロール列と招待送信（PRD §7 SC-11、v1.2） |
 
 ### Phase 1+ 持ち越し（v1.1 で SC-09 / SC-17 が Phase 0 へ繰り上げ）
 
@@ -1229,7 +1264,8 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 
 ### PRD 整合メモ（PRD 改訂提案）
 
-- 特になし（章2 で起票した `invitations` テーブル提案は引き続き有効）
+- 章2 で起票した `invitations` テーブル提案は **PRD v1.4 §8.2 で解消済み**
+- **v1.2 で判明した実装上の既知の穴**：トースト（`Toaster`）が認証後の共通レイアウトにしかマウントされておらず、`/login` `/invitations/:token` `/share/:token` の公開ページではトーストが描画されない。v1.2 で招待受諾フローを扱うため、`Toaster` をルーター直下へ移す
 
 ---
 
@@ -1251,3 +1287,4 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 | 2026-08-23 | **#146 反映**（Figma デザインシステム 第6段：ダッシュボード） | SC-09 を階層リストから 4 列ボードへ（Figma node 57:2）。列の導出を `ballBoardColumnOf()` として `packages/shared` に追加し、`tossed` を二重計上として除外／「要対応のみ」トグル用に `member.isMe`、カード表示用に `task.progressManager` を DTO へ追加／カード配色はスケジュールと同じ 10 テーマ、列の見出し色も同パレットから選択。§4.4.10 に列と状態の対応表を追記。 |
 | 2026-08-23 | **#148 反映**（Figma デザインシステム 第7段b：プロジェクト系画面） | SC-03 をテーブルへ（遅延アイコン・クライアント名・進行責任者・行全体リンク・「⋯」メニュー）／SC-04 を Figma へ（クライアント名・職種・区分・通知先メール・進行責任者・固定サマリフッター）。作成 API に `progressManagerIndex` を追加／SC-11 参加者管理の表とフォームに職種・区分 3 値を反映。 |
 | 2026-08-23 | **#149 反映**（Figma デザインシステム 第8段：予定カラーのユーザー選択式化） | `plans.color_theme`（10 値 CHECK / NULL 許容）を追加し、NULL はカテゴリ由来の既定色にフォールバック／解決を `resolvePlanTheme()` に集約／`ScheduleThemePicker` をボール詳細ヘッダーと予定フォームに設置／テーマキーを `packages/shared` へ移し FE・BE・DB で共有。§4.9.2 の段階移行を完了として更新。 |
+| 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §4.3.1 / §4.3.2 に `/settings`・`/settings/billing`・`/settings/organization` を追加／§4.5 に `useProjectRole` / `useEntitlement` を追加し、サイドバーのプランバッジを props 化／§4.5.2 にロール・課金状態による UI 出し分け方針を新設（ロール起因は隠す、TOSS ボタンと課金起因は無効化＋理由＋CTA）／§4.11 に SC-15・SC-18 と FR-ROLE / FR-BILL の整合を追加／`Toaster` の未マウント問題を PRD 整合メモに記録。 |

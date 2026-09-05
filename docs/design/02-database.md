@@ -3,10 +3,10 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 02 |
-| ステータス | **v1.1 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
-| 確定日 | 2026-05-24 |
-| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) |
-| 主参照 PRD 節 | §8（データモデル概要）、§4.1.1（FR-AUTH-10〜12）、§4.1.4（FR-SCH-17, 18）、§4.1.5（FR-BALL-13）、§9.5（データ保護）、§9.6（監査ログ） |
+| ステータス | **v1.2 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映 / v1.2: 2026-08-30 課金・組織・ロール） |
+| 確定日 | 2026-08-30 |
+| 上位ドキュメント | [TRAKON PRD v1.4](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [07-billing.md](07-billing.md) |
+| 主参照 PRD 節 | §8（データモデル概要）、§4.1.1（FR-AUTH-10〜13）、§4.1.4（FR-SCH-17, 18）、§4.1.5（FR-BALL-13）、§4.1.12〜12c（FR-ORG / FR-BILL / FR-ROLE）、§9.5（データ保護）、§9.6（監査ログ） |
 
 ---
 
@@ -93,11 +93,16 @@ PRD §8 で示された**論理データモデル**を、Postgres（Supabase 上
 
 ### 2.2.6. マルチテナント前提（organization_id）
 
+**v1.2 改訂**：課金の契約主体を組織と確定したことに伴い、`organizations` を Phase 2 から前倒しで実体化した。
+
 | 観点 | 方針 |
 |---|---|
-| Phase 0 | `organizations` テーブルは作らないが、`projects.organization_id` 列は **NULL 許容で先付け** |
-| Phase 1〜2 | `organizations` テーブル作成 → 既存 `projects` に組織割当 → NOT NULL 化 |
-| インデックス | Phase 0 から `(organization_id, ...)` の複合インデックスを意識、Phase 1 で実体化 |
+| Phase 0（〜v1.1） | `organizations` テーブルは作らず、`projects.organization_id` 列を **NULL 許容で先付け**していた |
+| **Phase 0.5（v1.2）** | **`organizations` / `organization_members` を作成**。全ユーザーに個人組織を backfill し、`projects.organization_id` を埋めて **NOT NULL 化**。以降すべてのプロジェクトはいずれかの組織に属する |
+| Phase 2 | `organization_settings`（組織レベル統制）を追加 |
+| インデックス | `projects(organization_id)` は Phase 0 から存在。v1.2 で `(organization_id) WHERE deleted_at IS NULL AND archived_at IS NULL` の部分インデックスを追加（プロジェクト数上限の判定に使う） |
+
+> **`users.organization_id` は作らない。** 1 ユーザーが複数組織に所属しうるため、所属は `organization_members` で表現する（PRD §8.1 v1.4 改訂）。
 
 ---
 
@@ -275,12 +280,25 @@ erDiagram
 
 > v1.1 改訂注：v1.0 まで本表に含まれていた `share_links`（非会員URL共有）は **PRD v1.3 で Phase 0 へ前倒しされたため、§2.3.1 / §2.4 に移動**した。
 
+### 2.3.2b. Phase 0.5 で追加されるテーブル（v1.2 新規）
+
+| テーブル | 用途 | 関連 PRD |
+|---|---|---|
+| `organizations` | 組織テナント（課金の契約主体） | PRD §8.2、FR-ORG-01 |
+| `organization_members` | 会員アカウント（＝座席）の所属 | PRD §8.2、FR-ORG-02、FR-BILL-02 |
+| `billing_subscriptions` | 契約・課金状態（組織と 1:1） | PRD §8.2、FR-BILL-01, 05, 06 |
+| `stripe_events` | Webhook 受信台帳（冪等性・順序逆転対策） | PRD §8.2、SR-BILL-06 |
+| `billing_trial_claims` | トライアル利用履歴（重複防止） | PRD §8.2、FR-BILL-13 |
+
+> 設計の背景と判断理由は **章7（07-billing.md）** を参照。
+
 ### 2.3.3. Phase 2 で追加されるテーブル（参考）
 
 | テーブル | 用途 |
 |---|---|
-| `organizations` | 組織テナント |
 | `organization_settings` | 組織レベル統制（非会員URL共有の On/OFF 等） |
+
+> v1.2 改訂注：`organizations` は **Phase 2 → Phase 0.5 へ前倒し**したため §2.3.2b / §2.4 へ移動した。
 
 ---
 
@@ -360,7 +378,7 @@ erDiagram
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
 | id | uuid | × | uuidv7 | |
-| organization_id | uuid | ○ | NULL | Phase 2 で NOT NULL 化 |
+| organization_id | uuid | **×** | — | **v1.2 で NOT NULL 化**。FK → organizations.id。プロジェクト数上限の判定単位 |
 | name | text | × | — | 1〜255 文字（CHECK） |
 | **client_name** | text | ○ | NULL | **クライアント名（#147 追加）。表示専用で organizations とは紐づかない** |
 | start_date | date | × | — | |
@@ -371,6 +389,7 @@ erDiagram
 | closed_at | timestamptz | ○ | NULL | Phase 1〜（status='closed' に同期） |
 | archived_at | timestamptz | ○ | NULL | Phase 1〜（表示状態） |
 | deleted_at | timestamptz | ○ | NULL | Phase 1〜 |
+| **retained_at** | timestamptz | ○ | NULL | **上限超過時に「維持する」と選択された日時（v1.2 追加、FR-BILL-11）。未選択なら作成が古い順に維持される** |
 | created_at | timestamptz | × | now() | |
 | updated_at | timestamptz | × | now() | |
 
@@ -380,9 +399,11 @@ erDiagram
 - `ck_projects_name_length` CHECK (char_length(name) BETWEEN 1 AND 255)
 - `fk_projects_created_by` FK → users(id) ON DELETE RESTRICT
 - **`fk_projects_progress_manager_member_id` FK → project_members(id) ON DELETE RESTRICT（#131 追加）**
+- **`fk_projects_organization_id` FK → organizations(id) ON DELETE RESTRICT（v1.2 追加）** — RESTRICT とすることで、組織の削除でプロジェクトが道連れに消えないことを DB レベルで保証する（FR-BILL-09「解約時にプロジェクトを削除しない」の裏付け）
 
 **インデックス**：
-- `idx_projects_organization_id`（Phase 2 で活用、Phase 0 から付ける）
+- `idx_projects_organization_id`（v1.2 で本格利用）
+- **`idx_projects_org_active` 部分: `(organization_id)` WHERE deleted_at IS NULL AND archived_at IS NULL（v1.2 追加、プロジェクト数上限の判定用）**
 - `idx_projects_created_by_status`（プロジェクト一覧クエリ用）
 
 ---
@@ -401,7 +422,7 @@ erDiagram
 | organization_name | text | × | — | 所属名（カレンダー横軸グルーピング） |
 | member_type | text | × | — | 'client' / 'production' / **'partner'**（CHECK、#147 で partner 追加） |
 | **job_title** | text | ○ | NULL | **職種（#147 追加）。18 値の CHECK。表示専用で権限には影響しない** |
-| role_type | text | ○ | NULL | Phase 1〜（director / designer / engineer / client 等） |
+| role_type | text | **×** | 'editor' | **権限ロール：'admin' / 'editor' / 'viewer'（v1.2 で実体化・NOT NULL 化、FR-ROLE-01）。操作権限の唯一の根拠**（SR-AUTHZ-05）。`member_type`・`job_title` は権限に影響しない |
 | sort_order | int | × | 0 | カレンダー横軸の表示順 |
 | is_active | boolean | × | true | Phase 1〜（一時非表示） |
 | deleted_at | timestamptz | ○ | NULL | Phase 1〜 |
@@ -410,6 +431,7 @@ erDiagram
 
 **制約**：
 - `ck_pm_member_type` CHECK (member_type IN ('client','production','partner'))
+- **`ck_pm_role_type` CHECK (role_type IN ('admin','editor','viewer'))（v1.2 追加）** — 値の定義は `packages/shared/src/domain/projectRole.ts` の `PROJECT_ROLES`
 - `ck_pm_job_title` CHECK (job_title IS NULL OR job_title IN (18 値)) — 値の定義は `packages/shared/src/constants` の `JOB_TITLES`
 - `fk_pm_project_id` FK → projects(id) ON DELETE CASCADE
 - `fk_pm_user_id` FK → users(id) ON DELETE SET NULL
@@ -418,6 +440,20 @@ erDiagram
 **インデックス**：
 - `idx_pm_project_id_sort_order`（カレンダー横軸の取得用）
 - `idx_pm_user_id`（自分の参加プロジェクト一覧の取得用）
+
+**v1.2 の backfill 方針**（`role_type` の NOT NULL 化）：
+
+```sql
+-- 作成者「および進行責任者」を管理者にする
+UPDATE project_members pm SET role_type = 'admin'
+  FROM projects p
+ WHERE pm.project_id = p.id
+   AND (pm.user_id = p.created_by OR pm.id = p.progress_manager_member_id);
+UPDATE project_members SET role_type = 'editor' WHERE role_type IS NULL;
+```
+
+進行責任者も管理者に昇格させるのは、**作成者だけを管理者にすると「作成者以外が進行責任者」のプロジェクトで TOSS を実行できる人が誰もいなくなる**ため（TOSS は管理者限定、章7 §7.12.2）。
+`member_type='client'` を自動的に閲覧者へ降格させることは**しない**（既存データでクライアントが承認者になっている場合に承認不能になるため。降格は UI から明示的に行う）。
 
 ---
 
@@ -560,7 +596,7 @@ erDiagram
 | occurred_at | timestamptz | × | now() | 発生日時 |
 | actor_user_id | uuid | ○ | NULL | FK → users.id（非会員URL経由は NULL） |
 | share_link_id | uuid | ○ | NULL | FK → share_links.id（非会員URL経由のアクセス時のみ／Phase 0 から有効） |
-| action | text | × | — | 'login','logout','toss','untoss','complete','undo_complete','auto_toss'(#117廃止), **#131: 'request_review','undo_request_review','approve','undo_approve','send_back'**, 'share_access','share_create','share_revoke','share_toss'(廃止),'share_complete'(廃止), **#131: 'share_request_review','share_approve','share_send_back'** …（CHECK） |
+| action | text | × | — | 'login','logout','toss','untoss','complete','undo_complete','auto_toss'(#117廃止), **#131: 'request_review','undo_request_review','approve','undo_approve','send_back'**, 'share_access','share_create','share_revoke','share_toss'(廃止),'share_complete'(廃止), **#131: 'share_request_review','share_approve','share_send_back'**, **v1.2 課金系: 'checkout_started','trial_started','trial_blocked','trial_released','subscription_created','subscription_updated','subscription_canceled','plan_changed','payment_failed','payment_recovered'**, **v1.2 組織・ロール系: 'org_member_added','org_member_removed','org_role_changed','invitation_created','invitation_revoked','project_role_changed','retained_projects_changed'** …（CHECK） |
 | resource_type | text | × | — | 'project','plan','ball_event' 等 |
 | resource_id | uuid | ○ | NULL | 対象リソース ID |
 | result | text | × | — | 'success' / 'failure'（CHECK） |
@@ -573,6 +609,13 @@ erDiagram
 - `fk_al_actor_user_id` FK → users(id) ON DELETE SET NULL
 - **Append-only 強制**（§2.6）
 
+> **v1.2 の運用上の注意（重要）**
+>
+> - `action` の許可値は CHECK 制約 `ck_al_action` で列挙している。**値を追加するには CHECK を DROP → 再作成するマイグレーションが必須**。追加を忘れると `audit_logs` への INSERT が制約違反で失敗し、**同一トランザクション内の業務処理ごと巻き戻る**。Webhook 経由なら Stripe に 500 を返して再送ループになる
+> - 検出手段として、許可値を `packages/shared/src/constants/audit.ts` に一元化し、**`pg_get_constraintdef` で取得した実際の CHECK 定義と突き合わせる統合テスト**を用意する
+> - `resource_id` は uuid 型なので、Stripe の顧客 ID・契約 ID は入らない。課金系は `resource_type='subscription'` / `resource_id=organization_id` とし、Stripe 側の ID は `extra` に入れる
+> - Webhook 起点の記録は `actor_user_id = NULL` とし、`extra.source='stripe_webhook'` を必ず付ける
+
 **インデックス**：
 - `idx_al_occurred_at_desc`（時系列参照用）
 - `idx_al_actor_user_id_occurred_at`（ユーザー別履歴）
@@ -583,7 +626,9 @@ erDiagram
 
 ### 2.4.8. invitations — プロジェクト招待トークン
 
-**司る機能**：FR-AUTH-02 招待リンク／UC-03 参加者招待・受諾／SR-AUTH-02。**Supabase Auth の標準招待機能ではなく自前管理**（プロジェクト固有メタを持たせるため）。
+**司る機能**：FR-AUTH-02, 07, 13 招待リンク／FR-ROLE-03／FR-BILL-02／UC-03, UC-31 参加者招待・受諾／SR-AUTH-02。**Supabase Auth の標準招待機能ではなく自前管理**（プロジェクト固有メタを持たせるため）。
+
+> **v1.2 重要**：**未受諾かつ有効期限内の招待は組織の座席を 1 つ消費する**（章7 §7.3.2）。これを座席カウントに含めないと、招待を大量に送ってから一斉に受諾させることで上限を超えられてしまう。
 
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
@@ -592,7 +637,9 @@ erDiagram
 | invited_member_id | uuid | × | — | FK → project_members.id（仮作成行） |
 | email | text | × | — | 招待先メール |
 | token_hash | text | × | — | トークン本体は SHA-256 等でハッシュ化保存。**生トークンは保存しない** |
-| role_type | text | ○ | NULL | Phase 1〜 |
+| role_type | text | **×** | 'editor' | **受諾時に付与する権限ロール（v1.2 で実体化、FR-ROLE-03）**。'admin' / 'editor' / 'viewer' |
+| **organization_id** | uuid | × | — | **座席カウントの単位（v1.2 追加）。FK → organizations.id** |
+| **invited_by_user_id** | uuid | ○ | NULL | **招待者（監査用、v1.2 追加）。FK → users.id ON DELETE SET NULL** |
 | expires_at | timestamptz | × | — | 有効期限（既定 72 時間、PRD §9.3 SR-AUTH-02） |
 | accepted_at | timestamptz | ○ | NULL | 受諾日時。NOT NULL になったらワンタイム消費済み |
 | revoked_at | timestamptz | ○ | NULL | 個別失効日時 |
@@ -602,9 +649,12 @@ erDiagram
 - `fk_inv_project_id` FK → projects(id) ON DELETE CASCADE
 - `fk_inv_invited_member_id` FK → project_members(id) ON DELETE CASCADE
 - `uq_inv_token_hash`（token_hash UNIQUE）
+- **`ck_inv_role_type` CHECK (role_type IN ('admin','editor','viewer'))（v1.2 追加）**
+- **`fk_inv_organization_id` FK → organizations(id) ON DELETE CASCADE（v1.2 追加）**
 
 **インデックス**：
 - `idx_inv_project_id`
+- **`idx_inv_org_pending` 部分: `(organization_id)` WHERE accepted_at IS NULL AND revoked_at IS NULL（v1.2 追加、座席カウント用）**
 - `idx_inv_email_active` 部分: `(email)` WHERE accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
 
 **Phase 1 拡張**：
@@ -652,6 +702,162 @@ erDiagram
 - 削除（DELETE）は行わない。失効は `revoked_at` セットで論理失効（監査用に履歴保持、PRD §8.4 share_links 条項に準拠）
 - レート制限・総当り検知は Phase 0 では Vercel 既定のみ。Phase 1 で Upstash Redis ベースに強化（章3 §3.2.9）
 - `last_accessed_at` 更新は監査ログ記録と同一トランザクションで実施
+
+---
+
+### 2.4.10. organizations — 組織（課金の契約主体）※v1.2 新規
+
+**司る機能**：FR-ORG-01, 02／FR-BILL-01〜13／UC-22, 27〜31。プロジェクトと会員アカウントを束ねるテナント。**ユーザー登録（プロフィール作成）時に本人をオーナーとする個人組織を自動作成する。**
+
+| カラム | 型 | NULL | 既定 | 説明 |
+|---|---|:---:|---|---|
+| id | uuid | × | uuidv7 | |
+| name | text | × | — | 組織名。既定は「〇〇 の組織」。1〜255 文字（CHECK） |
+| owner_user_id | uuid | × | — | FK → users.id |
+| created_at | timestamptz | × | now() | |
+| updated_at | timestamptz | × | now() | |
+| deleted_at | timestamptz | ○ | NULL | 論理削除 |
+
+**制約**：
+- `ck_orgs_name_length` CHECK (char_length(name) BETWEEN 1 AND 255)
+- `fk_orgs_owner_user_id` FK → users(id) ON DELETE RESTRICT
+- `uq_orgs_owner_user_id`（owner_user_id UNIQUE）— 1 ユーザーにつきオーナー組織は 1 つ
+
+> **プランは本テーブルに持たせない。** 契約情報の唯一の正は `billing_subscriptions`（§2.4.12）。組織側にもプラン列を置くと必ず不整合を起こす（章7 §7.13 論点 2）。
+
+---
+
+### 2.4.11. organization_members — 会員アカウント（＝座席）※v1.2 新規
+
+**司る機能**：FR-ORG-02／FR-BILL-02／UC-31。**課金の人数カウント対象**。
+
+`project_members` との違い（混同しやすいので明記する）：
+
+| | `organization_members` | `project_members` |
+|---|---|---|
+| 意味 | 課金対象の会員アカウント | プロジェクト上の担当者行 |
+| `user_id` | **NOT NULL**（実在のログインユーザーのみ） | **NULL 許容**（招待前・メール未登録の担当者） |
+| 座席消費 | する | しない |
+| 権限 | 組織ロール（課金操作の可否） | プロジェクトロール（業務操作の可否） |
+
+| カラム | 型 | NULL | 既定 | 説明 |
+|---|---|:---:|---|---|
+| id | uuid | × | uuidv7 | |
+| organization_id | uuid | × | — | FK → organizations.id |
+| user_id | uuid | × | — | FK → users.id |
+| org_role | text | × | 'member' | 'owner' / 'admin' / 'member'（CHECK） |
+| is_primary | boolean | × | false | 既定の所属組織か（プロジェクト作成先の決定に使う） |
+| joined_at | timestamptz | × | now() | |
+| created_at / updated_at | timestamptz | × | now() | |
+| deleted_at | timestamptz | ○ | NULL | 論理削除 |
+
+**制約**：
+- `ck_om_org_role` CHECK (org_role IN ('owner','admin','member'))
+- `fk_om_organization_id` FK → organizations(id) ON DELETE CASCADE
+- `fk_om_user_id` FK → users(id) ON DELETE CASCADE
+- `uq_om_org_user`（organization_id, user_id）UNIQUE — 論理削除を含むフル UNIQUE。再招待時は既存行を復活させる（`uq_pm_project_email` と同じ流儀）
+- `uq_om_user_primary` 部分 UNIQUE: `(user_id)` WHERE is_primary AND deleted_at IS NULL
+
+**インデックス**：
+- `idx_om_user`（user_id）
+- `idx_om_org_active` 部分: `(organization_id)` WHERE deleted_at IS NULL（座席カウント用）
+
+**座席カウント**：`有効な organization_members の件数 + 未受諾かつ有効期限内の invitations の件数`（章7 §7.3.2）
+
+---
+
+### 2.4.12. billing_subscriptions — 契約・課金状態 ※v1.2 新規
+
+**司る機能**：FR-BILL-01, 03, 05〜10／UC-27〜30。組織と 1:1。**Stripe Webhook を正として更新し、これを唯一の権限判定材料とする**。
+
+| カラム | 型 | NULL | 既定 | 説明 |
+|---|---|:---:|---|---|
+| id | uuid | × | uuidv7 | |
+| organization_id | uuid | × | — | FK → organizations.id、UNIQUE |
+| plan_code | text | × | 'free' | 'free' / 'personal' / 'team' / 'enterprise'（CHECK） |
+| status | text | × | 'none' | 'none','trialing','active','past_due','unpaid','canceled','incomplete','incomplete_expired','paused'（CHECK） |
+| stripe_customer_id | text | ○ | NULL | UNIQUE。初回 Checkout まで NULL |
+| stripe_subscription_id | text | ○ | NULL | UNIQUE |
+| stripe_price_id | text | ○ | NULL | 現在契約中の Price |
+| current_period_start / current_period_end | timestamptz | ○ | NULL | 現在の請求期間 |
+| cancel_at_period_end | boolean | × | false | 期間終了時解約フラグ |
+| canceled_at | timestamptz | ○ | NULL | 解約操作日時 |
+| trial_start / trial_end | timestamptz | ○ | NULL | トライアル期間 |
+| trial_used_at | timestamptz | ○ | NULL | トライアル消費日時 |
+| latest_invoice_id | text | ○ | NULL | 直近の請求書 |
+| last_payment_failed_at | timestamptz | ○ | NULL | 直近の支払い失敗日時 |
+| grace_period_ends_at | timestamptz | ○ | NULL | 支払猶予期限（初回失敗 + 7 日）。**再試行のたびに延ばさない** |
+| pending_plan_code | text | ○ | NULL | 保留中のプラン変更（CHECK は plan_code と同値域） |
+| pending_plan_effective_at | timestamptz | ○ | NULL | 保留中変更の適用予定日時 |
+| default_payment_method_brand / _last4 | text | ○ | NULL | **表示専用。カード番号・識別子は保持しない**（SR-BILL-02） |
+| last_stripe_event_id / last_stripe_event_at | text / timestamptz | ○ | NULL | 反映済みイベントの記録（順序逆転対策） |
+| created_at / updated_at | timestamptz | × | now() | |
+
+**制約**：
+- `ck_bs_plan_code` / `ck_bs_pending_plan_code` CHECK (… IN ('free','personal','team','enterprise'))
+- `ck_bs_status` CHECK (status IN (上記 9 値))
+- `fk_bs_organization_id` FK → organizations(id) ON DELETE CASCADE
+- `uq_bs_organization_id` / `uq_bs_stripe_customer_id` / `uq_bs_stripe_subscription_id`
+
+**インデックス**：
+- `idx_bs_status`（status）
+- `idx_bs_grace` 部分: `(grace_period_ends_at)` WHERE grace_period_ends_at IS NOT NULL
+
+> Enterprise は `plan_code` の値としてのみ定義する。**契約管理カラム（契約状態・契約期間・会員上限）は Phase 0.5 では作らない**（章7 §7.13 論点 7）。
+
+---
+
+### 2.4.13. stripe_events — Webhook 受信台帳 ※v1.2 新規
+
+**司る機能**：SR-BILL-01, 06。**冪等性の担保**（重複配信・再送・順序逆転への耐性）。
+
+| カラム | 型 | NULL | 既定 | 説明 |
+|---|---|:---:|---|---|
+| id | uuid | × | uuidv7 | |
+| stripe_event_id | text | × | — | **UNIQUE**。冪等キー |
+| event_type | text | × | — | イベント種別 |
+| event_created_at | timestamptz | × | — | Stripe 側の発生時刻（**秒精度**） |
+| received_at | timestamptz | × | now() | |
+| processed_at | timestamptz | ○ | NULL | 処理完了時刻 |
+| status | text | × | 'received' | 'received','processed','skipped','failed'（CHECK） |
+| organization_id | uuid | ○ | NULL | FK → organizations.id ON DELETE SET NULL |
+| error | text | ○ | NULL | 失敗理由 |
+| payload | jsonb | × | '{}' | 受信内容。**決済情報・シークレットは含めない**（SR-BILL-05） |
+
+**制約**：`uq_se_event_id`（stripe_event_id UNIQUE）／`ck_se_status`
+
+**インデックス**：`idx_se_type_created`（event_type, event_created_at DESC）
+
+> **`audit_logs` と違い append-only トリガは付けない。** `processed_at` / `status` を後から更新するため。
+
+---
+
+### 2.4.14. billing_trial_claims — トライアル利用履歴 ※v1.2 新規
+
+**司る機能**：FR-BILL-03, 13。トライアルの重複利用防止。
+
+| カラム | 型 | NULL | 既定 | 説明 |
+|---|---|:---:|---|---|
+| id | uuid | × | uuidv7 | |
+| organization_id | uuid | ○ | NULL | FK → organizations.id ON DELETE SET NULL |
+| user_id | uuid | ○ | NULL | FK → users.id ON DELETE SET NULL |
+| email_normalized | text | × | — | 小文字化・前後空白除去済みメール |
+| email_domain | text | × | — | **ドメイン一致は記録のみで自動拒否には使わない** |
+| stripe_customer_id / stripe_subscription_id | text | ○ | NULL | 過去の契約 |
+| claimed_at | timestamptz | × | now() | 付与日時 |
+| released_at | timestamptz | ○ | NULL | 手動解除日時 |
+| released_reason | text | ○ | NULL | 解除理由 |
+| released_by | text | ○ | NULL | 解除実施者（運用者識別子） |
+| created_at | timestamptz | × | now() | |
+
+**制約**：
+- `uq_btc_email_active` 部分 UNIQUE: `(email_normalized)` WHERE released_at IS NULL
+- `uq_btc_user_active` 部分 UNIQUE: `(user_id)` WHERE released_at IS NULL AND user_id IS NOT NULL
+
+**インデックス**：`idx_btc_domain`（email_domain）／`idx_btc_customer`（stripe_customer_id）
+
+> **カードの識別子（fingerprint）は保存しない。** 法人カードの共有による誤判定があり得るため、識別子のみを根拠に自動拒否してはならないという【確定】要件があり、そもそも保存しないことで担保する（章7 §7.9.2）。
+> **解除は行を削除せず `released_*` を埋める**。手順は `docs/operations.md` の Runbook を参照。
 
 ---
 
@@ -840,7 +1046,7 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 | M005 (Phase 1) | `comments` / `attachments` / `notifications` テーブル追加 | 中（FK 設計検証必要） |
 | M006 (Phase 1) | `plans.owner_member_id` 用 CHECK 制約追加（plan_type='shared'/'solo' で NOT NULL 相当） | 中 |
 | M007 (Phase 1) | 論理削除へ移行（`plans.deleted_at` をアプリで参照開始）、Prisma middleware 適用 | 中（既存物理削除コードの撤去） |
-| M008 (Phase 2) | `organizations` テーブル追加 + `projects.organization_id` 既存データの組織割当 + NOT NULL 化 | 高（データ移行スクリプト必要） |
+| ~~M008 (Phase 2)~~ | ~~`organizations` テーブル追加 + `projects.organization_id` 既存データの組織割当 + NOT NULL 化~~ → **v1.2 で Phase 0.5 へ前倒し実施済み（下記 M101 / M102）** | — |
 
 **v1.1（2026-05-24）プロトタイプ反映マイグレーション（Phase 0 範囲、M001 と同時に初回投入）**：
 
@@ -859,6 +1065,24 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 |---|---|---|
 | `20260724000001_add_plan_roles` | `plans` に 3 役割列（executor / approver / progress_manager）＋ `projects.progress_manager_member_id` を追加（すべて nullable UUID）、対応 FK（ON DELETE RESTRICT）と index（`idx_plans_executor_member` / `idx_plans_progress_manager_member`）を追加、`ck_be_event_type` / `ck_al_action` を新値追加で拡張、**`ck_plans_toss_members` を撤去**。バックフィル（executor ← from_member、progress_manager ← 作成者 created_by の該当メンバー）は updated_at 保持のため set_updated_at トリガを一時 DISABLE して実行。 | 低（追加列は nullable・CHECK はスーパーセット・破壊的操作なし） |
 | `20260724000002_add_share_action_events` | `audit_logs.action` に `share_request_review` / `share_approve` / `share_send_back` を追加（許可値の追加のみ）。旧 `share_toss` / `share_complete` は残す。 | 低 |
+
+**v1.2（有料プラン・組織・権限ロール）マイグレーション（Phase 0.5 範囲）**：
+
+| # | マイグレーション | 内容 | 破壊性・リスク |
+|---|---|---|---|
+| M101 | `add_organizations` | `organizations` / `organization_members` を作成し、トリガを設定。**全 `users` に対して個人組織を backfill**（論理削除済みユーザーも含め、NULL を残さない） | **非破壊**（追加のみ） |
+| M102 | `projects_organization_not_null` | `projects.organization_id` を作成者の組織で backfill → FK 追加 → `SET NOT NULL`。`retained_at` と部分インデックスを追加 | **破壊的**。`SET NOT NULL` は ACCESS EXCLUSIVE ロック＋全表スキャン。backfill 漏れが 1 行でもあれば失敗する（＝安全側）。**M101 の先行が必須** |
+| M103 | `add_project_role_type` | `project_members.role_type` を backfill（§2.4.3）→ CHECK → DEFAULT → `SET NOT NULL`。`invitations.role_type` / `organization_id` / `invited_by_user_id` も同様 | **破壊的**（NOT NULL 化）。**M101 の先行が必須**（`invitations.organization_id` のため） |
+| M104 | `add_billing_tables` | `billing_subscriptions` / `stripe_events` / `billing_trial_claims` を作成。**全組織に free の `billing_subscriptions` 行を backfill** | **非破壊** |
+| M105 | `extend_audit_actions_billing` | `ck_al_action` を DROP → 課金系 10 値・組織/ロール系 7 値を加えた全許可値で再作成 | **非破壊**（許可値のスーパーセット） |
+
+**適用上の注意**：
+
+- M101 → M102 / M103 の順序は必須。M104 は M101 の後であれば任意の位置に置ける
+- M102 / M103 は NOT NULL 化を含むため、**先に `apps/web/server/test/factories.ts` を更新しないと既存の統合テストが全滅する**（`createProject` が組織を自動生成するようにし、`setupProjectWithDirector` が `role_type='admin'` を設定する）
+- 統合テストの TRUNCATE 対象テーブル一覧（`server/test/integration.setup.ts`）に新テーブル 5 件を FK 順で追加する
+- M101 と M102 を別リリースに分け、本番で組織 backfill の結果を目視確認してから NOT NULL 化する二段階運用も可能
+
 
 ---
 
@@ -898,16 +1122,25 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 | §9.6 SR-AUDIT-01〜02 | `audit_logs` テーブル定義 + §2.7 append-only 強制 |
 | FR-AUTH-02 招待 | §2.4.8 invitations テーブルで対応（PRD §8 では未明記の追加テーブル） |
 | FR-BALL-12 MVPボール物理削除 | §2.4.5 で `deleted_at` 列を持つが Phase 0 アプリ側で物理削除する旨明記 |
+| FR-ORG-01, 02 | §2.4.10 organizations／§2.4.11 organization_members で物理化（v1.2） |
+| FR-BILL-01, 05, 06 | §2.4.12 billing_subscriptions（v1.2） |
+| FR-BILL-11 | §2.4.2 `projects.retained_at` ＋ 部分インデックス（v1.2）。凍結状態そのものは保存しない（章7 §7.11.3） |
+| FR-BILL-13 | §2.4.14 billing_trial_claims（v1.2） |
+| FR-ROLE-01〜04 | §2.4.3 `project_members.role_type` の実体化・NOT NULL 化（v1.2） |
+| FR-AUTH-13 / UC-31 | §2.4.8 invitations の `role_type` / `organization_id` / `invited_by_user_id`（v1.2） |
+| SR-BILL-01, 05, 06 | §2.4.13 stripe_events（冪等性）／§2.4.7 audit_logs の運用注意（v1.2） |
 
 ### Phase 1+ 持ち越し
 
 - `comments`、`attachments`、`notifications` の物理定義（§2.3.2 で予告のみ）
+- `organization_settings`（組織レベル統制、Phase 2 維持）
+- Enterprise 契約管理カラム（契約状態・契約期間・会員上限、Phase 1）
 - 論理削除アプリ実装の Prisma middleware 化
 - ハッシュチェーンによる監査ログ改ざん検知（Phase 2 以降）
 
 ### PRD 整合メモ（PRD 改訂提案）
 
-- **新規追加候補**：PRD §8.2 に **`invitations` テーブル**を明示すべき。FR-AUTH-02 の物理化として PRD への追記を提案（本基本設計書の章末リストとして起票）
+- ~~**新規追加候補**：PRD §8.2 に **`invitations` テーブル**を明示すべき~~ → **PRD v1.4 で解消**（§8.2 に `invitations` を追記済み）
 - **v1.1 反映**：PRD v1.3 で `oauth_identities` テーブル定義 / `users.full_name` `users.display_name` `users.primary_auth_method` / `plans.successor_plan_id` `plans.category` / `ball_events.source` `ball_events.actor_user_id` を §8.2 に追記済み（同期完了）
 
 ---
@@ -921,3 +1154,4 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§2.3.1 ER 図に `share_links` を追加、§2.4.9 share_links テーブル定義を新設、§2.4.7 audit_logs に `share_link_id`／`share_*` アクションを Phase 0 から有効化、§2.9.3 マイグレーション計画から `share_links` を M001 に統合、§2.11 Phase 1+ 持ち越しから `share_links` を除外。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | users 拡張（full_name/display_name 分離、primary_auth_method）／oauth_identities 新規／plans 拡張（successor_plan_id, category）／ball_events 拡張（source, actor_user_id NULL化、ck_be_actor_consistency）／インデックス追加（OAuth/successor/category/ダッシュボード）／§2.5.3 OAuth 紐付け方針新設／§2.10 に論点 11〜14 追加／M001a〜f マイグレーション。 |
 | 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | plans に 3 役割列（executor/approver/progress_manager）＋ projects に既定進行責任者列を追加、from/to を TOSS 履歴スナップショットへ意味変更、`ck_plans_toss_members` 撤去、ball_events.event_type / audit_logs.action を新値で拡張、§2.6 Ball Holder 導出を 6 状態モデルへ刷新、§2.9.3 に 20260724000001 / 20260724000002 を追記。自動連鎖 TOSS は #117 廃止を明記。 |
+| 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §2.2.6 マルチテナント前提を organizations 実体化へ改訂／§2.3.2b に Phase 0.5 追加テーブル 5 件／§2.4.2 projects に `organization_id` NOT NULL 化・`retained_at`・部分インデックス／§2.4.3 project_members の `role_type` 実体化と backfill 方針／§2.4.7 audit_logs の許可 action 拡張と CHECK 再作成の運用注意／§2.4.8 invitations に `role_type`・`organization_id`・`invited_by_user_id`／§2.4.10〜2.4.14 に organizations・organization_members・billing_subscriptions・stripe_events・billing_trial_claims を新規定義／§2.9.3 に M101〜M105 を追加し M008 を解消。 |

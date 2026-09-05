@@ -3,9 +3,9 @@
 | 項目 | 内容 |
 |---|---|
 | 章番号 | 06 |
-| ステータス | **v1.1 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
+| ステータス | **v1.2 確定**（v1.0: 2026-05-09 / v1.1: 2026-05-24 プロトタイプ反映） |
 | 確定日 | 2026-05-24 |
-| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [05-security.md](05-security.md) |
+| 上位ドキュメント | [TRAKON PRD v1.4](../prd/trakon-prd.md) ／ [01-architecture.md](01-architecture.md) ／ [05-security.md](05-security.md) |
 | 主参照 PRD 節 | §4.2（NFR）／§9.5（データ保護）／§9.6（監査ログ）／§9.10（脆弱性・運用）／§9.3 SR-AUTH-10（OAuth）／§10（フェーズ） |
 
 ---
@@ -87,11 +87,14 @@ flowchart LR
 | Supabase | Free → Pro（商用前に昇格） | $0 → $25 | 同上 |
 | Resend | Free（月3,000通まで） | $0 → $20（10万通） | 同上 |
 | Sentry | Developer Free | $0 → Team $26 | 同上 |
+| **Stripe**（v1.2） | 従量課金（月額固定費なし） | 決済額の 3.6%（国内カード） | 同上 |
 | GitHub | Free（個人 / 小規模） | $0 | 同上 |
 | ドメイン | レジストラ（お名前.com / Cloudflare 等） | 〜2,000円/年 | 同上 |
 
 **Phase 0 想定月額：0 〜 4,000円**（社内検証中、全 Free プラン運用）
-**商用リリース時：約 11,000円〜（$71/月、当時の為替で約11,000円）**
+**商用リリース時：約 11,000円〜（$71/月、当時の為替で約11,000円）＋ 決済手数料（Stripe、売上連動）**
+
+> **v1.2**：Stripe は月額固定費が発生せず、決済額に対する手数料のみ。売上に比例するため固定費見積には含めない。返金時の手数料は返還されない点に留意する。
 
 ---
 
@@ -233,8 +236,20 @@ Vercel は1プロジェクトで以下の環境を持つ：
 | **`MICROSOFT_OAUTH_CLIENT_ID`** **(v1.1)** | All | Microsoft Entra ID（Azure portal） | BE 専用 |
 | **`MICROSOFT_OAUTH_CLIENT_SECRET`** **(v1.1)** | All | 同上 | BE 専用、絶対漏洩禁止 |
 | **`OAUTH_STATE_TTL_SECONDS`** **(v1.1)** | All | 設定値（既定 300） | BE 専用、state KV の TTL |
+| **`STRIPE_SECRET_KEY`** **(v1.2)** | All（**環境別**） | Stripe ダッシュボード | BE 専用、絶対漏洩禁止 |
+| **`STRIPE_WEBHOOK_SECRET`** **(v1.2)** | All（**環境別**） | Stripe の Webhook 設定画面 | BE 専用、絶対漏洩禁止 |
+| **`STRIPE_PERSONAL_MONTHLY_PRICE_ID`** **(v1.2)** | All（**環境別**） | Stripe の商品カタログ | BE 専用 |
+| **`STRIPE_TEAM_MONTHLY_PRICE_ID`** **(v1.2)** | All（**環境別**） | 同上 | BE 専用 |
+| **`STRIPE_JP_TAX_RATE_ID`** **(v1.2)** | All（**環境別**） | Stripe の Tax Rate 設定 | BE 専用 |
+| **`STRIPE_PORTAL_CONFIGURATION_ID`** **(v1.2)** | All（**環境別**） | Stripe の Customer Portal 設定 | BE 専用。プラン変更を無効化した構成を明示指定する |
 
 > **環境別値**：Vercel の各環境（Production / Preview / Development）で別の値を設定。Preview は dev Supabase を指す。**OAuth Client は dev / prod で別アプリ作成**（Authorized redirect URI が環境別の URL を指すため）。
+>
+> **v1.2：Stripe のテストモードと本番モードは完全に分離する。** Product / Price / Tax Rate / Webhook のいずれも ID が別値になるため、**テスト環境で本番 ID を流用してはならない**。Secret Key・Webhook Secret はドキュメント・チャットに記載せず、Vercel の環境変数へ直接登録する（PRD SR-BILL-04、章5 §5.5.3）。
+>
+> **クライアント公開鍵（Publishable Key）は不要。** ホスト型 Checkout へサーバーサイドでリダイレクトするだけで、ブラウザ側で Stripe SDK を動かさないため。
+>
+> Stripe の初回セットアップ手順（Product / Price / Tax Rate / Webhook 登録、ローカルでの Webhook 疎通確認）は `docs/operations.md` の Runbook を参照。
 
 ### 6.5.4. デプロイ戦略（GitHub Release ベース）
 
@@ -701,6 +716,8 @@ jobs:
 | 監査ログ閲覧 UI | Phase 2 | PRD SR-AUDIT-04 |
 | 非会員URL共有のレート制限・総当り検知 | Phase 1 中盤 | Upstash Redis 導入と合わせて `/share/:token` を IP/トークン単位で制限。`audit_logs.action='share_access'` の異常増加アラートを Sentry または Better Stack で設定（章5 §5.4.5） |
 | 組織レベル On/OFF 統制 | Phase 2 | `organizations` / `organization_settings` 導入と合わせて FR-ORG-04, 05、FR-SHARE-07、SR-AUTH-09 を有効化 |
+| Enterprise プラン（Stripe 非連携・請求書による個別契約） | Phase 1（v1.2 で明示） |
+| 運営向け管理画面（トライアル手動解除・Enterprise 契約管理） | Phase 1+。**Phase 0.5 は Runbook + DB 直接操作で代替**（v1.2） |
 
 ---
 
@@ -827,3 +844,4 @@ jobs:
 | 2026-05-09 | **v1.0 確定** | §6.16 全10論点を AskUserQuestion で確定。Production デプロイは推奨案「Phase 0 は自動」から **「GitHub Release ベース」に変更**、他9項目は推奨案どおり。§6.5.4 / §6.8 / §6.9 / §6.15 を Release ベースに書き換え。 |
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§6.4.1 ドメイン構成に `/share/:token` の `noindex`／robots.txt／Cloudflare キャッシュバイパス運用注記を追加、§6.14 Phase 1+ 拡張計画に「非会員URL共有のレート制限・総当り検知」と「組織レベル On/OFF 統制」を追加。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | §6.5.3 環境変数に OAuth Client ID/Secret + state TTL 追加／§6.6.1 Google・Microsoft OAuth Provider 設定手順を新規セクションとして追加／§6.7.1 シークレット保管・ローテに OAuth Secret 2行追加／§6.7.2 .env.example に OAuth 行追加／§6.15.7 OAuth Client Secret 期限管理 Runbook 追加／§6.16 論点 11〜14 追加。 |
+| 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §6.2.2 ベンダー一覧に Stripe を追加し、決済手数料を月額見積の注記に反映／§6.5.3 に Stripe 環境変数 6 件を追加し、テストモードと本番モードの完全分離・Publishable Key 不要・Secret を文書に残さない方針を明記／§6.14 に Enterprise と運営向け管理画面を持ち越しとして追加。Stripe の初回セットアップ手順は docs/operations.md の Runbook へ。 |

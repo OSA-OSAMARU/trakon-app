@@ -4,11 +4,11 @@
 |---|---|
 | プロダクト名 | TRAKON |
 | 発行元 | 株式会社おさまるカンパニー |
-| ドキュメント版 | **v1.1（非会員URL Phase 0 化 + プロトタイプ反映）** |
-| 発行日 | 2026-05-24 |
-| ステータス | **v1.1 確定**（全6章） |
+| ドキュメント版 | **v1.2（有料プラン・組織・権限ロールの導入）** |
+| 発行日 | 2026-08-30 |
+| ステータス | **v1.2 確定**（全7章） |
 | 本書の位置づけ | 基本原則 > PRD > **本基本設計書** > 実装仕様書 |
-| 上位ドキュメント | [TRAKON PRD v1.3](../prd/trakon-prd.md) |
+| 上位ドキュメント | [TRAKON PRD v1.4](../prd/trakon-prd.md) |
 
 ---
 
@@ -37,6 +37,7 @@
 | #147 | 2026-08-23 | **参加者・プロジェクトの表示項目を追加（Figma 反映 第7段の前半）**。`projects.client_name`、`project_members.job_title`（職種 18 値）を追加し、`member_type` に `partner`（外部パートナー）を追加。職種・区分マスタは `packages/shared` に定義して FE/BE で共有。プロジェクト一覧向けに進行責任者と期限超過ボール数を DTO へ追加。02-database を更新。 | — |
 | #148 | 2026-08-23 | **Figma デザインシステム反映（第7段b：プロジェクト系画面）**。SC-03 プロジェクト一覧をテーブルへ、SC-04 新規作成を Figma 構成へ改訂し、クライアント名・職種・区分・通知先メール・進行責任者を画面に載せた。作成 API に進行責任者の指定（`progressManagerIndex`）を追加。 | — |
 | #149 | 2026-08-23 | **Figma デザインシステム反映（第8段：予定カラーのユーザー選択式化）**。`plans.color_theme` を追加し、Figma のパレット方針「色は状態ではなくユーザーがスケジュールを視覚整理するために使う」を実装として成立させた。ボール詳細ヘッダーと予定フォームにカラーピッカーを設置。これで Figma デザインシステムの反映が全 8 段完了。 | — |
+| v1.2 | 2026-08-30 | **有料プラン（Stripe）・組織・プロジェクト権限ロールの導入（PRD v1.4 に追従）**。① **第7章 07-billing.md を新設**（プラン定義・Checkout・Webhook・利用権限判定・プラン変更/解約・Customer Portal・トライアル重複防止・支払い失敗復旧・上限と凍結）。② `organizations` / `organization_members` を **Phase 2 → Phase 0.5 へ前倒しして物理化**し、課金の契約主体を組織に確定。`projects.organization_id` を NOT NULL 化。③ **`project_members.role_type` を実体化**（admin / editor / viewer）し、§5.4.2 の「member_type + created_by からの簡易ロール導出」を撤回。認可ミドルウェアを `requireProjectAction()` へ置換し `requireProjectDirector` を廃止。**TOSS は管理者のみ**。④ `billing_subscriptions` / `stripe_events` / `billing_trial_claims` を追加、`invitations` に role_type / organization_id を追加、`audit_logs` の許可 action を拡張。⑤ **招待作成 API を新規定義**（Phase 0 は受諾側のみ実装済みだった）。⑥ Stripe Webhook は「認証なし・署名検証で認可する」既存 3 層認可モデルの例外として §3.2.4 / §3.3 に明記。02-database・03-api・05-security を全面更新、00/01/04/06 を整合修正、07 を新設。 | — |
 
 ---
 
@@ -48,9 +49,9 @@ PRD で「**何を・誰に・なぜ作るか**」が確定した内容を、**�
 ┌──────────────────────────────────────────┐
 │  TRAKON 基本原則 v1.0（思想・判断基準の最上位）│
 ├──────────────────────────────────────────┤
-│  TRAKON PRD v1.3（要件定義：非会員URL前倒し + プロトタイプ反映）│
+│  TRAKON PRD v1.4（要件定義：課金・組織・権限ロール）│
 ├──────────────────────────────────────────┤
-│  TRAKON 基本設計書 v1.1（本書）              │ ← ココ
+│  TRAKON 基本設計書 v1.2（本書）              │ ← ココ
 │   - 構成・スタック・スキーマ・API・画面・運用 │
 ├──────────────────────────────────────────┤
 │  実装仕様書 ／ コードベース                  │
@@ -79,11 +80,12 @@ PRD で「**何を・誰に・なぜ作るか**」が確定した内容を、**�
 |---|---|---|---|
 | 0 | [00-index.md](00-index.md) | 全章のINDEX・改訂履歴・前提整理 | Draft（随時更新） |
 | 1 | [01-architecture.md](01-architecture.md) | システム構成・スタック詳細・拡張戦略 | **v1.0 確定（2026-05-09）** ※v1.1 で変更なし |
-| 2 | [02-database.md](02-database.md) | テーブル定義・制約・インデックス・マイグレーション | **v1.1 確定（2026-05-24）** |
-| 3 | [03-api.md](03-api.md) | REST エンドポイント・OpenAPI・認可ガード・エラーモデル | **v1.1 確定（2026-05-24）** |
-| 4 | [04-frontend.md](04-frontend.md) | 画面ツリー・ルーティング・状態管理・モーダル制御 | **v1.1 確定（2026-05-24）** |
-| 5 | [05-security.md](05-security.md) | 認証・認可・監査・添付・XSS/CSRF・トークン管理 | **v1.1 確定（2026-05-24）** |
-| 6 | [06-infrastructure.md](06-infrastructure.md) | Vercel/Supabase 構成・環境分離・CI/CD・バックアップ・監視 | **v1.1 確定（2026-05-24）** |
+| 2 | [02-database.md](02-database.md) | テーブル定義・制約・インデックス・マイグレーション | **v1.2 確定（2026-08-30）** |
+| 3 | [03-api.md](03-api.md) | REST エンドポイント・OpenAPI・認可ガード・エラーモデル | **v1.2 確定（2026-08-30）** |
+| 4 | [04-frontend.md](04-frontend.md) | 画面ツリー・ルーティング・状態管理・モーダル制御 | **v1.2 確定（2026-08-30）** |
+| 5 | [05-security.md](05-security.md) | 認証・認可・監査・添付・XSS/CSRF・トークン管理 | **v1.2 確定（2026-08-30）** |
+| 6 | [06-infrastructure.md](06-infrastructure.md) | Vercel/Supabase 構成・環境分離・CI/CD・バックアップ・監視 | **v1.2 確定（2026-08-30）** |
+| 7 | [07-billing.md](07-billing.md) | 料金プラン・Stripe 連携・利用権限判定・上限と凍結 | **v1.2 確定（2026-08-30）** ※v1.2 で新設 |
 
 > ステータス凡例：未着手 / Draft（たたき台） / Review中 / **v1.x 確定** / Phase 1 拡張
 
@@ -117,5 +119,12 @@ PRD §1.3 と §13.3 を参照。本書で新たに定義する用語は各章�
 | Magic-link サインアップ | メール先行 → 認証リンク押下 → 詳細入力 → 自動ログインの2段階フロー | UC-01 改訂、SC-01 で 7 状態統合 |
 | OAuth | Google / Microsoft の外部 ID 連携。Phase 0 から提供 | 同一メール 1 認証手段制約（FR-AUTH-12） |
 | メンバーかんばん | プロジェクト参加メンバーごとの予定を状態別かんばんで表示（SC-17、`/projects/:projectId/members`） | **#131：DnD は状態機械の各操作（確認依頼 / 承認 / 差し戻し / TOSS）に対応**。SC-11 参加者管理とは別タブで併設 |
+| 組織 / organization（v1.2） | 課金の契約主体。プロジェクトと会員アカウントを束ねるテナント。物理テーブル `organizations` | ユーザー登録時に個人組織を自動作成。`projects.organization_id` は NOT NULL |
+| 会員アカウント（v1.2） | 組織に所属しログインする課金カウント対象のユーザー。物理テーブル `organization_members` | **`project_members`（担当者行、user_id NULL 可）とは別概念**。座席を消費するのは前者だけ |
+| 課金プラン / plan_code（v1.2） | free / personal / team / enterprise | **「予定（plan）」と紛らわしいため、コード上は `plan_code` / `BillingPlan` / `billing_*` と表記し、単独の `Plan` を課金の意味で使わない** |
+| プロジェクトロール / role_type（v1.2） | admin（管理者）／editor（編集者）／viewer（閲覧者）。`project_members.role_type` | **操作権限の唯一の根拠**。`member_type`（区分）・`job_title`（職種）は表示専用 |
+| 組織ロール / org_role（v1.2） | owner / admin / member。`organization_members.org_role` | 課金操作の可否を決める。プロジェクトロールとは別系統 |
+| 利用権限 / Entitlement（v1.2） | plan_code・status・解約予約・支払猶予・上限の 5 要素から導く単一の権限レベル | `packages/shared` の単一関数に集約し、FE/BE で共用（§7.6） |
+| 凍結 / frozen（v1.2） | プラン上限超過のプロジェクトを削除せず閲覧のみにする状態 | **状態を保存せず都度計算する**（§7.11） |
 
 > **本書の判断**：用語の物理レイヤー（DB・API・コード）は **既存命名を維持**し、画面表示文言は柔軟に運用。プロトタイプとの命名差分は実装時の翻訳テーブル（`packages/shared/i18n/messages.ja.ts`）で吸収する。
