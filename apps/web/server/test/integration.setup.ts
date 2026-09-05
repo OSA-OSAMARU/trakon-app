@@ -12,8 +12,9 @@ import { initTestAuth, testJwksResolver } from './auth.js';
 //   - 必要な env のデフォルトを充足
 //   - 各テスト前に全テーブルを TRUNCATE して独立性を担保
 //
-// 実テスト DB が前提。DATABASE_URL を test 用 DB に向けて実行すること。
-//   例: DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres pnpm test:integration
+// **使い捨てのテスト DB が前提**。各テスト前に全テーブルを TRUNCATE するため、
+// 開発 DB を指すとローカルのデータが消える。手順は README「BE 統合テストの方針」参照。
+//   例: DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/trakon_test pnpm test:integration
 // =============================================================================
 
 // createRemoteJWKSet のみ差し替え、jwtVerify 等は本物を使う。
