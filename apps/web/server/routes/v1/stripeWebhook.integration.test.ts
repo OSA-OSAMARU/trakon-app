@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { __setMailerForTest } from '../../lib/mailer.js';
 import { __setStripeForTest } from '../../services/billing/stripeClient.js';
 import { createUser, primaryOrganizationId, setBillingSubscription } from '../../test/factories.js';
+import { TEST_STRIPE } from '../../test/integration.setup.js';
 
 // =============================================================================
 // Stripe Webhook (設計書 §7.5)
@@ -19,11 +20,11 @@ import { createUser, primaryOrganizationId, setBillingSubscription } from '../..
 // subscriptions.retrieve だけをスタブする。
 // =============================================================================
 
-const WEBHOOK_SECRET = 'whsec_test_secret_value';
-const PERSONAL_PRICE = 'price_test_personal';
-const TEAM_PRICE = 'price_test_team';
+// 値は integration.setup.ts に集約する (getServerEnv() のキャッシュ対策)。
+const WEBHOOK_SECRET = TEST_STRIPE.webhookSecret;
+const TEAM_PRICE = TEST_STRIPE.teamPriceId;
 
-const signer = new Stripe('sk_test_dummy_key_for_signing');
+const signer = new Stripe(TEST_STRIPE.secretKey);
 
 /** Stripe が付ける署名ヘッダを自作する。 */
 function signed(payload: unknown): { body: string; signature: string } {
@@ -110,11 +111,6 @@ function stubStripe(retrieve: () => unknown) {
 let organizationId: string;
 
 beforeEach(async () => {
-  process.env.STRIPE_SECRET_KEY = 'sk_test_dummy_key_for_signing';
-  process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
-  process.env.STRIPE_PERSONAL_MONTHLY_PRICE_ID = PERSONAL_PRICE;
-  process.env.STRIPE_TEAM_MONTHLY_PRICE_ID = TEAM_PRICE;
-
   __setMailerForTest({});
 
   const user = await createUser();

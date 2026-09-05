@@ -29,6 +29,33 @@ process.env.SUPABASE_JWT_AUD ??= 'authenticated';
 process.env.APP_ENV ??= 'test';
 process.env.NODE_ENV = 'test';
 
+/**
+ * Stripe のテスト値。
+ *
+ * **ここで設定する理由**: `getServerEnv()` は初回アクセス時に env をキャッシュする。
+ * 各テストの beforeEach で process.env を書き換えても、先に別のテストが
+ * getServerEnv() を呼んでいると反映されない。setupFiles はどのテストより先に
+ * 走るので、ここで入れておけば確実にキャッシュへ載る (設計書 §7.3.3 / 実装メモ)。
+ *
+ * 実 Stripe には CI から一切接続しない。値はダミーで、
+ * 署名検証だけ SDK のテストヘルパーで実際に通す。
+ */
+export const TEST_STRIPE = {
+  secretKey: 'sk_test_dummy_key_for_signing',
+  webhookSecret: 'whsec_test_secret_value',
+  personalPriceId: 'price_test_personal',
+  teamPriceId: 'price_test_team',
+  taxRateId: 'txr_test_jp',
+  portalConfigurationId: 'bpc_test_configuration',
+} as const;
+
+process.env.STRIPE_SECRET_KEY ??= TEST_STRIPE.secretKey;
+process.env.STRIPE_WEBHOOK_SECRET ??= TEST_STRIPE.webhookSecret;
+process.env.STRIPE_PERSONAL_MONTHLY_PRICE_ID ??= TEST_STRIPE.personalPriceId;
+process.env.STRIPE_TEAM_MONTHLY_PRICE_ID ??= TEST_STRIPE.teamPriceId;
+process.env.STRIPE_JP_TAX_RATE_ID ??= TEST_STRIPE.taxRateId;
+process.env.STRIPE_PORTAL_CONFIGURATION_ID ??= TEST_STRIPE.portalConfigurationId;
+
 // TRUNCATE 対象 (FK 依存順は CASCADE で吸収)。
 const TABLES = [
   'audit_logs',
