@@ -57,7 +57,44 @@ export async function createOrganization(args: { ownerUserId: string; name?: str
       isPrimary: true,
     },
   });
+  // 組織と契約行は 1:1。行が無い状態を作らず判定側の分岐を減らす (§2.4.12)
+  await prisma.billingSubscription.create({
+    data: { organizationId: organization.id, planCode: 'free', status: 'none' },
+  });
   return organization;
+}
+
+/** 契約状態を上書きする (プラン別の上限・権限判定の検証用)。 */
+export async function setBillingSubscription(args: {
+  organizationId: string;
+  planCode?: 'free' | 'personal' | 'team' | 'enterprise';
+  status?: string;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodEnd?: Date | null;
+  gracePeriodEndsAt?: Date | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  pendingPlanCode?: string | null;
+}) {
+  return prisma.billingSubscription.update({
+    where: { organizationId: args.organizationId },
+    data: {
+      ...(args.planCode ? { planCode: args.planCode } : {}),
+      ...(args.status ? { status: args.status } : {}),
+      ...(args.cancelAtPeriodEnd !== undefined
+        ? { cancelAtPeriodEnd: args.cancelAtPeriodEnd }
+        : {}),
+      ...(args.currentPeriodEnd !== undefined ? { currentPeriodEnd: args.currentPeriodEnd } : {}),
+      ...(args.gracePeriodEndsAt !== undefined
+        ? { gracePeriodEndsAt: args.gracePeriodEndsAt }
+        : {}),
+      ...(args.stripeCustomerId !== undefined ? { stripeCustomerId: args.stripeCustomerId } : {}),
+      ...(args.stripeSubscriptionId !== undefined
+        ? { stripeSubscriptionId: args.stripeSubscriptionId }
+        : {}),
+      ...(args.pendingPlanCode !== undefined ? { pendingPlanCode: args.pendingPlanCode } : {}),
+    },
+  });
 }
 
 /** 既存組織に会員 (座席) を追加する。 */
