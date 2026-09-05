@@ -158,9 +158,28 @@ psql "$DIRECT_URL" \
    stripe prices retrieve <PRICE_ID> | grep tax_behavior
    ```
 
+   > ⚠️ **`tax_behavior` は一度 `inclusive` / `exclusive` を設定すると変更できない。**
+   > `exclusive` のまま作ってしまった Price は、内税 Tax Rate と組み合わせると
+   > Stripe が契約作成を拒否する（`tax_behavior that conflicts with the tax rates`）。
+   > その場合は Price を作り直し、旧 Price を非アクティブ化して使用禁止 Price に加えること。
+   > 作成直後の `unspecified` であれば `inclusive` へ更新できる。
+
 4. 手動 Tax Rate を 1 件作る：日本国内向け消費税 10%・**内税（inclusive）**
    - 自動税計算（Stripe Tax）は使わない。この Tax Rate は請求書に消費税の内訳を
      表示するためのもので、課金総額は変えない
+
+**A-2. Managed Payments を確認する**
+
+Stripe アカウントの既定で **Managed Payments が有効**だと、Stripe が税を代行する前提に
+なり `automatic_tax.enabled = true` が必須になる。本設計は税込 Price + 手動 Tax Rate なので
+噛み合わず、**Checkout Session の作成が拒否される**。
+
+アプリ側は `managed_payments.enabled = false` を明示的に渡してこれを回避するため、
+ダッシュボードの設定を変更する必要はない。ただし挙動を把握しておくこと。
+
+```
+https://dashboard.stripe.com/settings/managed-payments
+```
 
 **B. Customer Portal**
 

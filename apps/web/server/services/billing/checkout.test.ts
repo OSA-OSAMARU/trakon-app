@@ -52,6 +52,7 @@ const input = {
 type CheckoutParams = {
   line_items: unknown;
   automatic_tax: unknown;
+  managed_payments: unknown;
   payment_method_collection: string;
   success_url: string;
   cancel_url: string;
@@ -104,6 +105,14 @@ describe('createCheckoutSession', () => {
       // trial_end だと Session 作成〜申込完了の時間差だけトライアルが短くなる
       expect(params().subscription_data.trial_period_days).toBe(5);
       expect(params().subscription_data).not.toHaveProperty('trial_end');
+    });
+
+    it('アカウント既定で Managed Payments が有効でも、税は Stripe に代行させない', async () => {
+      await createCheckoutSession(input);
+
+      // 有効なままだと automatic_tax[enabled]=true を強制され、
+      // 税込 Price + 手動 Tax Rate の構成では Checkout の作成自体が弾かれる
+      expect(params().managed_payments).toEqual({ enabled: false });
     });
 
     it('トライアル中でもカード登録を必須にする', async () => {
