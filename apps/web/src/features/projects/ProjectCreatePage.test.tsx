@@ -160,7 +160,7 @@ describe('ProjectCreatePage (integration)', () => {
               endDate: '2026-12-31',
               status: 'active',
               archivedAt: null,
-              role: 'director',
+              role: 'admin',
               clientName: null,
               progressManager: null,
               overdueCount: 0,

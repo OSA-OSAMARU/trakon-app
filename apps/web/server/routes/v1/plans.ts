@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 
 import {
-  requireProjectDirector,
+  requireProjectAction,
   requireProjectMember,
 } from '../../middleware/projectAuth.js';
 import { requireItemInProject } from '../../middleware/itemAuth.js';
@@ -76,7 +76,7 @@ export const plansRoute = new Hono()
     });
   })
 
-  .post('/', async (c) => {
+  .post('/', requireProjectAction('plan.create'), async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const body = createPlanBodySchema.parse(await c.req.json());
@@ -84,7 +84,7 @@ export const plansRoute = new Hono()
     return c.json({ data: plan }, 201);
   })
 
-  .post('/:planId/copy', async (c) => {
+  .post('/:planId/copy', requireProjectAction('plan.create'), async (c) => {
     const itemId = c.get('itemId');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -100,7 +100,7 @@ export const plansRoute = new Hono()
     return c.json({ data: detail });
   })
 
-  .patch('/:planId', async (c) => {
+  .patch('/:planId', requireProjectAction('plan.update'), async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const planId = c.req.param('planId');
@@ -110,7 +110,7 @@ export const plansRoute = new Hono()
     return c.json({ data: plan });
   })
 
-  .delete('/:planId', requireProjectDirector(), async (c) => {
+  .delete('/:planId', requireProjectAction('plan.delete'), async (c) => {
     const itemId = c.get('itemId');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -118,7 +118,7 @@ export const plansRoute = new Hono()
     return c.body(null, 204);
   })
 
-  .patch('/:planId/successor', async (c) => {
+  .patch('/:planId/successor', requireProjectAction('plan.update'), async (c) => {
     const itemId = c.get('itemId');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -136,7 +136,7 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -150,7 +150,7 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -164,7 +164,7 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -178,7 +178,7 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -194,7 +194,7 @@ export const plansRoute = new Hono()
       note: body?.note ?? null,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -210,7 +210,7 @@ export const plansRoute = new Hono()
       note: body?.note ?? null,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -226,7 +226,7 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -242,6 +242,7 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -257,7 +258,7 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   })
@@ -273,7 +274,7 @@ export const plansRoute = new Hono()
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
-      isDirector: project.isDirector,
+      role: project.role,
     });
     return c.json({ data: result });
   });

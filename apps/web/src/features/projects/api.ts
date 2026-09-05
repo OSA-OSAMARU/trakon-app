@@ -1,4 +1,4 @@
-import type { JobTitle, MemberType } from '@trakon/shared';
+import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 
 import { apiRequest } from '@/lib/api';
 
@@ -12,7 +12,8 @@ export type ProjectSummary = {
   status: 'active' | 'closed';
   /** アーカイブ日時 (null = 未アーカイブ) */
   archivedAt: string | null;
-  role: 'director' | 'member';
+  /** 自分のプロジェクトロール。作成者は role_type によらず常に admin (FR-ROLE-04) */
+  role: ProjectRole;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

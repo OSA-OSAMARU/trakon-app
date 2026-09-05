@@ -1,3 +1,4 @@
+import { canProjectRole } from '@trakon/shared';
 import type { ScheduleThemeKey } from '@trakon/shared';
 
 import { useState } from 'react';
@@ -124,7 +125,17 @@ export function BallDetailModal({
     queryKey: projectsQueryKey.detail(projectId),
     queryFn: () => projectsApi.get(projectId),
   });
-  const isDirector = projectQuery.data?.role === 'director';
+  const myRole = projectQuery.data?.role ?? null;
+  // 権限判定は shared のロール別操作マトリクスに委ねる (§4.5 / §7.12.2)。
+  // isAdmin は「ボール保持者でなくても操作できる上位権限」を表す。
+  const isAdmin = myRole === 'admin';
+  // TOSS は管理者のみ (FR-ROLE-02)。中心動線なので隠さず無効化して理由を出す。
+  const canRoleToss = myRole ? canProjectRole(myRole, 'plan.toss') : false;
+  const canRoleComplete = myRole ? canProjectRole(myRole, 'plan.complete') : false;
+  // 予定の編集・複製・削除は閲覧者には出さない (§4.5.2: ロール起因は「隠す」)
+  const canRoleEditPlan = myRole ? canProjectRole(myRole, 'plan.update') : false;
+  const canRoleCreatePlan = myRole ? canProjectRole(myRole, 'plan.create') : false;
+  const canRoleDeletePlan = myRole ? canProjectRole(myRole, 'plan.delete') : false;
 
   const requestReviewMut = useRequestReviewPlan({ projectId, itemId, planId });
   const undoRequestReviewMut = useUndoRequestReviewPlan({ projectId, itemId, planId });
@@ -211,24 +222,31 @@ export function BallDetailModal({
 
             // 操作の可否 (役割 + 状態)
             const inProgress = s === 'in_progress' || s === 'sent_back';
-            const canRequestReview = active && inProgress && hasApprover && hasExecutor && (isExecutor || isDirector);
-            const canApproveByExecutor = active && inProgress && !hasApprover && hasExecutor && (isExecutor || isDirector);
-            const canApprove = active && s === 'review_pending' && (isApprover || isDirector);
-            // 差し戻し=確認依頼の取り消しに集約。承認者/実施者/director が実施者へ戻せる。
+            const canRequestReview =
+              canRoleComplete && active && inProgress && hasApprover && hasExecutor && (isExecutor || isAdmin);
+            const canApproveByExecutor =
+              canRoleComplete && active && inProgress && !hasApprover && hasExecutor && (isExecutor || isAdmin);
+            const canApprove = canRoleComplete && active && s === 'review_pending' && (isApprover || isAdmin);
+            // 差し戻し=確認依頼の取り消しに集約。承認者/実施者/管理者が実施者へ戻せる。
             const canUndoReview =
-              active && s === 'review_pending' && (isApprover || isExecutor || isDirector);
-            const canToss = active && s === 'approved' && hasSuccessor && (isProgressManager || isDirector);
-            const canUndoApprove = active && s === 'approved' && (isApprover || isProgressManager || isDirector);
-            // TOSS 済み → 誰でも取り消せる (誤TOSS救済 #50)
-            const canUndoToss = s === 'tossed';
+              canRoleComplete && active && s === 'review_pending' && (isApprover || isExecutor || isAdmin);
+            // TOSS は管理者のみ。管理者は進行責任者でなくても実行できる
+            const canToss = canRoleToss && active && s === 'approved' && hasSuccessor;
+            const canUndoApprove =
+              canRoleComplete && active && s === 'approved' && (isApprover || isProgressManager || isAdmin);
+            // TOSS 済みの取り消しは TOSS の裏返しなので管理者のみ (#50 の救済は管理者が行う)
+            const canUndoToss = canRoleToss && s === 'tossed';
             // 承認=完了 (後続なし) の取り消し
             const canUndoCompleted =
-              plan.status === 'completed' && s !== 'tossed' && (isApprover || isProgressManager || isDirector);
+              canRoleComplete &&
+              plan.status === 'completed' &&
+              s !== 'tossed' &&
+              (isApprover || isProgressManager || isAdmin);
             // 前工程へ差し戻し (§13): 確認依頼前 (実施中/差し戻し中) のみ、先行予定を再開できる。
             const canSendBackToPredecessor =
-              active && inProgress && hasPredecessor && (isBallHolder || isDirector);
+              canRoleComplete && active && inProgress && hasPredecessor && (isBallHolder || isAdmin);
             const executorMissingHint =
-              active && inProgress && !hasExecutor && (isExecutor || isDirector || myMember == null);
+              active && inProgress && !hasExecutor && (isExecutor || isAdmin || myMember == null);
 
             const handleUnlink = () => successorMut.mutate({ itemId, planId, successorPlanId: null });
             const theme = planCardStyle(plan.category, plan.colorTheme);
@@ -242,6 +260,8 @@ export function BallDetailModal({
               label: string;
               onClick: () => void;
               pending: boolean;
+              /** ロール不足で押せない場合の理由。設定されているとボタンは無効化される */
+              disabledReason?: string;
             }[] = [];
             if (canUndoReview) {
               primaryActions.push({
@@ -267,12 +287,16 @@ export function BallDetailModal({
                 pending: approveMut.isPending,
               });
             }
-            if (canToss) {
+            // TOSS は現行 UI の中心動線。ロール不足で黙って消すと「壊れた」と誤解される
+            // ため、隠さずに無効化して理由を出す (§4.5.2)。
+            const tossReady = active && s === 'approved' && hasSuccessor;
+            if (canToss || (tossReady && !canRoleToss)) {
               primaryActions.push({
                 action: 'next-toss',
                 label: '次の工程へトス',
                 onClick: () => tossMut.mutate(),
                 pending: tossMut.isPending,
+                ...(canRoleToss ? {} : { disabledReason: 'TOSS は管理者のみが実行できます' }),
               });
             }
 
@@ -331,11 +355,12 @@ export function BallDetailModal({
                     </div>
                     {/* Figma は 編集 / 複製 / ⋯ を並べる。閉じるは Sheet 側が持つ */}
                     <div className="flex shrink-0 items-center gap-1">
-                      {active && (
+                      {active && canRoleEditPlan && (
                         <Button variant="ghost" size="icon-sm" onClick={onEdit} aria-label="編集">
                           <Pencil className="size-5" />
                         </Button>
                       )}
+                      {canRoleCreatePlan && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -349,7 +374,8 @@ export function BallDetailModal({
                           <Copy className="size-5" />
                         )}
                       </Button>
-                      {secondaryActions.length > 0 || (active && events.length === 0) ? (
+                      )}
+                      {secondaryActions.length > 0 || (active && canRoleDeletePlan && events.length === 0) ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon-sm" aria-label="その他の操作">
@@ -367,7 +393,7 @@ export function BallDetailModal({
                                 {a.label}
                               </DropdownMenuItem>
                             ))}
-                            {active && events.length === 0 && (
+                            {active && canRoleDeletePlan && events.length === 0 && (
                               <>
                                 {secondaryActions.length > 0 && <DropdownMenuSeparator />}
                                 <DropdownMenuItem
@@ -567,15 +593,19 @@ export function BallDetailModal({
                   <div className="flex flex-wrap gap-3">
                     {primaryActions.length > 0 ? (
                       primaryActions.map((a) => (
-                        <WorkflowButton
-                          key={a.label}
-                          action={a.action}
-                          onClick={a.onClick}
-                          disabled={anyPending}
-                        >
-                          {a.pending ? <Loader2 className="size-4 animate-spin" /> : null}
-                          {a.label}
-                        </WorkflowButton>
+                        <div key={a.label} className="flex flex-col gap-1">
+                          <WorkflowButton
+                            action={a.action}
+                            onClick={a.onClick}
+                            disabled={anyPending || Boolean(a.disabledReason)}
+                          >
+                            {a.pending ? <Loader2 className="size-4 animate-spin" /> : null}
+                            {a.label}
+                          </WorkflowButton>
+                          {a.disabledReason && (
+                            <p className="text-text-tertiary text-xs">{a.disabledReason}</p>
+                          )}
+                        </div>
                       ))
                     ) : (
                       <p className="text-text-tertiary text-xs">

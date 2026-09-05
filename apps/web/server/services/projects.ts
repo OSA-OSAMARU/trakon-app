@@ -1,5 +1,5 @@
 import { prisma, type Prisma } from '@trakon/db';
-import { pickLatestBallEvent, type BallEventType } from '@trakon/shared';
+import { pickLatestBallEvent, type BallEventType, type ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import { resolvePrimaryOrganization } from './organizations.js';
@@ -15,7 +15,8 @@ export type ProjectSummaryDTO = {
   status: 'active' | 'closed';
   /// アーカイブ日時 (null = 未アーカイブ)
   archivedAt: string | null;
-  role: 'director' | 'member';
+  /** 自分のプロジェクトロール。作成者は role_type によらず常に admin (FR-ROLE-04) */
+  role: ProjectRole;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -40,6 +41,21 @@ function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * 自分のプロジェクトロールを解決する (設計書 §5.4.2)。
+ *
+ * 作成者は role_type の値によらず常に管理者として扱う。自分のプロジェクトから
+ * 締め出されることを防ぐ最終防衛線 (PRD FR-ROLE-04)。ミドルウェア側の
+ * requireProjectMember() と同じ規則にする。
+ */
+function resolveProjectRole(
+  p: { createdBy: string; members?: { roleType: string }[] },
+  currentUserId: string,
+): ProjectRole {
+  if (p.createdBy === currentUserId) return 'admin';
+  return (p.members?.[0]?.roleType as ProjectRole | undefined) ?? 'editor';
+}
+
 function toSummary(
   p: {
     id: string;
@@ -53,6 +69,7 @@ function toSummary(
     createdAt: Date;
     updatedAt: Date;
     progressManager?: { id: string; name: string } | null;
+    members?: { roleType: string }[];
   },
   currentUserId: string,
   overdueCount = 0,
@@ -65,7 +82,7 @@ function toSummary(
     endDate: toDateString(p.endDate),
     status: p.status as 'active' | 'closed',
     archivedAt: p.archivedAt ? p.archivedAt.toISOString() : null,
-    role: p.createdBy === currentUserId ? 'director' : 'member',
+    role: resolveProjectRole(p, currentUserId),
     createdBy: p.createdBy,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
@@ -96,7 +113,11 @@ export async function listProjects(
       orderBy: q.archived ? { archivedAt: 'desc' } : { updatedAt: 'desc' },
       take: q.limit,
       skip: q.offset,
-      include: { progressManager: { select: { id: true, name: true } } },
+      include: {
+        progressManager: { select: { id: true, name: true } },
+        // 自分のロールを導出するための 1 行 (§5.4.2)
+        members: { where: { userId, deletedAt: null }, select: { roleType: true }, take: 1 },
+      },
     }),
     prisma.project.count({ where }),
   ]);
@@ -163,6 +184,8 @@ export async function getProjectDetail(
     where: { id: projectId, deletedAt: null },
     include: {
       progressManager: { select: { id: true, name: true } },
+      // 自分のロールを導出するための 1 行 (§5.4.2)
+      members: { where: { userId: currentUserId, deletedAt: null }, select: { roleType: true }, take: 1 },
       _count: {
         select: {
           members: { where: { deletedAt: null } },
@@ -241,6 +264,8 @@ export async function createProject(input: {
         email: creator.email,
         organizationName: '',
         memberType: 'production',
+        // 作成者は常に管理者 (FR-ROLE-04)。列にも明示しておく
+        roleType: 'admin',
         sortOrder: 0,
       },
     });
@@ -256,6 +281,7 @@ export async function createProject(input: {
           organizationName: m.organizationName,
           memberType: m.memberType,
           jobTitle: m.jobTitle ?? null,
+          roleType: m.roleType,
           sortOrder: idx + 1,
         },
       });

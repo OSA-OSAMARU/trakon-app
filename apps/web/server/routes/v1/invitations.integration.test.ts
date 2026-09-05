@@ -30,16 +30,24 @@ async function seedInvitation(args: {
   projectId: string;
   invitedMemberId: string;
   email: string;
+  organizationId?: string;
+  roleType?: 'admin' | 'editor' | 'viewer';
   expiresAt?: Date;
   acceptedAt?: Date | null;
   revokedAt?: Date | null;
 }): Promise<{ rawToken: string }> {
   const { raw, hash } = generateInvitationToken();
+  // 招待は座席カウントの単位として組織に紐づく (§7.3.2)
+  const organizationId =
+    args.organizationId ??
+    (await prisma.project.findUniqueOrThrow({ where: { id: args.projectId } })).organizationId;
   await prisma.invitation.create({
     data: {
       projectId: args.projectId,
       invitedMemberId: args.invitedMemberId,
       email: args.email,
+      organizationId,
+      roleType: args.roleType ?? 'editor',
       tokenHash: hash,
       expiresAt: args.expiresAt ?? defaultInvitationExpiresAt(),
       acceptedAt: args.acceptedAt ?? null,

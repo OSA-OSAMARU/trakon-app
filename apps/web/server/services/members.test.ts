@@ -194,8 +194,8 @@ describe('addMembers', () => {
       projectId: 'p-1',
       body: {
         members: [
-          { name: 'New1', email: 'new1@x.test', organizationName: 'O1', memberType: 'client' },
-          { name: 'New2', email: 'new2@x.test', organizationName: 'O2', memberType: 'production' },
+          { name: 'New1', email: 'new1@x.test', organizationName: 'O1', memberType: 'client', roleType: 'editor' },
+          { name: 'New2', email: 'new2@x.test', organizationName: 'O2', memberType: 'production', roleType: 'editor' },
         ],
       },
     });
@@ -208,7 +208,7 @@ describe('addMembers', () => {
     const res = await addMembers({
       projectId: 'p-1',
       body: {
-        members: [{ name: 'NoEmail', organizationName: '', memberType: 'production' }],
+        members: [{ name: 'NoEmail', organizationName: '', memberType: 'production', roleType: 'editor' }],
       },
     });
     expect(res[0]).toMatchObject({ name: 'NoEmail', email: null, userId: null });
@@ -219,7 +219,7 @@ describe('addMembers', () => {
     const res = await addMembers({
       projectId: 'p-1',
       body: {
-        members: [{ name: 'AlsoNoEmail', organizationName: '', memberType: 'client' }],
+        members: [{ name: 'AlsoNoEmail', organizationName: '', memberType: 'client', roleType: 'editor' }],
       },
     });
     expect(res).toHaveLength(1);
@@ -230,7 +230,7 @@ describe('addMembers', () => {
     const res = await addMembers({
       projectId: 'p-1',
       body: {
-        members: [{ name: 'First', email: 'first@x.test', organizationName: '', memberType: 'client' }],
+        members: [{ name: 'First', email: 'first@x.test', organizationName: '', memberType: 'client', roleType: 'editor' }],
       },
     });
     expect(res[0]!.sortOrder).toBe(0);
@@ -242,7 +242,7 @@ describe('addMembers', () => {
       addMembers({
         projectId: 'p-1',
         body: {
-          members: [{ name: 'Dup', email: 'dup@x.test', organizationName: '', memberType: 'client' }],
+          members: [{ name: 'Dup', email: 'dup@x.test', organizationName: '', memberType: 'client', roleType: 'editor' }],
         },
       }),
     ).rejects.toMatchObject({ code: 'MEMBER_EMAIL_TAKEN', status: 409, details: { email: 'dup@x.test' } });
@@ -257,7 +257,7 @@ describe('updateMember', () => {
     const res = await updateMember({
       memberId: 'm-up',
       projectId: 'p-1',
-      body: { name: 'New Name', sortOrder: 9, memberType: 'production' },
+      body: { name: 'New Name', sortOrder: 9, memberType: 'production', roleType: 'editor' },
     });
     expect(res).toMatchObject({ id: 'm-up', name: 'New Name', sortOrder: 9, memberType: 'production' });
     expect(memberStore['m-up']!.name).toBe('New Name');

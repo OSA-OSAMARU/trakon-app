@@ -106,6 +106,7 @@ const meMember: ProjectMember = {
   organizationName: 'Acme',
   memberType: 'production',
   jobTitle: null,
+  roleType: 'editor',
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
@@ -120,6 +121,7 @@ const otherMember: ProjectMember = {
   organizationName: 'Beta',
   memberType: 'client',
   jobTitle: null,
+  roleType: 'editor',
   sortOrder: 1,
 };
 
@@ -142,7 +144,7 @@ const projectDetail: ProjectDetail = {
   endDate: '2026-06-25',
   status: 'active',
   archivedAt: null,
-  role: 'director',
+  role: 'admin',
   clientName: null,
   progressManager: null,
   overdueCount: 0,

@@ -1,3 +1,4 @@
+import { canProjectRole } from '@trakon/shared';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
@@ -179,7 +180,7 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
         </CardContent>
       </Card>
 
-      {project.role === 'director' && (
+      {canProjectRole(project.role, 'project.archive') && (
         <ArchiveCard
           projectId={projectId}
           name={project.name}

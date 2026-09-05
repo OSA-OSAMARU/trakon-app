@@ -213,7 +213,7 @@ describe('App ルートツリー (integration)', () => {
             endDate: '2026-06-30',
             status: 'active',
             archivedAt: null,
-            role: 'director',
+            role: 'admin',
             createdBy: 'user-1',
             createdAt: '2026-06-01T00:00:00.000Z',
             updatedAt: '2026-06-01T00:00:00.000Z',

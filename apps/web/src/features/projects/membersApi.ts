@@ -1,4 +1,4 @@
-import type { JobTitle, MemberType } from '@trakon/shared';
+import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 
 import { apiRequest } from '@/lib/api';
 
@@ -11,6 +11,8 @@ export type ProjectMember = {
   memberType: MemberType;
   /** 職種 (#147)。表示用で権限には影響しない */
   jobTitle: JobTitle | null;
+  /** 権限ロール (FR-ROLE-01)。操作権限の唯一の根拠 */
+  roleType: ProjectRole;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -23,6 +25,7 @@ export type AddMembersInput = {
     organizationName: string;
     memberType: MemberType;
     jobTitle?: JobTitle | null;
+    roleType?: ProjectRole;
   }>;
 };
 
@@ -31,6 +34,7 @@ export type UpdateMemberInput = Partial<{
   organizationName: string;
   memberType: MemberType;
   jobTitle: JobTitle | null;
+  roleType: ProjectRole;
   sortOrder: number;
 }>;
 

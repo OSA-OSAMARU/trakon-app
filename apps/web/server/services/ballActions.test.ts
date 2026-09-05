@@ -315,7 +315,7 @@ describe('requestReviewPlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: executor.id,
-      isDirector: false,
+      role: 'editor',
     });
 
     expect(res.plan.ballState).toBe('review_pending');
@@ -335,7 +335,7 @@ describe('requestReviewPlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: executor.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.ballState).toBe('review_pending');
   });
@@ -348,7 +348,7 @@ describe('requestReviewPlan', () => {
       planId: plan.id,
       currentUserId: 'dir',
       currentMemberId: 'someone-else',
-      isDirector: true,
+      role: 'admin',
     });
     expect(res.plan.ballState).toBe('review_pending');
   });
@@ -362,7 +362,7 @@ describe('requestReviewPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'x',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'INCOMPLETE_PLAN', status: 422 });
   });
@@ -376,7 +376,7 @@ describe('requestReviewPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: executor.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'NO_APPROVER', status: 422 });
   });
@@ -391,7 +391,7 @@ describe('requestReviewPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: approver.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
   });
@@ -405,7 +405,7 @@ describe('requestReviewPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'stranger',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
@@ -419,7 +419,7 @@ describe('requestReviewPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: executor.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
   });
@@ -431,7 +431,7 @@ describe('requestReviewPlan', () => {
         planId: 'missing',
         currentUserId: 'user-1',
         currentMemberId: 'm',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
@@ -451,7 +451,7 @@ describe('undoRequestReviewPlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: executor.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.ballState).toBe('in_progress');
     expect(res.plan.ballHolder?.id).toBe(executor.id);
@@ -468,7 +468,7 @@ describe('undoRequestReviewPlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: approver.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.ballState).toBe('in_progress');
   });
@@ -482,7 +482,7 @@ describe('undoRequestReviewPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: executor.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
   });
@@ -497,7 +497,7 @@ describe('undoRequestReviewPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'stranger',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
@@ -523,7 +523,7 @@ describe('approvePlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: approver.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.autoTossed).toBeNull();
     expect(res.plan.ballState).toBe('approved');
@@ -549,7 +549,7 @@ describe('approvePlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: approver.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.status).toBe('completed');
     expect(planStore[plan.id]!.status).toBe('completed');
@@ -573,7 +573,7 @@ describe('approvePlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: executor.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.ballState).toBe('approved');
     expect(res.plan.ballHolder?.id).toBe(pm.id);
@@ -587,7 +587,7 @@ describe('approvePlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'x',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'INCOMPLETE_PLAN', status: 422 });
   });
@@ -606,7 +606,7 @@ describe('approvePlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: approver.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
   });
@@ -625,7 +625,7 @@ describe('approvePlan', () => {
       planId: plan.id,
       currentUserId: 'dir',
       currentMemberId: 'other',
-      isDirector: true,
+      role: 'admin',
     });
     expect(res.plan.ballState).toBe('approved');
   });
@@ -644,7 +644,7 @@ describe('approvePlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'stranger',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
@@ -658,7 +658,7 @@ describe('approvePlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: approver.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
   });
@@ -670,7 +670,7 @@ describe('approvePlan', () => {
         planId: 'missing',
         currentUserId: 'user-1',
         currentMemberId: 'm',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
@@ -696,7 +696,7 @@ describe('undoApprovePlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: approver.id,
-      isDirector: false,
+      role: 'editor',
     });
     // 承認者ありなので確認待ちへ戻る。
     expect(res.plan.ballState).toBe('review_pending');
@@ -722,7 +722,7 @@ describe('undoApprovePlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: pm.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.status).toBe('active');
     expect(planStore[plan.id]!.status).toBe('active');
@@ -746,7 +746,7 @@ describe('undoApprovePlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: pm.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.ballState).toBe('review_pending');
   });
@@ -761,7 +761,7 @@ describe('undoApprovePlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: approver.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
   });
@@ -782,7 +782,7 @@ describe('undoApprovePlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'stranger',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
@@ -794,7 +794,7 @@ describe('undoApprovePlan', () => {
         planId: 'missing',
         currentUserId: 'user-1',
         currentMemberId: 'm',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
@@ -815,7 +815,7 @@ describe('sendBackPlan', () => {
       note: '修正してください',
       currentUserId: 'user-1',
       currentMemberId: approver.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.ballState).toBe('sent_back');
     expect(res.plan.ballHolder?.id).toBe(executor.id);
@@ -834,7 +834,7 @@ describe('sendBackPlan', () => {
       planId: plan.id,
       currentUserId: 'dir',
       currentMemberId: 'other',
-      isDirector: true,
+      role: 'admin',
     });
     expect(res.plan.ballState).toBe('sent_back');
   });
@@ -848,7 +848,7 @@ describe('sendBackPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: approver.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
   });
@@ -863,7 +863,7 @@ describe('sendBackPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'stranger',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
@@ -875,7 +875,7 @@ describe('sendBackPlan', () => {
         planId: 'missing',
         currentUserId: 'user-1',
         currentMemberId: 'm',
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
@@ -920,7 +920,7 @@ describe('sendBackToPredecessorPlan', () => {
       note: '色を修正してください',
       currentUserId: 'user-1',
       currentMemberId: client.id, // 後続の実施者=現ボール保持者
-      isDirector: false,
+      role: 'editor',
     });
 
     // 先行予定(デザイン作成)が再開: 実施者にボール
@@ -948,7 +948,7 @@ describe('sendBackToPredecessorPlan', () => {
       planId: successor.id,
       currentUserId: 'user-1',
       currentMemberId: client.id, // 差し戻し中の holder = 実施者(=client)
-      isDirector: false,
+      role: 'editor',
     });
     // 先行が再開し、後続は差し戻し中のまま (確認依頼は無いので取り消しイベントは追加しない)
     expect(res.predecessor.ballState).toBe('sent_back');
@@ -967,7 +967,7 @@ describe('sendBackToPredecessorPlan', () => {
         planId: successor.id,
         currentUserId: 'user-1',
         currentMemberId: client.id, // 確認待ちの holder = approver(=client)
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
   });
@@ -981,7 +981,7 @@ describe('sendBackToPredecessorPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: executor.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'NO_PREDECESSOR', status: 422 });
   });
@@ -995,7 +995,7 @@ describe('sendBackToPredecessorPlan', () => {
         planId: successor.id,
         currentUserId: 'user-1',
         currentMemberId: pm.id,
-        isDirector: true,
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_STATE', status: 409 });
     void client;
@@ -1010,7 +1010,7 @@ describe('sendBackToPredecessorPlan', () => {
         planId: successor.id,
         currentUserId: 'user-1',
         currentMemberId: stranger.id,
-        isDirector: false,
+        role: 'editor',
       }),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
   });
@@ -1044,7 +1044,7 @@ describe('tossPlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: pm.id,
-      isDirector: false,
+      role: 'admin',
     });
 
     expect(res.autoTossed).toBeNull();
@@ -1061,7 +1061,7 @@ describe('tossPlan', () => {
     expect(auditStore.some((a) => a.action === 'toss')).toBe(true);
   });
 
-  it('ディレクターは進行責任者でなくても TOSS できる', async () => {
+  it('管理者は進行責任者でなくても TOSS できる', async () => {
     const { plan } = setupApproved();
     const res = await tossPlan({
       itemId: 'item-1',
@@ -1069,7 +1069,7 @@ describe('tossPlan', () => {
       planId: plan.id,
       currentUserId: 'dir',
       currentMemberId: 'other',
-      isDirector: true,
+      role: 'admin',
     });
     expect(res.plan.ballState).toBe('tossed');
   });
@@ -1089,7 +1089,7 @@ describe('tossPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: pm.id,
-        isDirector: false,
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'NOT_APPROVED', status: 409 });
   });
@@ -1109,7 +1109,7 @@ describe('tossPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: pm.id,
-        isDirector: false,
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'NO_SUCCESSOR', status: 422 });
   });
@@ -1129,7 +1129,7 @@ describe('tossPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'x',
-        isDirector: false,
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'INCOMPLETE_PLAN', status: 422 });
   });
@@ -1143,24 +1143,14 @@ describe('tossPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: pm.id,
-        isDirector: false,
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'SUCCESSOR_NO_EXECUTOR', status: 422 });
   });
 
-  it('ボール保持者 (進行責任者) でもディレクターでもなければ FORBIDDEN 403', async () => {
-    const { plan } = setupApproved();
-    await expect(
-      tossPlan({
-        itemId: 'item-1',
-        projectId: 'proj-1',
-        planId: plan.id,
-        currentUserId: 'user-1',
-        currentMemberId: 'stranger',
-        isDirector: false,
-      }),
-    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
-  });
+  // 旧「保持者でもディレクターでもなければ 403」のケースは、TOSS が管理者限定に
+  // なったことで成立しなくなった (管理者は保持者判定を通り、それ以外はロールで弾かれる)。
+  // 非管理者の拒否は下の it.each で検証している。
 
   it('active でない予定は PLAN_NOT_ACTIVE 422', async () => {
     const { executor, pm } = makeRoles();
@@ -1178,7 +1168,7 @@ describe('tossPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: pm.id,
-        isDirector: false,
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'PLAN_NOT_ACTIVE', status: 422 });
   });
@@ -1191,10 +1181,25 @@ describe('tossPlan', () => {
         planId: 'missing',
         currentUserId: 'user-1',
         currentMemberId: 'm',
-        isDirector: false,
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
+
+  it.each(['editor', 'viewer'] as const)('%s は TOSS できない (403)', async (role) => {
+    const { plan, pm } = setupApproved();
+    await expect(
+      tossPlan({
+        itemId: 'item-1',
+        projectId: 'proj-1',
+        planId: plan.id,
+        currentUserId: 'user-1',
+        currentMemberId: pm.id,
+        role,
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+  });
+
 });
 
 // -----------------------------------------------------------------------------
@@ -1229,6 +1234,7 @@ describe('undoTossPlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: pm.id,
+      role: 'admin',
     });
     expect(res.plan.ballState).toBe('approved');
     expect(res.plan.ballHolder?.id).toBe(pm.id);
@@ -1240,7 +1246,7 @@ describe('undoTossPlan', () => {
     expect(auditStore.some((a) => a.action === 'untoss')).toBe(true);
   });
 
-  it('プロジェクトメンバーなら誰でも取り消せる (#50)', async () => {
+  it('管理者はボール保持者でなくても取り消せる (#50 の救済)', async () => {
     const { plan } = setupTossed();
     const res = await undoTossPlan({
       itemId: 'item-1',
@@ -1248,9 +1254,27 @@ describe('undoTossPlan', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: 'anyone',
+      role: 'admin',
     });
     expect(res.plan.ballState).toBe('approved');
   });
+
+  it.each(['editor', 'viewer'] as const)(
+    'TOSS の裏返しなので %s は取り消せない (403)',
+    async (role) => {
+      const { plan, pm } = setupTossed();
+      await expect(
+        undoTossPlan({
+          itemId: 'item-1',
+          projectId: 'proj-1',
+          planId: plan.id,
+          currentUserId: 'user-1',
+          currentMemberId: pm.id,
+          role,
+        }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', status: 403 });
+    },
+  );
 
   it('後続が完了済みなら SUCCESSOR_ALREADY_COMPLETED 409', async () => {
     const { plan } = setupTossed('completed');
@@ -1261,6 +1285,7 @@ describe('undoTossPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: 'anyone',
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'SUCCESSOR_ALREADY_COMPLETED', status: 409 });
   });
@@ -1276,6 +1301,7 @@ describe('undoTossPlan', () => {
         planId: plan.id,
         currentUserId: 'user-1',
         currentMemberId: pm.id,
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'NOT_TOSSED', status: 409 });
   });
@@ -1288,6 +1314,7 @@ describe('undoTossPlan', () => {
         planId: 'missing',
         currentUserId: 'user-1',
         currentMemberId: 'm',
+        role: 'admin',
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
   });
@@ -1312,7 +1339,7 @@ describe('completePlan / undoCompletePlan (エイリアス)', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: approver.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.status).toBe('completed');
     expect(eventTypesFor(plan.id)).toEqual(['review_requested', 'approved']);
@@ -1336,7 +1363,7 @@ describe('completePlan / undoCompletePlan (エイリアス)', () => {
       planId: plan.id,
       currentUserId: 'user-1',
       currentMemberId: pm.id,
-      isDirector: false,
+      role: 'editor',
     });
     expect(res.plan.status).toBe('active');
     expect(eventTypesFor(plan.id)).toEqual(['approved', 'approval_undone']);
