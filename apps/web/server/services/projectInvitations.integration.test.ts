@@ -224,7 +224,8 @@ describe('POST /invitations/:token/accept', () => {
       { method: 'POST', token: inviteeToken },
     );
 
-    expect(res.status).toBe(200);
+    // 受諾は参加者行を作るため 201 (Phase 0 からの既存挙動)
+    expect(res.status).toBe(201);
     expect(res.body.data.member.roleType).toBe('admin');
 
     // プロジェクト参加者にロールが反映される
