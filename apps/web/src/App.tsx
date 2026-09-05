@@ -14,6 +14,7 @@ import { CommercePage } from './features/legal/CommercePage';
 import { CompanyPage } from './features/legal/CompanyPage';
 import { PrivacyPage } from './features/legal/PrivacyPage';
 import { TermsPage } from './features/legal/TermsPage';
+import { BillingPage } from './features/billing/BillingPage';
 import { ItemSchedulePage } from './features/plans/ItemSchedulePage';
 import { MembersPage } from './features/projects/MembersPage';
 import { ProjectCreatePage } from './features/projects/ProjectCreatePage';
@@ -53,6 +54,7 @@ export function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/settings/billing" element={<BillingPage />} />
           <Route path="/projects" element={<ProjectListPage />} />
           <Route path="/projects/new" element={<ProjectCreatePage />} />
           <Route path="/projects/:projectId/edit" element={<ProjectEditPage />} />
