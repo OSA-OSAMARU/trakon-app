@@ -6,6 +6,8 @@ import { api } from '../../test/request.js';
 import {
   createMember,
   createUser,
+  primaryOrganizationId,
+  setBillingSubscription,
   setupProjectWithDirector,
 } from '../../test/factories.js';
 import { signTestJwt } from '../../test/auth.js';
@@ -87,7 +89,14 @@ describe('invitations routes (integration)', () => {
     });
 
     it('POST /:token/accept は招待先メールのユーザーが受諾でき 201 を返す', async () => {
-      const { project } = await setupProjectWithDirector();
+      const { project, user } = await setupProjectWithDirector();
+      // Free は会員 1 名が上限でオーナーだけで埋まるため、受諾で 2 人目になれない。
+      // 受諾フロー自体の検証なので Team に上げる (座席上限は billingLimits が担当)。
+      await setBillingSubscription({
+        organizationId: await primaryOrganizationId(user.id),
+        planCode: 'team',
+        status: 'active',
+      });
       const member = await createMember({
         projectId: project.id,
         userId: null,

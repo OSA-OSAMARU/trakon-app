@@ -174,12 +174,26 @@ describe('resolvePrimaryOrganization', () => {
 });
 
 describe('カウント', () => {
-  it('座席は有効な組織メンバーだけを数える', async () => {
-    const count = vi.fn().mockResolvedValue(3);
-    const db = fakeDb({ organizationMember: { count } });
+  it('座席は有効な組織メンバーと、未受諾で期限内の招待を足したもの', async () => {
+    // 招待中も座席を押さえないと、大量に招待してから一斉受諾で上限を超えられる
+    const memberCount = vi.fn().mockResolvedValue(3);
+    const invitationCount = vi.fn().mockResolvedValue(2);
+    const db = fakeDb({
+      organizationMember: { count: memberCount },
+      invitation: { count: invitationCount },
+    });
 
-    expect(await countSeats(db, 'org-1')).toBe(3);
-    expect(count).toHaveBeenCalledWith({ where: { organizationId: 'org-1', deletedAt: null } });
+    expect(await countSeats(db, 'org-1')).toBe(5);
+    expect(memberCount).toHaveBeenCalledWith({
+      where: { organizationId: 'org-1', deletedAt: null },
+    });
+    expect(invitationCount).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        organizationId: 'org-1',
+        acceptedAt: null,
+        revokedAt: null,
+      }),
+    });
   });
 
   it('プロジェクト数はアーカイブ済みを除く (アーカイブが枠を空ける動線)', async () => {

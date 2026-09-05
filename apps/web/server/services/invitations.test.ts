@@ -161,6 +161,7 @@ const orgMemberTx = {
 
 const prismaMock = {
   invitation: {
+    count: vi.fn(async () => 1),
     findFirst: vi.fn(
       async ({ where }: { where: { tokenHash: string; expiresAt: { gt: Date } } }) => {
         const now = where.expiresAt.gt;
@@ -200,6 +201,18 @@ const prismaMock = {
       },
     ),
   },
+  // 受諾時の座席上限チェック (§7.11.1) が読む先。Free / 空きあり を既定にする。
+  billingSubscription: {
+    findUnique: vi.fn(async () => ({
+      planCode: 'team',
+      status: 'active',
+      cancelAtPeriodEnd: false,
+      currentPeriodEnd: null,
+      gracePeriodEndsAt: null,
+    })),
+  },
+  organizationMember: { count: vi.fn(async () => 1) },
+  project: { count: vi.fn(async () => 0) },
   // コールバック形式 ($transaction(fn)) を再現。
   $transaction: vi.fn(async (arg: unknown) => {
     return (arg as (tx: unknown) => Promise<unknown>)({

@@ -9,6 +9,7 @@ import { billingRoute } from './routes/v1/billing.js';
 import { dashboardRoute } from './routes/v1/dashboard.js';
 import { healthRoute } from './routes/v1/healthz.js';
 import { invitationsRoute } from './routes/v1/invitations.js';
+import { organizationsRoute } from './routes/v1/organizations.js';
 import { projectsRoute } from './routes/v1/projects.js';
 import { shareRoute } from './routes/v1/share.js';
 import { stripeWebhookRoute } from './routes/v1/stripeWebhook.js';
@@ -35,6 +36,7 @@ export function createApp() {
   app.route('/api/v1/billing', billingRoute);
   app.route('/api/v1/projects', projectsRoute);
   app.route('/api/v1/invitations', invitationsRoute);
+  app.route('/api/v1/organizations', organizationsRoute);
   app.route('/api/v1/users/me', dashboardRoute);
   app.route('/api/v1/share', shareRoute);
 

@@ -43,6 +43,10 @@ const auditStore: MockAudit[] = [];
 let seq = 0;
 const newId = (p: string) => `${p}-${++seq}`;
 
+/** 座席上限の判定に使う契約と利用数。テストごとに差し替える。 */
+let billingRow: Record<string, unknown> | null = null;
+let seatCounts = { members: 1, projects: 0 };
+
 const memberTx = {
   findFirst: vi.fn(
     async ({
@@ -85,6 +89,7 @@ const memberTx = {
 };
 
 const invitationTx = {
+  count: vi.fn(async () => 0),
   create: vi.fn(
     async ({
       data,
@@ -152,6 +157,10 @@ const prismaMock = {
       projectMember: memberTx,
       invitation: invitationTx,
       auditLog: auditTx,
+      // 座席上限の判定 (getEntitlement) はトランザクション内で行う
+      billingSubscription: { findUnique: async () => billingRow },
+      organizationMember: { count: async () => seatCounts.members },
+      project: { count: async () => seatCounts.projects },
     });
   }),
 };
@@ -206,6 +215,10 @@ beforeEach(() => {
   }
   auditStore.length = 0;
   seq = 0;
+  // 既定は Team (座席 5) にして、座席上限は billingLimits の統合テストへ任せる
+  billingRow = { planCode: 'team', status: 'active', cancelAtPeriodEnd: false };
+  seatCounts = { members: 1, projects: 0 };
+  invitationTx.count.mockResolvedValue(0);
   sendInvitation.mockReset().mockResolvedValue(undefined);
   __setMailerForTest({ sendInvitation });
 });
@@ -327,6 +340,28 @@ describe('createInvitation', () => {
       await expect(createInvitation(input({ memberId: 'missing' }))).rejects.toMatchObject({
         code: 'NOT_FOUND',
         status: 404,
+      });
+    });
+
+    it('座席の上限に達していれば 409 SEAT_LIMIT_REACHED', async () => {
+      seedProject();
+      billingRow = { planCode: 'free', status: 'none', cancelAtPeriodEnd: false };
+
+      await expect(createInvitation(input())).rejects.toMatchObject({
+        code: 'SEAT_LIMIT_REACHED',
+        status: 409,
+        details: { seatLimit: 1 },
+      });
+    });
+
+    it('座席が埋まっていても、メール重複なら重複の方を先に知らせる', async () => {
+      seedProject();
+      seedMember({ email: 'invitee@example.test' });
+      billingRow = { planCode: 'free', status: 'none', cancelAtPeriodEnd: false };
+
+      // どちらも座席を増やさないので「上限です」より具体的な案内を返す
+      await expect(createInvitation(input())).rejects.toMatchObject({
+        code: 'MEMBER_EMAIL_TAKEN',
       });
     });
 

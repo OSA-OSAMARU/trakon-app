@@ -151,12 +151,22 @@ export async function resolvePrimaryOrganization(
 /**
  * 座席 (会員アカウント) の消費数。
  *
- * 【未完】未受諾かつ有効期限内の招待も 1 座席を消費する (§7.3.2)。
- * invitations.organization_id は招待作成 API と同じ変更で追加するため、
- * その時点でここへ加算を足す。現時点は組織メンバーのみを数える。
+ * 有効な組織メンバー + **未受諾かつ有効期限内の招待** (§7.3.2)。
+ * 招待中も座席を押さえないと、大量に招待してから一斉受諾で上限を超えられる。
  */
 export async function countSeats(db: Db, organizationId: string): Promise<number> {
-  return db.organizationMember.count({ where: { organizationId, deletedAt: null } });
+  const [members, pendingInvitations] = await Promise.all([
+    db.organizationMember.count({ where: { organizationId, deletedAt: null } }),
+    db.invitation.count({
+      where: {
+        organizationId,
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    }),
+  ]);
+  return members + pendingInvitations;
 }
 
 /**

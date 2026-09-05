@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 import {
   requireProjectAction,
+  requireProjectWritable,
   requireProjectMember,
 } from '../../middleware/projectAuth.js';
 import { requireItemInProject } from '../../middleware/itemAuth.js';
@@ -76,7 +77,7 @@ export const plansRoute = new Hono()
     });
   })
 
-  .post('/', requireProjectAction('plan.create'), async (c) => {
+  .post('/', requireProjectWritable(), requireProjectAction('plan.create'), async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const body = createPlanBodySchema.parse(await c.req.json());
@@ -84,7 +85,7 @@ export const plansRoute = new Hono()
     return c.json({ data: plan }, 201);
   })
 
-  .post('/:planId/copy', requireProjectAction('plan.create'), async (c) => {
+  .post('/:planId/copy', requireProjectWritable(), requireProjectAction('plan.create'), async (c) => {
     const itemId = c.get('itemId');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -100,7 +101,7 @@ export const plansRoute = new Hono()
     return c.json({ data: detail });
   })
 
-  .patch('/:planId', requireProjectAction('plan.update'), async (c) => {
+  .patch('/:planId', requireProjectWritable(), requireProjectAction('plan.update'), async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const planId = c.req.param('planId');
@@ -110,7 +111,7 @@ export const plansRoute = new Hono()
     return c.json({ data: plan });
   })
 
-  .delete('/:planId', requireProjectAction('plan.delete'), async (c) => {
+  .delete('/:planId', requireProjectWritable(), requireProjectAction('plan.delete'), async (c) => {
     const itemId = c.get('itemId');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -118,7 +119,7 @@ export const plansRoute = new Hono()
     return c.body(null, 204);
   })
 
-  .patch('/:planId/successor', requireProjectAction('plan.update'), async (c) => {
+  .patch('/:planId/successor', requireProjectWritable(), requireProjectAction('plan.update'), async (c) => {
     const itemId = c.get('itemId');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -127,7 +128,7 @@ export const plansRoute = new Hono()
     return c.json({ data: plan });
   })
 
-  .post('/:planId/request-review', async (c) => {
+  .post('/:planId/request-review', requireProjectWritable(), async (c) => {
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -141,7 +142,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/request-review-undo', async (c) => {
+  .post('/:planId/request-review-undo', requireProjectWritable(), async (c) => {
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -155,7 +156,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/approve', async (c) => {
+  .post('/:planId/approve', requireProjectWritable(), async (c) => {
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -169,7 +170,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/approve-undo', async (c) => {
+  .post('/:planId/approve-undo', requireProjectWritable(), async (c) => {
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -183,7 +184,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/send-back', async (c) => {
+  .post('/:planId/send-back', requireProjectWritable(), async (c) => {
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -199,7 +200,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/send-back-to-predecessor', async (c) => {
+  .post('/:planId/send-back-to-predecessor', requireProjectWritable(), async (c) => {
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
@@ -215,7 +216,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/toss', async (c) => {
+  .post('/:planId/toss', requireProjectWritable(), async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const planId = c.req.param('planId');
@@ -231,7 +232,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/toss-undo', async (c) => {
+  .post('/:planId/toss-undo', requireProjectWritable(), async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const planId = c.req.param('planId');
@@ -247,7 +248,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/complete', async (c) => {
+  .post('/:planId/complete', requireProjectWritable(), async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const planId = c.req.param('planId');
@@ -263,7 +264,7 @@ export const plansRoute = new Hono()
     return c.json({ data: result });
   })
 
-  .post('/:planId/complete-undo', async (c) => {
+  .post('/:planId/complete-undo', requireProjectWritable(), async (c) => {
     const itemId = c.get('itemId');
     const project = c.get('project');
     const planId = c.req.param('planId');

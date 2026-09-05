@@ -14,6 +14,7 @@ import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 import { ApiException } from '../lib/errors.js';
 import { getMailer } from '../lib/mailer.js';
 import { defaultInvitationExpiresAt, generateInvitationToken } from '../lib/tokens.js';
+import { getEntitlement } from './billing/entitlement.js';
 
 export type InvitationDTO = {
   id: string;
@@ -144,6 +145,25 @@ export async function createInvitation(
         select: { id: true },
       });
       memberId = member.id;
+    }
+
+    // 座席 (会員アカウント) の上限 (§7.11.1)。未受諾の招待も座席を消費する。
+    //
+    // メール重複・参加済みの検証より**後**に置く。どちらも座席を増やさないケースで、
+    // 「上限です」より「そのメールは既にいます」の方が具体的な案内になるため。
+    // トランザクション内で数えることで、作成との間に競合が入らない。
+    const entitlement = await getEntitlement(tx, input.organizationId);
+    if (!entitlement.canInviteMember) {
+      throw new ApiException(
+        'SEAT_LIMIT_REACHED',
+        409,
+        `会員アカウントの上限 (${entitlement.limits.seatLimit} 名) に達しています。プランを変更するか、既存のメンバー・招待を整理してください。`,
+        {
+          planCode: entitlement.effectivePlanCode,
+          seatLimit: entitlement.limits.seatLimit,
+          seatCount: entitlement.usage.seatCount,
+        },
+      );
     }
 
     const invitation = await tx.invitation.create({

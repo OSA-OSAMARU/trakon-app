@@ -7,6 +7,8 @@ import {
   addProjectMemberWithRole,
   createMember,
   createUser,
+  primaryOrganizationId,
+  setBillingSubscription,
   setupProjectWithDirector,
 } from '../test/factories.js';
 import { api } from '../test/request.js';
@@ -30,6 +32,23 @@ beforeEach(() => {
   });
 });
 
+/**
+ * 招待できる状態のプロジェクトを用意する。
+ *
+ * Free は会員 1 名が上限で、オーナーだけで埋まるため招待できない。
+ * 招待そのものを検証したいテストは Team に上げてから行う (座席上限は
+ * billingLimits.integration.test.ts が担当する)。
+ */
+async function setupInvitableProject() {
+  const ctx = await setupProjectWithDirector();
+  await setBillingSubscription({
+    organizationId: await primaryOrganizationId(ctx.user.id),
+    planCode: 'team',
+    status: 'active',
+  });
+  return ctx;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -37,7 +56,7 @@ afterEach(() => {
 describe('POST /projects/:projectId/invitations', () => {
   describe('正常系', () => {
     it('参加者行を新規作成し、ロール付きの招待メールを送る', async () => {
-      const { project, token } = await setupProjectWithDirector();
+      const { project, token } = await setupInvitableProject();
 
       const res = await api<{ data: { id: string; email: string; roleType: string } }>(
         `/api/v1/projects/${project.id}/invitations`,
@@ -72,7 +91,7 @@ describe('POST /projects/:projectId/invitations', () => {
     });
 
     it('メール未登録の既存担当者行にメールを付けて招待できる', async () => {
-      const { project, token } = await setupProjectWithDirector();
+      const { project, token } = await setupInvitableProject();
       const member = await createMember({
         projectId: project.id,
         userId: null,
@@ -95,7 +114,7 @@ describe('POST /projects/:projectId/invitations', () => {
     });
 
     it('監査ログに invitation_created が残る', async () => {
-      const { project, token, user } = await setupProjectWithDirector();
+      const { project, token, user } = await setupInvitableProject();
 
       await api(`/api/v1/projects/${project.id}/invitations`, {
         method: 'POST',
@@ -113,7 +132,7 @@ describe('POST /projects/:projectId/invitations', () => {
 
   describe('異常系', () => {
     it('同一プロジェクトに同じメールが既にあれば 409 MEMBER_EMAIL_TAKEN', async () => {
-      const { project, token } = await setupProjectWithDirector();
+      const { project, token } = await setupInvitableProject();
       await createMember({ projectId: project.id, email: 'dup@example.test' });
 
       const res = await api<{ error: { code: string } }>(
@@ -127,7 +146,7 @@ describe('POST /projects/:projectId/invitations', () => {
     });
 
     it('既に参加済みの担当者行は 409 ALREADY_MEMBER', async () => {
-      const { project, token } = await setupProjectWithDirector();
+      const { project, token } = await setupInvitableProject();
       const joined = await addProjectMemberWithRole({ projectId: project.id, roleType: 'editor' });
 
       const res = await api<{ error: { code: string } }>(
@@ -144,7 +163,7 @@ describe('POST /projects/:projectId/invitations', () => {
     });
 
     it.each(['editor', 'viewer'] as const)('%s は招待を作成できない (404)', async (role) => {
-      const { project } = await setupProjectWithDirector();
+      const { project } = await setupInvitableProject();
       const other = await addProjectMemberWithRole({ projectId: project.id, roleType: role });
 
       const res = await api(`/api/v1/projects/${project.id}/invitations`, {
@@ -162,7 +181,7 @@ describe('POST /projects/:projectId/invitations', () => {
           throw new Error('resend unavailable');
         },
       });
-      const { project, token } = await setupProjectWithDirector();
+      const { project, token } = await setupInvitableProject();
 
       const res = await api<{ warnings?: string[] }>(
         `/api/v1/projects/${project.id}/invitations`,
@@ -178,7 +197,7 @@ describe('POST /projects/:projectId/invitations', () => {
 
 describe('GET / DELETE /projects/:projectId/invitations', () => {
   it('未受諾の招待だけを返し、取り消すと一覧から消える', async () => {
-    const { project, token } = await setupProjectWithDirector();
+    const { project, token } = await setupInvitableProject();
     await api(`/api/v1/projects/${project.id}/invitations`, {
       method: 'POST',
       token,
@@ -206,7 +225,7 @@ describe('GET / DELETE /projects/:projectId/invitations', () => {
 
 describe('POST /invitations/:token/accept', () => {
   it('招待されたロールが付与され、組織の会員として座席を消費する', async () => {
-    const { project, token } = await setupProjectWithDirector();
+    const { project, token } = await setupInvitableProject();
     const invitee = await createUser({ email: 'accept@example.test', withOrganization: false });
     await api(`/api/v1/projects/${project.id}/invitations`, {
       method: 'POST',
@@ -224,7 +243,6 @@ describe('POST /invitations/:token/accept', () => {
       { method: 'POST', token: inviteeToken },
     );
 
-    // 受諾は参加者行を作るため 201 (Phase 0 からの既存挙動)
     expect(res.status).toBe(201);
     expect(res.body.data.member.roleType).toBe('admin');
 
@@ -247,7 +265,7 @@ describe('POST /invitations/:token/accept', () => {
   });
 
   it('取り消された招待は受諾できない (404 集約)', async () => {
-    const { project, token } = await setupProjectWithDirector();
+    const { project, token } = await setupInvitableProject();
     const invitee = await createUser({ email: 'revoked@example.test', withOrganization: false });
     const created = await api<{ data: { id: string } }>(
       `/api/v1/projects/${project.id}/invitations`,
