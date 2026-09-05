@@ -17,7 +17,7 @@ import { signTestJwt } from '../../test/auth.js';
 
 describe('projects routes (integration)', () => {
   describe('正常系', () => {
-    it('POST /projects は作成者をディレクターとしてプロジェクトを作成する', async () => {
+    it('POST /projects は作成者を管理者としてプロジェクトを作成する', async () => {
       const user = await createUser();
       const token = await signTestJwt({
         authUserId: user.authUserId,
@@ -43,7 +43,8 @@ describe('projects routes (integration)', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.data.name).toBe('Launch Site');
-      expect(res.body.data.role).toBe('director');
+      // 作成者は role_type によらず常に管理者 (FR-ROLE-04)
+      expect(res.body.data.role).toBe('admin');
       // 作成者本人 + 招待先 1 名 = 2、制作物 2
       expect(res.body.data.counts).toEqual({ memberCount: 2, itemCount: 2 });
     });
