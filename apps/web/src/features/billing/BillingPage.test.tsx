@@ -263,6 +263,53 @@ describe('BillingPage (integration)', () => {
       expect(await screen.findByText(/お支払いの確認中です/)).toBeInTheDocument();
     });
 
+    it('Webhook が届くとポーリングで有効化され、反映待ちが消える', async () => {
+      // success URL への到達では有効化せず、Webhook 由来の契約状態だけを根拠にする
+      let activated = false;
+      server.use(
+        http.get('*/api/v1/billing/subscription', () =>
+          HttpResponse.json({
+            data: activated
+              ? {
+                  ...defaultBillingResponse,
+                  subscription: {
+                    ...defaultBillingResponse.subscription,
+                    planCode: 'personal',
+                    status: 'trialing',
+                    hasStripeCustomer: true,
+                  },
+                  entitlement: {
+                    ...defaultBillingResponse.entitlement,
+                    reason: 'trialing',
+                    planCode: 'personal',
+                    effectivePlanCode: 'personal',
+                    limits: { seatLimit: 1, projectLimit: 10 },
+                    message: 'Personal プランの無料トライアル中です。',
+                  },
+                }
+              : defaultBillingResponse,
+          }),
+        ),
+        http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
+      );
+      renderWithProviders(<BillingPage />, {
+        route: '/settings/billing?checkout=success&session_id=cs_1',
+      });
+
+      // Webhook 到着前は Free のまま
+      expect(await screen.findByText(/お支払いの確認中です/)).toBeInTheDocument();
+      expect(screen.getByText('Free プランを利用中です。')).toBeInTheDocument();
+
+      // Webhook が届いて契約が有効になる
+      activated = true;
+
+      await waitFor(
+        () => expect(screen.getByText('Personal プランの無料トライアル中です。')).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+      expect(screen.queryByText(/お支払いの確認中です/)).not.toBeInTheDocument();
+    });
+
     it('canceled で戻ると未完了の案内を出す', async () => {
       stubBilling();
       renderWithProviders(<BillingPage />, { route: '/settings/billing?checkout=canceled' });
