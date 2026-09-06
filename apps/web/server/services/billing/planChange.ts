@@ -13,7 +13,12 @@
 //   表現するため、そもそも削除処理がコード上に存在しない。
 // -----------------------------------------------------------------------------
 import { prisma } from '@trakon/db';
-import { BILLING_PLANS, type BillingPlanCode } from '@trakon/shared';
+import {
+  BILLING_PLANS,
+  hasLiveSubscription,
+  type BillingPlanCode,
+  type SubscriptionStatus,
+} from '@trakon/shared';
 
 import { getServerEnv } from '../../lib/env.js';
 import { ApiException } from '../../lib/errors.js';
@@ -30,7 +35,12 @@ async function loadActiveSubscription(organizationId: string): Promise<Subscript
   const subscription = await prisma.billingSubscription.findUnique({
     where: { organizationId },
   });
-  if (!subscription?.stripeSubscriptionId) {
+  // stripe_subscription_id は解約後も残る。状態も見ないと、既に終了した契約に
+  // 対して Stripe を呼び 500 になる (テスト環境の E2E で実際に発生した)。
+  if (
+    !subscription?.stripeSubscriptionId ||
+    !hasLiveSubscription(subscription.status as SubscriptionStatus)
+  ) {
     throw new ApiException(
       'NO_ACTIVE_SUBSCRIPTION',
       409,

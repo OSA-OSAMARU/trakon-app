@@ -95,6 +95,26 @@ export const SUBSCRIPTION_STATUSES = [
 
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 
+/**
+ * Stripe 上に「生きている契約」がある状態。
+ *
+ * ここに含まれない状態 (none / canceled / incomplete_expired) では、解約・
+ * 解約取り消し・プラン変更を呼んでも Stripe 側に対象が無く失敗する。
+ * 画面の導線と API の前提を同じ定義で判断するため shared に置く (設計書 §7.7)。
+ */
+export const LIVE_SUBSCRIPTION_STATUSES: readonly SubscriptionStatus[] = [
+  'trialing',
+  'active',
+  'past_due',
+  'unpaid',
+  'incomplete',
+  'paused',
+];
+
+export function hasLiveSubscription(status: SubscriptionStatus): boolean {
+  return LIVE_SUBSCRIPTION_STATUSES.includes(status);
+}
+
 /** 組織ロール。課金操作の可否を決める (プロジェクトロールとは別系統) */
 export const ORG_ROLES = ['owner', 'admin', 'member'] as const;
 

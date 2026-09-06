@@ -63,6 +63,7 @@ beforeEach(() => {
   prismaMock.billingSubscription.findUnique.mockReset().mockResolvedValue({
     organizationId: 'org-1',
     planCode: 'personal',
+    status: 'active',
     stripeSubscriptionId: 'sub_1',
   });
   prismaMock.billingSubscription.update.mockReset().mockReturnValue({});
@@ -128,6 +129,7 @@ describe('Team → Personal (次回更新時)', () => {
     prismaMock.billingSubscription.findUnique.mockResolvedValue({
       organizationId: 'org-1',
       planCode: 'team',
+      status: 'active',
       stripeSubscriptionId: 'sub_1',
     });
     retrieve.mockResolvedValue({
@@ -183,6 +185,7 @@ describe('changePlan の前提', () => {
     prismaMock.billingSubscription.findUnique.mockResolvedValue({
       organizationId: 'org-1',
       planCode: 'team',
+      status: 'active',
       stripeSubscriptionId: 'sub_1',
     });
 
@@ -192,10 +195,28 @@ describe('changePlan の前提', () => {
     });
   });
 
+  it('解約済みの契約に対しては 409 にする (Stripe を呼んで 500 にしない)', async () => {
+    // stripe_subscription_id は解約後も残るため、状態も見ないと
+    // 既に終了した契約へ Stripe を呼びに行ってしまう
+    prismaMock.billingSubscription.findUnique.mockResolvedValue({
+      organizationId: 'org-1',
+      planCode: 'team',
+      status: 'canceled',
+      stripeSubscriptionId: 'sub_1',
+    });
+
+    await expect(cancelSubscription(actor)).rejects.toMatchObject({
+      code: 'NO_ACTIVE_SUBSCRIPTION',
+      status: 409,
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it('Stripe 契約が無ければ 409 (先に申し込みへ誘導する)', async () => {
     prismaMock.billingSubscription.findUnique.mockResolvedValue({
       organizationId: 'org-1',
       planCode: 'free',
+      status: 'none',
       stripeSubscriptionId: null,
     });
 
@@ -241,6 +262,7 @@ describe('解約', () => {
     prismaMock.billingSubscription.findUnique.mockResolvedValue({
       organizationId: 'org-1',
       planCode: 'free',
+      status: 'none',
       stripeSubscriptionId: null,
     });
 

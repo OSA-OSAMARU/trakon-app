@@ -26,11 +26,13 @@ export function SidebarLayout() {
     queryFn: () => projectsApi.list(),
   });
 
-  // サイドバーのプランバッジは契約状態から作る (ハードコードしない、§4.5)
-  const { subscription } = useEntitlement();
+  // サイドバーのプランバッジは契約状態から作る (ハードコードしない、§4.5)。
+  // 契約プランではなく**実効プラン**を出す。解約済みで Team と出し続けると、
+  // 実際には Free の上限が効いている状態と食い違う
+  const { entitlement } = useEntitlement();
   const planBadge =
-    subscription && subscription.planCode !== 'free'
-      ? { label: BILLING_PLANS[subscription.planCode].label, variant: 'brand' as const }
+    entitlement && entitlement.effectivePlanCode !== 'free'
+      ? { label: BILLING_PLANS[entitlement.effectivePlanCode].label, variant: 'brand' as const }
       : null;
 
   const signOut = async () => {
