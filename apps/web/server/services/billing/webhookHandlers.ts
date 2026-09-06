@@ -50,6 +50,10 @@ type SubscriptionSnapshot = {
   canceledAt: Date | null;
   trialStart: Date | null;
   trialEnd: Date | null;
+  /** 表示用のカード情報。**ブランドと下 4 桁のみ**保持する (PRD SR-BILL-02)。
+   *  カード番号・fingerprint は保存しない。取得できなければ null (既存値を保つ) */
+  paymentMethodBrand: string | null;
+  paymentMethodLast4: string | null;
 };
 
 const SUBSCRIPTION_EVENTS = new Set([
@@ -122,7 +126,10 @@ export async function prefetchSubscription(
 
   let subscription: Stripe.Subscription;
   try {
-    subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+    // 既定の支払い方法も一緒に取る (カード表示用。追加の往復を避ける)
+    subscription = await getStripe().subscriptions.retrieve(subscriptionId, {
+      expand: ['default_payment_method'],
+    });
   } catch (err) {
     // 削除済みなどで取得できない場合は受信ペイロードで代替する
     console.warn('[stripe] subscription retrieve failed, falling back to payload:', err);
@@ -152,6 +159,26 @@ export async function prefetchSubscription(
     canceledAt: toDate(subscription.canceled_at),
     trialStart: toDate(subscription.trial_start),
     trialEnd: toDate(subscription.trial_end),
+    ...readCardForDisplay(subscription),
+  };
+}
+
+/**
+ * 表示用のカード情報を取り出す。
+ *
+ * **ブランドと下 4 桁だけ**を返す。カード番号や fingerprint は取得もしないし
+ * 保存もしない (PRD SR-BILL-02)。契約に既定の支払い方法が無い場合 (Checkout 直後など)
+ * は null を返し、呼び出し側が既存値を保つ。
+ */
+function readCardForDisplay(subscription: Stripe.Subscription): {
+  paymentMethodBrand: string | null;
+  paymentMethodLast4: string | null;
+} {
+  const pm = subscription.default_payment_method;
+  const card = pm && typeof pm === 'object' ? (pm as Stripe.PaymentMethod).card : undefined;
+  return {
+    paymentMethodBrand: card?.brand ?? null,
+    paymentMethodLast4: card?.last4 ?? null,
   };
 }
 
@@ -255,6 +282,13 @@ async function applySubscriptionSnapshot(
       trialStart: snapshot.trialStart,
       trialEnd: snapshot.trialEnd,
       ...(snapshot.trialStart ? { trialUsedAt: current.trialUsedAt ?? snapshot.trialStart } : {}),
+      // 取得できたときだけ更新する (一時的に取れなくても表示を消さない)
+      ...(snapshot.paymentMethodLast4
+        ? {
+            defaultPaymentMethodBrand: snapshot.paymentMethodBrand,
+            defaultPaymentMethodLast4: snapshot.paymentMethodLast4,
+          }
+        : {}),
       ...(promotesPendingPlan ? { pendingPlanCode: null, pendingPlanEffectiveAt: null } : {}),
       // 有効化されたら猶予をクリアする
       ...(active ? { gracePeriodEndsAt: null, lastPaymentFailedAt: null } : {}),
