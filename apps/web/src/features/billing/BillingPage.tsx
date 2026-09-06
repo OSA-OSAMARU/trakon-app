@@ -5,7 +5,12 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { BILLING_PLANS, SELECTABLE_BILLING_PLAN_CODES, type BillingPlanCode } from '@trakon/shared';
+import {
+  BILLING_PLANS,
+  SELECTABLE_BILLING_PLAN_CODES,
+  hasLiveSubscription,
+  type BillingPlanCode,
+} from '@trakon/shared';
 
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -150,13 +155,14 @@ export function BillingPage() {
             />
 
             <PlanComparison
-              current={query.data.subscription.planCode}
-              hasSubscription={Boolean(query.data.subscription.hasStripeCustomer)}
+              // 契約プランではなく**実効プラン**で「利用中」を決める。
+              // 解約済みは実効 Free なので、同じプランへ申し込み直せる (§7.6)
+              current={query.data.entitlement.effectivePlanCode}
+              hasSubscription={hasLiveSubscription(query.data.subscription.status)}
               canManage={query.data.orgRole === 'owner' || query.data.orgRole === 'admin'}
               disabled={anyPending || awaitingWebhook}
               onSelect={(plan) =>
-                query.data.subscription.hasStripeCustomer &&
-                query.data.subscription.status !== 'none'
+                hasLiveSubscription(query.data.subscription.status)
                   ? changePlanMut.mutate(plan)
                   : checkoutMut.mutate(plan)
               }
@@ -205,7 +211,10 @@ function CurrentPlanCard({
   disabled: boolean;
 }) {
   const { subscription, entitlement } = billing;
-  const spec = BILLING_PLANS[subscription.planCode];
+  // 契約プランではなく実効プランを出す。解約済み・支払い不能で契約プランを
+  // 出すと「Team なのに Free の上限」という矛盾した表示になる
+  const spec = BILLING_PLANS[entitlement.effectivePlanCode];
+  const live = hasLiveSubscription(subscription.status);
   const canManage = billing.orgRole === 'owner' || billing.orgRole === 'admin';
 
   return (
@@ -213,7 +222,7 @@ function CurrentPlanCard({
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">現在のプラン</CardTitle>
-          <Badge variant={subscription.planCode === 'free' ? 'secondary' : 'brand'}>
+          <Badge variant={entitlement.effectivePlanCode === 'free' ? 'secondary' : 'brand'}>
             {spec.label}
           </Badge>
         </div>
@@ -233,10 +242,12 @@ function CurrentPlanCard({
           <Row label="プロジェクト">
             {entitlement.usage.projectCount} / {entitlement.limits.projectLimit ?? '無制限'}
           </Row>
-          {subscription.trialEnd && (
+          {/* 終了した契約の日付は残っているだけなので出さない (解約後に
+              「次回更新」が出ると更新されるように読めてしまう) */}
+          {live && subscription.trialEnd && (
             <Row label="トライアル終了">{formatDateTime(subscription.trialEnd)}</Row>
           )}
-          {subscription.currentPeriodEnd && (
+          {live && subscription.currentPeriodEnd && (
             <Row label={subscription.cancelAtPeriodEnd ? '利用可能期限' : '次回更新'}>
               {formatDateTime(subscription.currentPeriodEnd)}
             </Row>
@@ -269,8 +280,7 @@ function CurrentPlanCard({
               お支払い方法・請求書
             </Button>
           )}
-          {subscription.hasStripeCustomer &&
-            subscription.status !== 'none' &&
+          {live &&
             (subscription.cancelAtPeriodEnd ? (
               <Button variant="outline" onClick={onResume} disabled={disabled || !canManage}>
                 解約を取り消す

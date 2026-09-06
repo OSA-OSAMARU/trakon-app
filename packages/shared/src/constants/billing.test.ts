@@ -11,6 +11,7 @@ import {
   TRIAL_PERIOD_DAYS,
   TRIAL_PERIOD_HOURS,
   canManageBilling,
+  hasLiveSubscription,
 } from './billing.js';
 
 describe('課金プラン定義', () => {
@@ -76,6 +77,27 @@ describe('課金プラン定義', () => {
       expect(SUBSCRIPTION_STATUSES).toContain(s);
     }
     expect(new Set(SUBSCRIPTION_STATUSES).size).toBe(SUBSCRIPTION_STATUSES.length);
+  });
+});
+
+describe('hasLiveSubscription', () => {
+  it('Stripe 上に契約が残っている状態を true にする', () => {
+    for (const s of ['trialing', 'active', 'past_due', 'unpaid', 'incomplete', 'paused'] as const) {
+      expect(hasLiveSubscription(s)).toBe(true);
+    }
+  });
+
+  it('対象が無い状態を false にする', () => {
+    // ここで解約・プラン変更を呼ぶと Stripe 側に対象が無く失敗する
+    for (const s of ['none', 'canceled', 'incomplete_expired'] as const) {
+      expect(hasLiveSubscription(s)).toBe(false);
+    }
+  });
+
+  it('すべての状態を漏れなく分類している', () => {
+    for (const s of SUBSCRIPTION_STATUSES) {
+      expect(typeof hasLiveSubscription(s)).toBe('boolean');
+    }
   });
 });
 

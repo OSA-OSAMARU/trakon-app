@@ -298,6 +298,84 @@ describe('BillingPage (integration)', () => {
     });
   });
 
+  describe('解約済み（実効 Free に落ちた状態）', () => {
+    // 契約プランを出したままにすると「Team なのに Free の上限」という
+    // 矛盾した表示になり、同じプランへ申し込み直すこともできなくなる
+    const canceled = {
+      subscription: {
+        ...defaultBillingResponse.subscription,
+        planCode: 'team' as const,
+        status: 'canceled' as const,
+        hasStripeCustomer: true,
+        currentPeriodEnd: '2026-09-11T11:05:00.000Z',
+        trialEnd: '2026-09-11T11:05:00.000Z',
+      },
+      entitlement: {
+        ...defaultBillingResponse.entitlement,
+        reason: 'canceled' as const,
+        planCode: 'team' as const,
+        effectivePlanCode: 'free' as const,
+      },
+    };
+
+    it('現在のプランは契約プランではなく実効プランを出す', async () => {
+      stubBilling(canceled);
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await screen.findByText('現在のプラン');
+      expect(screen.getByText('0 円 (税込)')).toBeInTheDocument();
+      expect(screen.queryByText('9,800 円 (税込)')).not.toBeInTheDocument();
+    });
+
+    it('同じプランへ申し込み直せる', async () => {
+      stubBilling(canceled);
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      const teamCard = await screen.findByTestId('plan-team');
+      expect(within(teamCard).getByRole('button', { name: '申し込む' })).toBeEnabled();
+      expect(within(teamCard).queryByText('利用中')).not.toBeInTheDocument();
+      // 「利用中」は実効プランの Free 側に付く
+      expect(within(screen.getByTestId('plan-free')).getByText('利用中')).toBeInTheDocument();
+    });
+
+    it('解約ボタンを出さない（押しても対象が無い）', async () => {
+      stubBilling(canceled);
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await screen.findByText('現在のプラン');
+      expect(screen.queryByRole('button', { name: '解約する' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '解約を取り消す' })).not.toBeInTheDocument();
+      // 過去の請求書は見られるので支払い管理の導線は残す
+      expect(screen.getByRole('button', { name: 'お支払い方法・請求書' })).toBeInTheDocument();
+    });
+
+    it('終了した契約の日付を出さない', async () => {
+      stubBilling(canceled);
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await screen.findByText('現在のプラン');
+      expect(screen.queryByText('次回更新')).not.toBeInTheDocument();
+      expect(screen.queryByText('トライアル終了')).not.toBeInTheDocument();
+    });
+
+    it('申し込みは Checkout へ向かう（プラン変更ではない）', async () => {
+      stubBilling(canceled);
+      let checkoutCalled = false;
+      server.use(
+        http.post('*/api/v1/billing/checkout-session', () => {
+          checkoutCalled = true;
+          return HttpResponse.json({ data: { url: 'https://checkout.test/s', trialApplied: false } });
+        }),
+      );
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      const teamCard = await screen.findByTestId('plan-team');
+      await userEvent.click(within(teamCard).getByRole('button', { name: '申し込む' }));
+
+      await waitFor(() => expect(checkoutCalled).toBe(true));
+    });
+  });
+
   describe('解約', () => {
     it('契約中なら解約ボタンを出す', async () => {
       stubBilling({
