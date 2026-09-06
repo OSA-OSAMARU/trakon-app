@@ -226,6 +226,8 @@ describe('customer.subscription.*', () => {
       canceledAt: null,
       trialStart: null,
       trialEnd: null,
+      paymentMethodBrand: null,
+      paymentMethodLast4: null,
       ...over,
     };
   }
@@ -322,6 +324,30 @@ describe('customer.subscription.*', () => {
       type: 'subscription_canceled',
       organizationId: 'org-1',
     });
+  });
+
+  it('取得できたカードのブランドと下 4 桁だけを保存する (SR-BILL-02)', async () => {
+    const f = fakeTx();
+
+    await applyEvent(f.tx, event('customer.subscription.updated', {}), {
+      snapshot: snapshot({ paymentMethodBrand: 'visa', paymentMethodLast4: '4242' }),
+    });
+
+    expect(f.data()).toMatchObject({
+      defaultPaymentMethodBrand: 'visa',
+      defaultPaymentMethodLast4: '4242',
+    });
+    // 番号や fingerprint は保存しない
+    expect(JSON.stringify(f.data())).not.toMatch(/fingerprint|4242 4242/);
+  });
+
+  it('カードを取得できなければ既存の表示を消さない', async () => {
+    const f = fakeTx();
+
+    await applyEvent(f.tx, event('customer.subscription.updated', {}), { snapshot: snapshot() });
+
+    expect(f.data()).not.toHaveProperty('defaultPaymentMethodLast4');
+    expect(f.data()).not.toHaveProperty('defaultPaymentMethodBrand');
   });
 
   it('組織を特定できなければ何も書かない', async () => {
@@ -535,7 +561,7 @@ describe('prefetchSubscription', () => {
       event('customer.subscription.updated', payload),
     );
 
-    expect(retrieve).toHaveBeenCalledWith('sub_9');
+    expect(retrieve).toHaveBeenCalledWith('sub_9', { expand: ['default_payment_method'] });
     // ペイロードの incomplete ではなく、取り直した active を採用する
     expect(snapshot).toMatchObject({
       organizationId: 'org-1',
@@ -543,6 +569,32 @@ describe('prefetchSubscription', () => {
       status: 'active',
       currentPeriodEnd: new Date('2026-10-01T00:00:00Z'),
     });
+  });
+
+  it('既定の支払い方法を展開して取得し、ブランドと下 4 桁だけを持つ', async () => {
+    const retrieve = stubStripe({
+      ...payload,
+      status: 'active',
+      default_payment_method: {
+        id: 'pm_1',
+        card: { brand: 'visa', last4: '4242', fingerprint: 'fp_secret', exp_month: 12 },
+      },
+    });
+
+    const snapshot = await prefetchSubscription(event('customer.subscription.updated', payload));
+
+    expect(retrieve).toHaveBeenCalledWith('sub_9', { expand: ['default_payment_method'] });
+    expect(snapshot).toMatchObject({ paymentMethodBrand: 'visa', paymentMethodLast4: '4242' });
+    // fingerprint は取り出さない
+    expect(JSON.stringify(snapshot)).not.toContain('fp_secret');
+  });
+
+  it('既定の支払い方法が無ければ null にする', async () => {
+    stubStripe({ ...payload, status: 'active', default_payment_method: null });
+
+    const snapshot = await prefetchSubscription(event('customer.subscription.updated', payload));
+
+    expect(snapshot?.paymentMethodLast4).toBeNull();
   });
 
   it('Price ID からプランを判定する (ID は環境変数のみで管理する)', async () => {
