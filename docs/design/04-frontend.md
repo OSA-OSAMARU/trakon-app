@@ -501,7 +501,7 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 |---|---|:---:|---|
 | 予定種別 | Radio | × | Phase 0 は「TOSS予定」固定表示・選択不要（Phase 1 で3種選択） |
 | 予定名 | Text | ✅ | 1〜255 文字 |
-| **カテゴリ** | **Select** | **✅** | **6種固定（wireframe / design / coding / review / meeting / other、v1.1、FR-SCH-18）** |
+| **カテゴリ** | **Select** | **✅** | **7種固定（proposal / wireframe / design / coding / review / meeting / other、v1.1、`proposal` は #154 で追加、FR-SCH-18）。選択肢は `@trakon/shared` の `PLAN_CATEGORIES` 順** |
 | **実施者（executor）** | **Select** | **✅** | **#131：作業/確認を行う。プロジェクト参加メンバーから** |
 | **承認者（approver）** | **Select** | **×** | **#131：任意。実施者の成果を承認する。空欄なら実施者が直接承認** |
 | **進行責任者（progress_manager）** | **Select** | **×** | **#131：承認済みを後続へ TOSS する。未指定ならプロジェクト既定（`projects.progress_manager_member_id`）を採用** |
@@ -687,6 +687,7 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 | カテゴリ | 背景 | 枠線 |
 |---|---|---|
+| proposal | blue-50 | blue-300 |
 | wireframe | purple-50 | purple-300 |
 | design | blue-50 | blue-300 |
 | coding | green-50 | green-300 |

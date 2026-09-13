@@ -3,6 +3,7 @@ import {
   deriveBallHolder,
   pickLatestBallEvent,
   type BallEventType,
+  type PlanCategory,
   type PlanState,
 } from '@trakon/shared';
 
@@ -14,7 +15,7 @@ export type DashboardTaskDTO = {
   itemId: string;
   itemName: string;
   title: string;
-  category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other';
+  category: PlanCategory;
   scheduledDate: string;
   dueDate: string | null;
   ballState: PlanState;

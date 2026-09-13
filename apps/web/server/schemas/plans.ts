@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { SCHEDULE_THEMES } from '@trakon/shared';
+import { PLAN_CATEGORIES, SCHEDULE_THEMES } from '@trakon/shared';
 
 const isoDate = z
   .string()
@@ -8,15 +8,8 @@ const isoDate = z
 
 const uuid = z.string().uuid();
 
-export const planCategoryValues = [
-  'wireframe',
-  'design',
-  'coding',
-  'review',
-  'meeting',
-  'other',
-] as const;
-export const planCategorySchema = z.enum(planCategoryValues);
+/** カテゴリの正は @trakon/shared の PLAN_CATEGORIES (FE / DB CHECK と同じ定義)。 */
+export const planCategorySchema = z.enum(PLAN_CATEGORIES);
 export type PlanCategory = z.infer<typeof planCategorySchema>;
 
 export const createPlanBodySchema = z

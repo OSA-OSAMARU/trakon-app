@@ -1,4 +1,5 @@
-import type { MemberType, ScheduleThemeKey } from '@trakon/shared';
+import { PLAN_CATEGORIES, PLAN_CATEGORY_LABEL } from '@trakon/shared';
+import type { MemberType, PlanCategory, ScheduleThemeKey } from '@trakon/shared';
 
 import type { BallEventType, PlanState } from '@trakon/shared';
 
@@ -10,22 +11,12 @@ export type { BallEventType, PlanState };
 // 型定義 (BE の DTO と対応)
 // =============================================================================
 
-export type PlanCategory =
-  | 'wireframe'
-  | 'design'
-  | 'coding'
-  | 'review'
-  | 'meeting'
-  | 'other';
+// カテゴリの正は @trakon/shared の PLAN_CATEGORIES (BE の Zod / DB CHECK と同じ定義)。
+export type { PlanCategory };
 
-export const PLAN_CATEGORIES: { value: PlanCategory; label: string }[] = [
-  { value: 'wireframe', label: 'ワイヤーフレーム' },
-  { value: 'design', label: 'デザイン' },
-  { value: 'coding', label: 'コーディング' },
-  { value: 'review', label: 'レビュー' },
-  { value: 'meeting', label: '打ち合わせ' },
-  { value: 'other', label: 'その他' },
-];
+/** カテゴリの選択肢。並び順は PLAN_CATEGORIES の定義順 (工程の流れ順) に従う。 */
+export const PLAN_CATEGORY_OPTIONS: { value: PlanCategory; label: string }[] =
+  PLAN_CATEGORIES.map((value) => ({ value, label: PLAN_CATEGORY_LABEL[value] }));
 
 export type MemberRef = {
   id: string;

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { PLAN_CATEGORIES } from '@trakon/shared';
+
 import {
   createPlanBodySchema,
   sendBackBodySchema,
@@ -62,10 +64,14 @@ describe('createPlanBodySchema', () => {
     expect(r.success).toBe(false);
   });
 
-  it('accepts each of the 6 allowed categories', () => {
-    for (const c of ['wireframe', 'design', 'coding', 'review', 'meeting', 'other']) {
+  it('accepts every category in PLAN_CATEGORIES', () => {
+    for (const c of PLAN_CATEGORIES) {
       expect(createPlanBodySchema.safeParse({ ...base, category: c }).success).toBe(true);
     }
+  });
+
+  it('rejects an unknown category', () => {
+    expect(createPlanBodySchema.safeParse({ ...base, category: 'unknown' }).success).toBe(false);
   });
 });
 

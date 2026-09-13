@@ -113,7 +113,7 @@ PRD §1.3 と §13.3 を参照。本書で新たに定義する用語は各章�
 | 予定 / Plan / Ball / Task | **「予定（plan）」が物理テーブル名・正規用語、「ボール」は責任の概念**として両者を併用。**「タスク」はプロトタイプ UI 用語で、設計書では「予定」に統一**（PRD v1.3 §1.3 用語集に明記） | プロトタイプの「today's task」は本設計書では「今日の予定」と読み替え |
 | 制作物 / 納品物 / item / deliverable | **「制作物（project_items）」を物理／設計用語として維持**、URL も `/items/` 維持。プロトタイプの「deliverable」は画面表示文言レベルの言い換え | データモデル・API は変更なし。画面表示は「制作物」/「納品物」の選択肢があるが、Phase 0 は「制作物」で統一 |
 | メンバー | プロジェクト参加者（`project_members`）の通称、横軸／カンバン列の単位 | ユーザー（`users`）とは区別（メンバーは特定プロジェクト内、ユーザーは横断アカウント） |
-| カテゴリ | 予定の作業種別（`plans.category`、6 値 CHECK） | wireframe / design / coding / review / meeting / other |
+| カテゴリ | 予定の作業種別（`plans.category`、7 値 CHECK）。正の定義は `@trakon/shared` の `PLAN_CATEGORIES` | proposal / wireframe / design / coding / review / meeting / other |
 | 後続紐付け | 1 つの予定（先行）に対し 1 つの後続予定を紐付ける関係（`plans.successor_plan_id`、1対1、UNIQUE） | **#131：先行の承認 → 進行責任者による TOSS で後続へボールを渡す。~~自動 TOSS~~ は #117 で廃止**（承認と TOSS は分離） |
 | 役割（#131） | 予定の 3 役割：**実施者 executor**（作業/確認、実質必須）／**承認者 approver**（任意）／**進行責任者 progress_manager**（承認済みを後続へ TOSS）。1 人が複数役割を兼任可 | ballState は 6 値（in_progress / review_pending / approved / tossed / sent_back / completed） |
 | Magic-link サインアップ | メール先行 → 認証リンク押下 → 詳細入力 → 自動ログインの2段階フロー | UC-01 改訂、SC-01 で 7 状態統合 |

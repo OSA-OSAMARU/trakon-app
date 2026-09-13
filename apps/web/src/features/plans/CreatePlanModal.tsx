@@ -27,6 +27,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { ScheduleThemeKey } from '@trakon/shared';
+import { PLAN_CATEGORIES } from '@trakon/shared';
+
 import { ScheduleThemePicker } from '@/components/trakon/ScheduleThemePicker';
 import { cn } from '@/components/ui/utils';
 import { ApiClientError } from '@/lib/api';
@@ -34,7 +36,7 @@ import { CATEGORY_THEME } from './planTheme';
 import type { ProjectMember } from '@/features/projects/membersApi';
 import type { ProjectItem } from '@/features/projects/api';
 import {
-  PLAN_CATEGORIES,
+  PLAN_CATEGORY_OPTIONS,
   plansApi,
   plansQueryKey,
   type Plan,
@@ -48,7 +50,7 @@ const memberField = z.union([z.string().uuid(), z.literal('')]).optional();
 const schema = z
   .object({
     title: z.string().trim().min(1, '予定名は必須').max(255),
-    category: z.enum(PLAN_CATEGORIES.map((c) => c.value) as [PlanCategory, ...PlanCategory[]]),
+    category: z.enum(PLAN_CATEGORIES),
     /** カラーテーマ (#149)。'' はカテゴリ由来の既定色 */
     colorTheme: z.string(),
     scheduledDate: isoDate,
@@ -245,7 +247,7 @@ export function CreatePlanModal({
               <SelectField
                 value={form.watch('category')}
                 onChange={(v) => form.setValue('category', v as PlanCategory)}
-                options={PLAN_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))}
+                options={PLAN_CATEGORY_OPTIONS}
               />
             </Field>
             {/* 色はカテゴリとは独立して選べる (#149)。未選択ならカテゴリ由来の既定色。 */}

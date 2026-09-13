@@ -86,6 +86,53 @@ export const MEMBER_TYPE_LABEL: Record<MemberType, string> = {
 };
 
 /**
+ * 予定のカテゴリマスタ (工程の種別)。
+ *
+ * 工程の流れに沿った順に並べる (提案 → ワイヤーフレーム → デザイン → コーディング)。
+ * 選択肢の並び順もこの配列順をそのまま使う。
+ *
+ * FE の選択肢・BE の Zod 検証・DB の CHECK 制約で同じ定義を使うため shared に置く
+ * (以前は server/schemas/plans.ts・features/plans/api.ts・services/dashboard.ts・
+ * migration の 4 箇所に重複していた)。
+ */
+export const PLAN_CATEGORIES = [
+  'proposal',
+  'wireframe',
+  'design',
+  'coding',
+  'review',
+  'meeting',
+  'other',
+] as const;
+
+export type PlanCategory = (typeof PLAN_CATEGORIES)[number];
+
+/** 正式名称。選択肢・詳細表示で使う。 */
+export const PLAN_CATEGORY_LABEL: Record<PlanCategory, string> = {
+  proposal: '提案',
+  wireframe: 'ワイヤーフレーム',
+  design: 'デザイン',
+  coding: 'コーディング',
+  review: 'レビュー',
+  meeting: '打ち合わせ',
+  other: 'その他',
+};
+
+/**
+ * スケジュールカード上の短縮名。
+ * カード幅が狭く正式名称が入りきらないため、長いものだけ縮めた別名を持つ。
+ */
+export const PLAN_CATEGORY_SHORT_LABEL: Record<PlanCategory, string> = {
+  proposal: '提案',
+  wireframe: 'ワイヤー',
+  design: 'デザイン',
+  coding: 'コーディング',
+  review: 'レビュー',
+  meeting: '打ち合わせ',
+  other: 'その他',
+};
+
+/**
  * スケジュールカードのカラーテーマ (Figma node 54:2 / 10 種)。
  *
  * 色は「状態」を表すものではなく、**ユーザーがスケジュールを視覚整理するために選ぶもの**。

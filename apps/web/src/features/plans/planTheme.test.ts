@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { PLAN_CATEGORIES } from '@trakon/shared';
+
 import { SCHEDULE_THEME_KEYS } from '@/components/trakon/scheduleTheme';
 
 import {
@@ -11,19 +13,27 @@ import {
   resolvePlanTheme,
 } from './planTheme';
 
-const CATEGORIES = ['wireframe', 'design', 'coding', 'review', 'meeting', 'other'] as const;
+// カテゴリの正は @trakon/shared。ここで固定値を持たないことで、値が増えても
+// テストが勝手に古くならないようにする (#154)。
+const CATEGORIES = PLAN_CATEGORIES;
 
 describe('planTheme', () => {
-  it('6 カテゴリすべてに既定テーマとラベルが定義されている', () => {
+  it('全カテゴリに既定テーマとラベルが定義されている', () => {
     for (const c of CATEGORIES) {
       expect(SCHEDULE_THEME_KEYS).toContain(CATEGORY_THEME[c]);
       expect(CATEGORY_LABEL[c].length).toBeGreaterThan(0);
     }
   });
 
-  it('定義済みカテゴリ数はちょうど 6', () => {
-    expect(Object.keys(CATEGORY_THEME)).toHaveLength(6);
-    expect(Object.keys(CATEGORY_STYLE)).toHaveLength(6);
+  it('定義済みカテゴリは PLAN_CATEGORIES と過不足なく一致する', () => {
+    expect(Object.keys(CATEGORY_THEME).sort()).toEqual([...PLAN_CATEGORIES].sort());
+    expect(Object.keys(CATEGORY_STYLE).sort()).toEqual([...PLAN_CATEGORIES].sort());
+  });
+
+  it('提案は既存カテゴリと重複しない色を持つ (#154)', () => {
+    expect(CATEGORY_THEME.proposal).toBe('blue');
+    const themes = Object.values(CATEGORY_THEME);
+    expect(new Set(themes).size).toBe(themes.length);
   });
 
   it('CATEGORY_STYLE は新パレット (plan-*) のクラスを返す', () => {
