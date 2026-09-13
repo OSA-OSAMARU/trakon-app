@@ -7,7 +7,10 @@ import type {
   getCurrentUser as GetCurrentUserType,
   recordLogin as RecordLoginType,
   deleteAccount as DeleteAccountType,
+  replaceAvatar as ReplaceAvatarType,
+  removeAvatar as RemoveAvatarType,
 } from './auth.js';
+import type * as AvatarStorage from '../lib/avatarStorage.js';
 
 // =============================================================================
 // Mocks
@@ -189,7 +192,7 @@ const deleteUserMock = vi.fn(
 const uploadAvatarObjectMock = vi.fn(async () => undefined);
 const removeAvatarObjectMock = vi.fn(async () => undefined);
 vi.mock('../lib/avatarStorage.js', async (orig) => {
-  const actual = await orig<typeof import('../lib/avatarStorage.js')>();
+  const actual = await orig<typeof AvatarStorage>();
   return {
     ...actual,
     uploadAvatarObject: (...a: unknown[]) => uploadAvatarObjectMock(...(a as [])),
@@ -222,8 +225,8 @@ let updateProfile: typeof UpdateProfileType;
 let getCurrentUser: typeof GetCurrentUserType;
 let recordLogin: typeof RecordLoginType;
 let deleteAccount: typeof DeleteAccountType;
-let replaceAvatar: typeof import('./auth.js').replaceAvatar;
-let removeAvatar: typeof import('./auth.js').removeAvatar;
+let replaceAvatar: typeof ReplaceAvatarType;
+let removeAvatar: typeof RemoveAvatarType;
 
 beforeAll(async () => {
   ({
