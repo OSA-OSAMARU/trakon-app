@@ -71,6 +71,7 @@ const detail = (over: Partial<ProjectDetail> = {}): ProjectDetail => ({
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   counts: { memberCount: 1, itemCount: 1 },
+  plansDateRange: null,
   ...over,
 });
 
@@ -242,6 +243,67 @@ describe('ProjectEditPage (integration)', () => {
     await user.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('名前が不正です'));
+  });
+
+  // ---------------------------------------------------------------------------
+  // プロジェクト期間ガード (#155)
+  // ---------------------------------------------------------------------------
+
+  it('登録済み予定の範囲を案内し、日付入力の選択可能範囲を絞る (#155)', async () => {
+    stubGets({ project: { plansDateRange: { min: '2026-03-01', max: '2026-08-20', count: 7 } } });
+
+    renderEdit();
+    await waitFor(() => expect(inputByName('name').value).toBe('サイトリニューアル'));
+
+    expect(
+      screen.getByText(/登録済みの予定は 2026\/3\/1 〜 2026\/8\/20（7 件）です。/),
+    ).toBeInTheDocument();
+    // 開始日はこれ以降へ動かせない / 終了日はこれ以前へ動かせない
+    expect(inputByName('startDate')).toHaveAttribute('max', '2026-03-01');
+    expect(inputByName('endDate')).toHaveAttribute('min', '2026-08-20');
+  });
+
+  it('予定が無いときは範囲の案内も min/max も出さない (#155)', async () => {
+    stubGets({ project: { plansDateRange: null } });
+
+    renderEdit();
+    await waitFor(() => expect(inputByName('name').value).toBe('サイトリニューアル'));
+
+    expect(screen.queryByText(/登録済みの予定は/)).not.toBeInTheDocument();
+    expect(inputByName('startDate')).not.toHaveAttribute('max');
+    expect(inputByName('endDate')).not.toHaveAttribute('min');
+  });
+
+  it('PATCH 409 PLANS_OUT_OF_RANGE を日付フィールド直下に表示する (#155)', async () => {
+    const user = setup();
+    stubGets();
+    server.use(
+      http.patch('*/api/v1/projects/p1', () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'PLANS_OUT_OF_RANGE',
+              message:
+                '予定が期間外になるため変更できません。登録済みの予定は 2026/3/1〜2026/8/20 の範囲にあり、3 件がはみ出します。',
+            },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    renderEdit();
+    await waitFor(() => expect(inputByName('name').value).toBe('サイトリニューアル'));
+
+    const startInput = inputByName('startDate');
+    await user.clear(startInput);
+    await user.type(startInput, '2026-09-01');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    // toast は消えるので、フィールド直下にも残っていることを確かめる
+    await waitFor(() =>
+      expect(screen.getByText(/3 件がはみ出します。/)).toBeInTheDocument(),
+    );
   });
 
   it('制作物を追加できる (ダイアログ → POST → 再取得)', async () => {

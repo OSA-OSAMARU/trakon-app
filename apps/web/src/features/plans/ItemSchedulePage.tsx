@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, differenceInDays, format, parseISO } from 'date-fns';
-import { Plus, Settings, Users } from 'lucide-react';
+import { Plus, Settings, TriangleAlert, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiClientError } from '@/lib/api';
@@ -125,6 +125,23 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
     const count = Math.max(0, differenceInDays(end, start) + 1);
     return Array.from({ length: count }, (_, i) => addDays(start, i));
   }, [project]);
+
+  /**
+   * プロジェクト期間からはみ出している予定の件数 (#155)。
+   *
+   * 期間の変更・予定の日付変更は BE 側で期間内に収まるよう塞いだが、
+   * その対応より前に作られたデータははみ出したまま残りうる。
+   * scheduleLayout の dayIndex() は範囲外を端の行へ黙ってクランプするため、
+   * 気づかないまま間違った日付の位置で見ることになる。注意帯で明示する。
+   */
+  const outOfRangeCount = useMemo(() => {
+    if (!project) return 0;
+    return plans.filter(
+      (p) =>
+        p.scheduledDate < project.startDate ||
+        (p.dueDate ?? p.scheduledDate) > project.endDate,
+    ).length;
+  }, [plans, project]);
 
   const visibleItems = useMemo(
     () => (viewItemId === 'all' ? items : items.filter((i) => i.id === viewItemId)),
@@ -288,6 +305,20 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
           </>
         }
       />
+
+      {outOfRangeCount > 0 && (
+        <div
+          role="status"
+          className="border-border bg-accent text-text-secondary mx-8 mt-4 flex items-start gap-2 rounded-lg border px-3 py-2 text-mini"
+        >
+          <TriangleAlert className="text-brand mt-px size-4 shrink-0" aria-hidden />
+          <span>
+            プロジェクト期間（{project.startDate} 〜 {project.endDate}）の外にある予定が{' '}
+            {outOfRangeCount} 件あります。期間の端に寄せて表示しているため、実際の日付とはずれています。
+            プロジェクト期間を広げるか、予定の日付を期間内に直してください。
+          </span>
+        </div>
+      )}
 
       {members.length === 0 ? (
         <EmptyHint projectId={projectId} />

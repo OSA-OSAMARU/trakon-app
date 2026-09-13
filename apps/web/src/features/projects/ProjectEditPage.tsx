@@ -29,7 +29,7 @@ import {
 import { ApiClientError } from '@/lib/api';
 import { cn } from '@/components/ui/utils';
 import { moveItem, useDragReorder } from '@/lib/reorder';
-import { projectsApi, projectsQueryKey, type ProjectItem } from './api';
+import { projectsApi, projectsQueryKey, type PlansDateRange, type ProjectItem } from './api';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD 形式で入力してください');
 
@@ -87,8 +87,15 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
       qc.invalidateQueries({ queryKey: projectsQueryKey.all });
       toast.success('プロジェクトを更新しました');
     },
-    onError: (err) =>
-      toast.error(err instanceof ApiClientError ? err.message : '更新に失敗しました'),
+    onError: (err) => {
+      // 期間が既存予定を含まない場合 (#155)。toast は消えてしまうので、
+      // 原因の日付フィールド直下にも残す。
+      if (err instanceof ApiClientError && err.code === 'PLANS_OUT_OF_RANGE') {
+        form.setError('startDate', { type: 'server', message: err.message });
+        form.setError('endDate', { type: 'server', message: '' });
+      }
+      toast.error(err instanceof ApiClientError ? err.message : '更新に失敗しました');
+    },
   });
 
   if (projectQuery.isLoading) return <PageSkeleton />;
@@ -128,12 +135,15 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="開始日" error={form.formState.errors.startDate?.message}>
-                <DateField {...form.register('startDate')} />
+                {/* 既存予定より後ろへは動かせない (#155) */}
+                <DateField {...form.register('startDate')} max={project.plansDateRange?.min} />
               </Field>
               <Field label="終了日" error={form.formState.errors.endDate?.message}>
-                <DateField {...form.register('endDate')} />
+                {/* 既存予定より手前へは動かせない (#155) */}
+                <DateField {...form.register('endDate')} min={project.plansDateRange?.max} />
               </Field>
             </div>
+            <PlansRangeHint range={project.plansDateRange} />
             <div className="flex justify-end">
               <Button type="submit" disabled={updateMut.isPending || !form.formState.isDirty}>
                 {updateMut.isPending && <Loader2 className="size-4 animate-spin" />}
@@ -517,6 +527,28 @@ function ItemEditDialog({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+/**
+ * 登録済み予定の日付範囲の案内 (#155)。
+ *
+ * プロジェクト期間はこの範囲を必ず包含していなければならない。保存してから
+ * 409 で弾かれるより先に、選べる範囲を明示しておく。
+ */
+function PlansRangeHint({ range }: { range: PlansDateRange | null }) {
+  if (!range) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      登録済みの予定は {formatDate(range.min)} 〜 {formatDate(range.max)}（{range.count} 件）です。
+      この範囲を含む期間にしてください。
+    </p>
+  );
+}
+
+/** YYYY-MM-DD → YYYY/M/D */
+function formatDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return `${y}/${Number(m)}/${Number(d)}`;
 }
 
 // -----------------------------------------------------------------------------

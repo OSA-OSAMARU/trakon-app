@@ -115,6 +115,7 @@ const PROJECT: ProjectDetail = {
   progressManager: { id: yokoyama.id, name: yokoyama.name },
   overdueCount: 0,
   counts: { memberCount: 4, itemCount: 2 },
+  plansDateRange: null,
 };
 
 const noop = () => {};
