@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // supabase は apiRequest の Authorization 注入で getSession を呼ぶためモックする。
@@ -251,16 +251,33 @@ describe('MyPage', () => {
       return created;
     }
 
-    function pickFile(type = 'image/png', size = 1024) {
+    /**
+     * ファイル選択を再現する。
+     *
+     * fireEvent.change だと React の value tracking に弾かれて onChange が
+     * 呼ばれないことがある (ハンドラ側で value を '' に戻しているため、
+     * 追跡値と新しい値がどちらも '' になる)。userEvent.upload を使う。
+     *
+     * accept 属性は「ピッカーの絞り込み」でしかなく、実際には別形式のファイルも
+     * 渡ってきうる。アプリ側の検証を試したいので applyAccept: false で無効化する。
+     */
+    function setupUser() {
+      return userEvent.setup({ pointerEventsCheck: 0, applyAccept: false });
+    }
+
+    async function pickFile(
+      user: ReturnType<typeof userEvent.setup>,
+      type = 'image/png',
+      size = 1024,
+    ) {
       const input = screen.getByTestId('avatar-file-input') as HTMLInputElement;
       const file = new File(['x'], 'me.png', { type });
       Object.defineProperty(file, 'size', { value: size });
-      Object.defineProperty(input, 'files', { value: [file], configurable: true });
-      fireEvent.change(input);
+      await user.upload(input, file);
     }
 
     it('画像を選ぶとトリミングが開き、確定で POST /auth/me/avatar を送る', async () => {
-      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const user = setupUser();
       stubObjectUrl();
       stubSync();
       let uploaded: { called: boolean; entry: unknown } = { called: false, entry: null };
@@ -275,7 +292,7 @@ describe('MyPage', () => {
       renderPage();
       await waitFor(() => expect(inputByName('fullName').value).toBe('山田 太郎'));
 
-      pickFile();
+      await pickFile(user);
       await user.click(await screen.findByRole('button', { name: 'この範囲で保存' }));
 
       await waitFor(() => expect(uploaded.called).toBe(true));
@@ -288,12 +305,13 @@ describe('MyPage', () => {
     });
 
     it('PNG / JPEG 以外はサーバーへ送らずその場でエラーを出す', async () => {
+      const user = setupUser();
       stubObjectUrl();
       stubSync();
       renderPage();
       await waitFor(() => expect(inputByName('fullName').value).toBe('山田 太郎'));
 
-      pickFile('image/gif');
+      await pickFile(user, 'image/gif');
 
       expect(
         await screen.findByText('PNG または JPEG の画像を選んでください。'),
@@ -302,12 +320,13 @@ describe('MyPage', () => {
     });
 
     it('10MB を超える画像は送らずその場でエラーを出す', async () => {
+      const user = setupUser();
       stubObjectUrl();
       stubSync();
       renderPage();
       await waitFor(() => expect(inputByName('fullName').value).toBe('山田 太郎'));
 
-      pickFile('image/png', 10 * 1024 * 1024 + 1);
+      await pickFile(user, 'image/png', 10 * 1024 * 1024 + 1);
 
       expect(await screen.findByText('画像は 10MB 以下にしてください。')).toBeInTheDocument();
     });
@@ -320,7 +339,7 @@ describe('MyPage', () => {
     });
 
     it('画像設定済みなら削除でき、DELETE /auth/me/avatar を送る', async () => {
-      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      const user = setupUser();
       stubSync({ avatarUrl: 'https://s/a.webp' });
       let deleted = false;
       server.use(
