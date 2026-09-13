@@ -303,6 +303,99 @@ describe('座席上限', () => {
   });
 });
 
+describe('閲覧者の枠 (#160)', () => {
+  it('閲覧者は座席を消費せず、閲覧者枠として数える', async () => {
+    await setBillingSubscription({ organizationId, planCode: 'team', status: 'active' });
+    const { project } = await ownedProject();
+
+    // 座席を 5 名ぶん埋める (オーナー + 招待 4)
+    for (let i = 0; i < 4; i += 1) {
+      const res = await api(`/api/v1/projects/${project.id}/invitations`, {
+        method: 'POST',
+        token: ownerToken,
+        body: { email: `seat${i}@example.test`, roleType: 'editor' },
+      });
+      expect(res.status).toBe(201);
+    }
+
+    // 座席は満席でも、閲覧者はまだ招待できる
+    const viewer = await api(`/api/v1/projects/${project.id}/invitations`, {
+      method: 'POST',
+      token: ownerToken,
+      body: { email: 'viewer@example.test', roleType: 'viewer' },
+    });
+    expect(viewer.status).toBe(201);
+
+    const billing = await api<{
+      data: {
+        entitlement: {
+          usage: { seatCount: number; viewerCount: number };
+          limits: { seatLimit: number; viewerLimit: number };
+        };
+      };
+    }>('/api/v1/billing/subscription', { token: ownerToken });
+
+    expect(billing.body.data.entitlement.usage).toMatchObject({ seatCount: 5, viewerCount: 1 });
+    expect(billing.body.data.entitlement.limits).toMatchObject({ seatLimit: 5, viewerLimit: 20 });
+  });
+
+  it('座席が満席でも編集者の招待は 409、閲覧者は通る', async () => {
+    await setBillingSubscription({ organizationId, planCode: 'personal', status: 'active' });
+    const { project } = await ownedProject();
+
+    // Personal は 1 席。オーナーで埋まっている
+    const editor = await api<{ error: { code: string } }>(
+      `/api/v1/projects/${project.id}/invitations`,
+      { method: 'POST', token: ownerToken, body: { email: 'e@example.test', roleType: 'editor' } },
+    );
+    expect(editor.status).toBe(409);
+    expect(editor.body.error.code).toBe('SEAT_LIMIT_REACHED');
+
+    const viewer = await api(`/api/v1/projects/${project.id}/invitations`, {
+      method: 'POST',
+      token: ownerToken,
+      body: { email: 'v@example.test', roleType: 'viewer' },
+    });
+    expect(viewer.status).toBe(201);
+  });
+
+  it('閲覧者にも上限があり、超えると 409 VIEWER_LIMIT_REACHED', async () => {
+    await setBillingSubscription({ organizationId, planCode: 'personal', status: 'active' });
+    const { project } = await ownedProject();
+
+    // Personal の閲覧者上限は 5
+    for (let i = 0; i < 5; i += 1) {
+      const res = await api(`/api/v1/projects/${project.id}/invitations`, {
+        method: 'POST',
+        token: ownerToken,
+        body: { email: `v${i}@example.test`, roleType: 'viewer' },
+      });
+      expect(res.status).toBe(201);
+    }
+
+    const over = await api<{ error: { code: string; details?: { viewerLimit: number } } }>(
+      `/api/v1/projects/${project.id}/invitations`,
+      { method: 'POST', token: ownerToken, body: { email: 'v9@example.test', roleType: 'viewer' } },
+    );
+    expect(over.status).toBe(409);
+    expect(over.body.error.code).toBe('VIEWER_LIMIT_REACHED');
+    expect(over.body.error.details?.viewerLimit).toBe(5);
+  });
+
+  it('Free は閲覧者も招待できない (viewerLimit = 0)', async () => {
+    const { project } = await ownedProject();
+
+    const res = await api<{ error: { code: string; message: string } }>(
+      `/api/v1/projects/${project.id}/invitations`,
+      { method: 'POST', token: ownerToken, body: { email: 'v@example.test', roleType: 'viewer' } },
+    );
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('VIEWER_LIMIT_REACHED');
+    expect(res.body.error.message).toContain('現在のプランでは閲覧者を招待できません');
+  });
+});
+
 describe('組織メンバー管理', () => {
   it('会員を除外すると座席が解放されるが、プロジェクト参加者行は残る', async () => {
     await setBillingSubscription({ organizationId, planCode: 'team', status: 'active' });

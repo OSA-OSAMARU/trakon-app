@@ -10,8 +10,10 @@
 // -----------------------------------------------------------------------------
 import type { Prisma } from '@prisma/client';
 
+import { SEAT_CONSUMING_PROJECT_ROLES } from '@trakon/shared';
+
 import type { prisma } from '@trakon/db';
-import type { OrgRole } from '@trakon/shared';
+import type { OrgRole, ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 
@@ -83,6 +85,8 @@ export async function ensureOrganizationMember(
     organizationId: string;
     userId: string;
     orgRole?: OrgRole;
+    /** 組織での既定のプロジェクト権限 (#160)。座席を消費するかを決める */
+    defaultProjectRole?: ProjectRole;
     isPrimary?: boolean;
   },
 ): Promise<{ id: string; created: boolean }> {
@@ -101,6 +105,7 @@ export async function ensureOrganizationMember(
           deletedAt: null,
           joinedAt: new Date(),
           ...(input.orgRole ? { orgRole: input.orgRole } : {}),
+          ...(input.defaultProjectRole ? { defaultProjectRole: input.defaultProjectRole } : {}),
         },
       });
       return { id: existing.id, created: true };
@@ -113,6 +118,7 @@ export async function ensureOrganizationMember(
       organizationId: input.organizationId,
       userId: input.userId,
       orgRole: input.orgRole ?? 'member',
+      defaultProjectRole: input.defaultProjectRole ?? 'editor',
       isPrimary: input.isPrimary ?? false,
     },
     select: { id: true },
@@ -149,24 +155,42 @@ export async function resolvePrimaryOrganization(
 }
 
 /**
- * 座席 (会員アカウント) の消費数。
+ * 座席 (管理者・編集者) と閲覧者の消費数 (§7.3.2 / #160)。
  *
- * 有効な組織メンバー + **未受諾かつ有効期限内の招待** (§7.3.2)。
- * 招待中も座席を押さえないと、大量に招待してから一斉受諾で上限を超えられる。
+ * 有効な組織メンバー + **未受諾かつ有効期限内の招待**を数える。
+ * 招待中も枠を押さえないと、大量に招待してから一斉受諾で上限を超えられる。
+ *
+ * **閲覧者は座席を消費しない** (Figma node 263:18)。編集を一切行えないため。
+ * ただし無制限に増やせると「安いプランで閲覧アカウントを配り放題」になるので、
+ * 閲覧者にも別枠の上限 (BillingPlanSpec.viewerLimit) を設けて数える。
  */
-export async function countSeats(db: Db, organizationId: string): Promise<number> {
-  const [members, pendingInvitations] = await Promise.all([
-    db.organizationMember.count({ where: { organizationId, deletedAt: null } }),
-    db.invitation.count({
-      where: {
-        organizationId,
-        acceptedAt: null,
-        revokedAt: null,
-        expiresAt: { gt: new Date() },
-      },
+export async function countSeatUsage(
+  db: Db,
+  organizationId: string,
+): Promise<{ seatCount: number; viewerCount: number }> {
+  const seatRoles = [...SEAT_CONSUMING_PROJECT_ROLES];
+  const pendingInvitation = {
+    organizationId,
+    acceptedAt: null,
+    revokedAt: null,
+    expiresAt: { gt: new Date() },
+  } as const;
+
+  const [seatMembers, seatInvitations, viewerMembers, viewerInvitations] = await Promise.all([
+    db.organizationMember.count({
+      where: { organizationId, deletedAt: null, defaultProjectRole: { in: seatRoles } },
     }),
+    db.invitation.count({ where: { ...pendingInvitation, roleType: { in: seatRoles } } }),
+    db.organizationMember.count({
+      where: { organizationId, deletedAt: null, defaultProjectRole: 'viewer' },
+    }),
+    db.invitation.count({ where: { ...pendingInvitation, roleType: 'viewer' } }),
   ]);
-  return members + pendingInvitations;
+
+  return {
+    seatCount: seatMembers + seatInvitations,
+    viewerCount: viewerMembers + viewerInvitations,
+  };
 }
 
 /**

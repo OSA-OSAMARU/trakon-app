@@ -9,7 +9,8 @@
 // 判定する。招待中も座席を押さえないと、大量に招待してから一斉受諾で上限を超えられる。
 // -----------------------------------------------------------------------------
 import { prisma } from '@trakon/db';
-import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
+import { consumesSeat } from '@trakon/shared';
+import type { Entitlement, JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import { getMailer } from '../lib/mailer.js';
@@ -48,22 +49,60 @@ function toDTO(row: {
   id: string;
   email: string;
   roleType: string;
-  invitedMemberId: string;
+  // 組織単位の招待では NULL になりうる (#160)。この一覧はプロジェクト単位のみを扱う
+  invitedMemberId: string | null;
+  invitedName?: string | null;
   invitedByUserId: string | null;
   expiresAt: Date;
   createdAt: Date;
-  invitedMember: { name: string };
+  invitedMember: { name: string } | null;
 }): InvitationDTO {
   return {
     id: row.id,
     email: row.email,
     roleType: row.roleType as ProjectRole,
-    memberId: row.invitedMemberId,
-    memberName: row.invitedMember.name,
+    memberId: row.invitedMemberId ?? '',
+    memberName: row.invitedMember?.name ?? row.invitedName ?? row.email,
     invitedByUserId: row.invitedByUserId,
     expiresAt: row.expiresAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+/**
+ * ロールに応じた枠の空きを確認する (#160)。
+ *
+ * 閲覧者は座席 (管理者・編集者枠) を消費しないので、別枠 (viewerLimit) で判定する。
+ * 閲覧者を無制限にすると「安いプランで閲覧アカウントを配り放題」になるため、
+ * 上限そのものは残している。
+ */
+export function assertInvitationAllowed(entitlement: Entitlement, roleType: ProjectRole): void {
+  if (consumesSeat(roleType)) {
+    if (entitlement.canInviteMember) return;
+    throw new ApiException(
+      'SEAT_LIMIT_REACHED',
+      409,
+      `管理者・編集者の上限 (${entitlement.limits.seatLimit} 名) に達しています。プランを変更するか、既存のメンバー・招待を整理してください。`,
+      {
+        planCode: entitlement.effectivePlanCode,
+        seatLimit: entitlement.limits.seatLimit,
+        seatCount: entitlement.usage.seatCount,
+      },
+    );
+  }
+  if (entitlement.canInviteViewer) return;
+  throw new ApiException(
+    'VIEWER_LIMIT_REACHED',
+    409,
+    entitlement.limits.viewerLimit === 0
+      ? '現在のプランでは閲覧者を招待できません。プランを変更してください。'
+      : `閲覧者の上限 (${entitlement.limits.viewerLimit} 名) に達しています。プランを変更するか、既存の閲覧者・招待を整理してください。`,
+    {
+      planCode: entitlement.effectivePlanCode,
+      viewerLimit: entitlement.limits.viewerLimit,
+      viewerCount: entitlement.usage.viewerCount,
+    },
+  );
 }
 
 /** 未受諾かつ有効期限内の招待のみを返す (= 座席を消費している招待)。 */
@@ -153,18 +192,7 @@ export async function createInvitation(
     // 「上限です」より「そのメールは既にいます」の方が具体的な案内になるため。
     // トランザクション内で数えることで、作成との間に競合が入らない。
     const entitlement = await getEntitlement(tx, input.organizationId);
-    if (!entitlement.canInviteMember) {
-      throw new ApiException(
-        'SEAT_LIMIT_REACHED',
-        409,
-        `会員アカウントの上限 (${entitlement.limits.seatLimit} 名) に達しています。プランを変更するか、既存のメンバー・招待を整理してください。`,
-        {
-          planCode: entitlement.effectivePlanCode,
-          seatLimit: entitlement.limits.seatLimit,
-          seatCount: entitlement.usage.seatCount,
-        },
-      );
-    }
+    assertInvitationAllowed(entitlement, body.roleType);
 
     const invitation = await tx.invitation.create({
       data: {

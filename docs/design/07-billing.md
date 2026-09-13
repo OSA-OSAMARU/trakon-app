@@ -100,14 +100,32 @@ users ──< organization_members >── organizations ──|| billing_subscr
 - **プランは `organizations` に持たせない**。契約情報の唯一の正は `billing_subscriptions`。組織側にもプラン列を置くと必ず不整合を起こす
 - Stripe の Customer は請求主体に紐づける。本設計では **Personal / Team ともに組織へ紐づける**（Personal は「会員 1 名の組織」なので、仕様書 §8.1 の「Personal は本人に紐づける」と実質同一であり、プラン変更時に Customer を作り直さずに済む）
 
-### 7.3.2. 座席（会員アカウント数）の数え方
+### 7.3.2. 座席（管理者・編集者）と閲覧者の数え方
+
+**#160 で改訂**：座席は「会員アカウント数」ではなく **「管理者・編集者の数」** とする。閲覧者は座席を消費せず、別枠で数える。
 
 ```
-座席消費数 = 有効な organization_members の件数
-           + 未受諾かつ有効期限内の invitations の件数
+座席消費数   = organization_members のうち default_project_role ∈ {admin, editor} の件数
+             + 未受諾かつ有効期限内の invitations のうち role_type ∈ {admin, editor} の件数
+
+閲覧者消費数 = organization_members のうち default_project_role = 'viewer' の件数
+             + 未受諾かつ有効期限内の invitations のうち role_type = 'viewer' の件数
 ```
 
-**招待中も座席を消費する。** これを入れないと、招待を大量に送ってから一斉に受諾させることで上限を超えられてしまう。招待を取り消せば座席は解放される。
+**招待中も枠を消費する。** これを入れないと、招待を大量に送ってから一斉に受諾させることで上限を超えられてしまう。招待を取り消せば枠は解放される。
+
+**閲覧者にも上限（`BillingPlanSpec.viewerLimit`）を設ける。**「閲覧者は枠を消費しない」だけを実装すると、Personal（¥980）で閲覧アカウントを無制限に配れてしまう。編集を一切行えない相手なので座席ではないが、無料でもない、という整理。
+
+| プラン | 座席（管理者・編集者） | 閲覧者 |
+|---|---|---|
+| Free | 1 | **0**（招待そのものができない） |
+| Personal | 1 | 5 |
+| Team | 5 | 20 |
+| Enterprise | 無制限 | 無制限 |
+
+`organization_members.default_project_role` は**認可の判定には使わない**。判定は従来どおり `project_members.role_type`（§7.12）。この列は「枠を消費するか」と「プロジェクトへ追加したときの初期値」を決めるためのもの。判定軸を 2 本にしないことを優先している。
+
+上限超過時のエラーコードはロールで分ける。管理者・編集者なら `SEAT_LIMIT_REACHED`、閲覧者なら `VIEWER_LIMIT_REACHED`。
 
 ### 7.3.3. Stripe Product / Price
 

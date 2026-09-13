@@ -1,10 +1,17 @@
 import { prisma } from '@trakon/db';
 import { describe, expect, it } from 'vitest';
 
-import { createOrganization, createProject, createUser, primaryOrganizationId } from '../test/factories.js';
+import {
+  createMember,
+  createOrganization,
+  createProject,
+  createUser,
+  primaryOrganizationId,
+} from '../test/factories.js';
+import { defaultInvitationExpiresAt, generateInvitationToken } from '../lib/tokens.js';
 import {
   countActiveProjects,
-  countSeats,
+  countSeatUsage,
   defaultOrganizationName,
   ensureOrganizationForUser,
   ensureOrganizationMember,
@@ -169,20 +176,80 @@ describe('resolvePrimaryOrganization', () => {
   });
 });
 
-describe('countSeats / countActiveProjects', () => {
+describe('countSeatUsage / countActiveProjects', () => {
   it('有効な会員だけを座席として数える', async () => {
     const owner = await createUser();
     const invitee = await createUser({ withOrganization: false });
     const organizationId = await primaryOrganizationId(owner.id);
     const added = await ensureOrganizationMember(prisma, { organizationId, userId: invitee.id });
 
-    expect(await countSeats(prisma, organizationId)).toBe(2);
+    expect(await countSeatUsage(prisma, organizationId)).toEqual({
+      seatCount: 2,
+      viewerCount: 0,
+    });
 
     await prisma.organizationMember.update({
       where: { id: added.id },
       data: { deletedAt: new Date() },
     });
-    expect(await countSeats(prisma, organizationId)).toBe(1);
+    expect(await countSeatUsage(prisma, organizationId)).toEqual({
+      seatCount: 1,
+      viewerCount: 0,
+    });
+  });
+
+  it('閲覧者は座席を消費せず、閲覧者枠として別に数える (#160)', async () => {
+    const owner = await createUser();
+    const viewer = await createUser({ withOrganization: false });
+    const editor = await createUser({ withOrganization: false });
+    const organizationId = await primaryOrganizationId(owner.id);
+
+    await ensureOrganizationMember(prisma, {
+      organizationId,
+      userId: viewer.id,
+      defaultProjectRole: 'viewer',
+    });
+    await ensureOrganizationMember(prisma, {
+      organizationId,
+      userId: editor.id,
+      defaultProjectRole: 'editor',
+    });
+
+    // オーナー + 編集者 = 座席 2、閲覧者 1 は別枠
+    expect(await countSeatUsage(prisma, organizationId)).toEqual({
+      seatCount: 2,
+      viewerCount: 1,
+    });
+  });
+
+  it('保留中の招待もロール別に枠を押さえる (#160)', async () => {
+    const owner = await createUser();
+    const organizationId = await primaryOrganizationId(owner.id);
+    const project = await createProject({ createdBy: owner.id });
+    const member = await createMember({ projectId: project.id, userId: null });
+
+    const seed = async (roleType: 'editor' | 'viewer', email: string) => {
+      const { raw, hash } = generateInvitationToken();
+      void raw;
+      await prisma.invitation.create({
+        data: {
+          projectId: project.id,
+          invitedMemberId: member.id,
+          organizationId,
+          email,
+          tokenHash: hash,
+          roleType,
+          expiresAt: defaultInvitationExpiresAt(),
+        },
+      });
+    };
+    await seed('editor', 'e@example.test');
+    await seed('viewer', 'v@example.test');
+
+    expect(await countSeatUsage(prisma, organizationId)).toEqual({
+      seatCount: 2, // オーナー + 編集者の招待
+      viewerCount: 1,
+    });
   });
 
   it('アーカイブ済み・論理削除済みのプロジェクトは数えない (枠を空ける動線)', async () => {
@@ -234,6 +301,6 @@ describe('createOrganization ファクトリ', () => {
     const org = await createOrganization({ ownerUserId: user.id, name: 'テスト組織' });
 
     expect(org.name).toBe('テスト組織');
-    expect(await countSeats(prisma, org.id)).toBe(1);
+    expect(await countSeatUsage(prisma, org.id)).toEqual({ seatCount: 1, viewerCount: 0 });
   });
 });

@@ -119,3 +119,23 @@ describe('組織ロール', () => {
     });
   });
 });
+
+describe('閲覧者の上限 (#160)', () => {
+  it('全プランに viewerLimit がある', () => {
+    for (const code of BILLING_PLAN_CODES) {
+      expect(BILLING_PLANS[code]).toHaveProperty('viewerLimit');
+    }
+  });
+
+  it('Free は閲覧者を招待できない (0)', () => {
+    expect(BILLING_PLANS.free.viewerLimit).toBe(0);
+  });
+
+  it('有料プランは座席より広い閲覧者枠を持つ (無制限を含む)', () => {
+    for (const code of ['personal', 'team'] as const) {
+      const spec = BILLING_PLANS[code];
+      expect(spec.viewerLimit).not.toBeNull();
+      expect(spec.viewerLimit!).toBeGreaterThan(spec.seatLimit ?? 0);
+    }
+  });
+});

@@ -78,14 +78,15 @@ describe('invitations routes (integration)', () => {
       const res = await api<{
         data: {
           project: { id: string };
-          invitedMember: { email: string; memberType: string };
+          scope: string;
+          invitee: { email: string; roleType: string };
         };
       }>(`/api/v1/invitations/${rawToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.data.project.id).toBe(project.id);
-      expect(res.body.data.invitedMember.email).toBe('invitee@example.test');
-      expect(res.body.data.invitedMember.memberType).toBe('client');
+      expect(res.body.data.scope).toBe('project');
+      expect(res.body.data.invitee.email).toBe('invitee@example.test');
     });
 
     it('POST /:token/accept は招待先メールのユーザーが受諾でき 201 を返す', async () => {
@@ -116,12 +117,17 @@ describe('invitations routes (integration)', () => {
       });
 
       const res = await api<{
-        data: { project: { id: string }; member: { id: string } };
+        data: {
+          project: { id: string };
+          members: Array<{ id: string; projectId: string; roleType: string }>;
+        };
       }>(`/api/v1/invitations/${rawToken}/accept`, { method: 'POST', token });
 
       expect(res.status).toBe(201);
       expect(res.body.data.project.id).toBe(project.id);
-      expect(res.body.data.member.id).toBe(member.id);
+      expect(res.body.data.members).toEqual([
+        { id: member.id, projectId: project.id, roleType: 'editor' },
+      ]);
 
       // 受諾後は member.userId が埋まり、invitation.acceptedAt が立つ
       const updated = await prisma.projectMember.findUnique({

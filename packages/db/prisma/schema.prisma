@@ -96,17 +96,22 @@ model Organization {
 //   ProjectMember      … userId 任意 / 座席を消費しない / 業務操作の権限
 // -----------------------------------------------------------------------------
 model OrganizationMember {
-  id             String    @id @default(uuid(7)) @db.Uuid
-  organizationId String    @map("organization_id") @db.Uuid
-  userId         String    @map("user_id") @db.Uuid
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  organizationId     String    @map("organization_id") @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
   /// 'owner' | 'admin' | 'member' (CHECK 制約)。課金操作の可否を決める
-  orgRole        String    @default("member") @map("org_role")
+  orgRole            String    @default("member") @map("org_role")
+  /// 組織での既定のプロジェクト権限 'admin' | 'editor' | 'viewer' (CHECK 制約, #160)。
+  /// **認可の判定には使わない。** 判定は常に project_members.role_type
+  /// (PROJECT_ROLE_MATRIX)。この列は「座席を消費するか」と
+  /// 「プロジェクトへ追加したときの初期値」を決めるためのもの。
+  defaultProjectRole String    @default("editor") @map("default_project_role")
   /// 既定の所属組織か。プロジェクト作成先の決定に使う
-  isPrimary      Boolean   @default(false) @map("is_primary")
-  joinedAt       DateTime  @default(now()) @map("joined_at") @db.Timestamptz
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+  isPrimary          Boolean   @default(false) @map("is_primary")
+  joinedAt           DateTime  @default(now()) @map("joined_at") @db.Timestamptz
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, map: "fk_om_organization_id")
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_om_user_id")
@@ -315,27 +320,33 @@ model BallEvent {
 // 設計書 §2.4.8
 // -----------------------------------------------------------------------------
 model Invitation {
-  id              String    @id @default(uuid(7)) @db.Uuid
-  projectId       String    @map("project_id") @db.Uuid
-  invitedMemberId String    @map("invited_member_id") @db.Uuid
-  email           String
+  id               String    @id @default(uuid(7)) @db.Uuid
+  /// 組織単位の招待では NULL (#160)。プロジェクト単位の招待では必須。
+  /// project_id と invited_member_id は同時に NULL / 同時に NOT NULL (ck_inv_scope)
+  projectId        String?   @map("project_id") @db.Uuid
+  invitedMemberId  String?   @map("invited_member_id") @db.Uuid
+  email            String
+  /// 招待時に入力した氏名 / 所属名 / 職種 (#160)。受諾時にアカウントが空なら引き継ぐ
+  invitedName      String?   @map("invited_name")
+  organizationName String?   @map("organization_name")
+  jobTitle         String?   @map("job_title")
   /// SHA-256 ハッシュ。生トークンは保存しない
-  tokenHash       String    @unique(map: "uq_inv_token_hash") @map("token_hash")
+  tokenHash        String    @unique(map: "uq_inv_token_hash") @map("token_hash")
   /// 受諾時に付与する権限ロール 'admin' | 'editor' | 'viewer' (CHECK 制約)
-  roleType        String    @default("editor") @map("role_type")
+  roleType         String    @default("editor") @map("role_type")
   /// 座席カウントの単位。未受諾かつ有効期限内の招待は 1 座席を消費する
-  organizationId  String    @map("organization_id") @db.Uuid
+  organizationId   String    @map("organization_id") @db.Uuid
   /// 招待者 (監査用)
-  invitedByUserId String?   @map("invited_by_user_id") @db.Uuid
-  expiresAt       DateTime  @map("expires_at") @db.Timestamptz
-  acceptedAt      DateTime? @map("accepted_at") @db.Timestamptz
-  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  invitedByUserId  String?   @map("invited_by_user_id") @db.Uuid
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
+  acceptedAt       DateTime? @map("accepted_at") @db.Timestamptz
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_inv_project_id")
-  invitedMember ProjectMember @relation(fields: [invitedMemberId], references: [id], onDelete: Cascade, map: "fk_inv_invited_member_id")
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade, map: "fk_inv_organization_id")
-  invitedBy     User?         @relation("InvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull, map: "fk_inv_invited_by_user_id")
+  project       Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade, map: "fk_inv_project_id")
+  invitedMember ProjectMember? @relation(fields: [invitedMemberId], references: [id], onDelete: Cascade, map: "fk_inv_invited_member_id")
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade, map: "fk_inv_organization_id")
+  invitedBy     User?          @relation("InvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull, map: "fk_inv_invited_by_user_id")
 
   @@index([projectId], map: "idx_inv_project_id")
   @@map("invitations")

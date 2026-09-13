@@ -18,7 +18,7 @@ import {
   type SubscriptionStatus,
 } from '@trakon/shared';
 
-import { countActiveProjects, countSeats } from '../organizations.js';
+import { countActiveProjects, countSeatUsage } from '../organizations.js';
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -51,9 +51,9 @@ export type OrganizationBillingDTO = {
  * 上限チェックなど**必要なときだけ**呼ぶ (全リクエストでは呼ばない、§7.11.1)。
  */
 export async function getEntitlement(db: Db, organizationId: string): Promise<Entitlement> {
-  const [subscription, seatCount, projectCount] = await Promise.all([
+  const [subscription, seats, projectCount] = await Promise.all([
     db.billingSubscription.findUnique({ where: { organizationId } }),
-    countSeats(db, organizationId),
+    countSeatUsage(db, organizationId),
     countActiveProjects(db, organizationId),
   ]);
 
@@ -63,7 +63,8 @@ export async function getEntitlement(db: Db, organizationId: string): Promise<En
     cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
     currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
     gracePeriodEndsAt: subscription?.gracePeriodEndsAt ?? null,
-    seatCount,
+    seatCount: seats.seatCount,
+    viewerCount: seats.viewerCount,
     projectCount,
   });
 }
@@ -72,13 +73,13 @@ export async function getEntitlement(db: Db, organizationId: string): Promise<En
 export async function getOrganizationBilling(
   organizationId: string,
 ): Promise<OrganizationBillingDTO> {
-  const [organization, subscription, seatCount, projects] = await Promise.all([
+  const [organization, subscription, seats, projects] = await Promise.all([
     prisma.organization.findUniqueOrThrow({
       where: { id: organizationId },
       select: { id: true, name: true },
     }),
     prisma.billingSubscription.findUnique({ where: { organizationId } }),
-    countSeats(prisma, organizationId),
+    countSeatUsage(prisma, organizationId),
     prisma.project.findMany({
       where: { organizationId, deletedAt: null },
       select: { id: true, createdAt: true, archivedAt: true, retainedAt: true },
@@ -93,7 +94,8 @@ export async function getOrganizationBilling(
     cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
     currentPeriodEnd: subscription?.currentPeriodEnd ?? null,
     gracePeriodEndsAt: subscription?.gracePeriodEndsAt ?? null,
-    seatCount,
+    seatCount: seats.seatCount,
+    viewerCount: seats.viewerCount,
     projectCount: activeProjects.length,
   });
 

@@ -26,6 +26,21 @@ export const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   viewer: '閲覧者',
 };
 
+/**
+ * 座席 (課金枠) を消費するロール (#160)。
+ *
+ * 閲覧者は編集を一切行えないため枠を消費しない、というのがプランの建て付け
+ * (Figma node 263:18 の「閲覧者は枠を消費しません」)。ただし無制限に増やせると
+ * 「安いプランで閲覧アカウントを配り放題」になるので、閲覧者側にも
+ * BillingPlanSpec.viewerLimit で別枠の上限を設けている。
+ */
+export const SEAT_CONSUMING_PROJECT_ROLES = ['admin', 'editor'] as const satisfies readonly ProjectRole[];
+
+/** そのロールが座席を消費するか。座席数の集計はすべてこの判定を通す。 */
+export function consumesSeat(role: ProjectRole): boolean {
+  return (SEAT_CONSUMING_PROJECT_ROLES as readonly ProjectRole[]).includes(role);
+}
+
 export const PROJECT_ROLE_DESCRIPTION: Record<ProjectRole, string> = {
   admin: 'プロジェクトの設定・参加者・制作物を管理し、TOSS でボールを次工程へ渡せます',
   editor: '予定の作成・変更・削除ができます。TOSS はできません',

@@ -78,6 +78,7 @@ const withIncludes = (inv: MockInvitation) => {
   return {
     ...inv,
     project: { id: project.id, name: project.name },
+    organization: { name: 'テスト組織' },
     invitedMember: {
       id: member.id,
       name: member.name,
@@ -97,6 +98,39 @@ const invitationTx = {
   }),
 };
 const memberTx = {
+  // 組織単位の招待では複数行をまとめて紐づける (#160)
+  updateMany: vi.fn(
+    async ({
+      where,
+      data,
+    }: {
+      where: { id: { in: string[] } };
+      data: { userId: string; roleType: string; organizationName?: string; jobTitle?: string | null };
+    }) => {
+      for (const id of where.id.in) {
+        const m = memberStore[id];
+        if (!m) continue;
+        m.userId = data.userId;
+        m.roleType = data.roleType;
+        if (data.organizationName !== undefined) m.organizationName = data.organizationName;
+        if (data.jobTitle !== undefined) m.jobTitle = data.jobTitle;
+      }
+      return { count: where.id.in.length };
+    },
+  ),
+  findMany: vi.fn(
+    async ({ where }: { where: { id?: { in: string[] }; email?: string; userId?: null } }) => {
+      if (where.id) {
+        return where.id.in
+          .map((id) => memberStore[id])
+          .filter((m): m is MockMember => !!m)
+          .map((m) => ({ id: m.id, projectId: m.projectId, roleType: m.roleType }));
+      }
+      return Object.values(memberStore)
+        .filter((m) => m.userId === null && m.email === where.email && m.deletedAt === null)
+        .map((m) => ({ id: m.id }));
+    },
+  ),
   update: vi.fn(
     async ({
       where,
@@ -338,13 +372,13 @@ describe('verifyInvitation', () => {
     seedValidInvitation();
     const res = await verifyInvitation(RAW_TOKEN);
     expect(res).toMatchObject({
+      scope: 'project',
       project: { id: 'p-1', name: 'プロジェクトA' },
-      invitedMember: {
-        id: 'm-1',
+      invitee: {
         name: '招待 太郎',
         email: 'invitee@example.com',
         organizationName: '組織X',
-        memberType: 'client',
+        roleType: 'editor',
       },
     });
     expect(res.expiresAt).toBe(new Date('2999-01-01T00:00:00Z').toISOString());
@@ -396,8 +430,9 @@ describe('acceptInvitation', () => {
     const res = await acceptInvitation({ rawToken: RAW_TOKEN, currentUserId: 'u-1' });
 
     expect(res).toEqual({
+      scope: 'project',
       project: { id: project.id, name: project.name },
-      member: { id: member.id, memberType: 'client', roleType: 'editor' },
+      members: [{ id: member.id, projectId: project.id, roleType: 'editor' }],
     });
     // member に user_id が紐付く
     expect(memberStore[member.id]!.userId).toBe('u-1');
@@ -414,7 +449,7 @@ describe('acceptInvitation', () => {
       result: 'success',
       extra: {
         projectId: project.id,
-        memberId: member.id,
+        memberIds: [member.id],
         organizationId: 'org-1',
         roleType: 'editor',
       },
@@ -436,7 +471,7 @@ describe('acceptInvitation', () => {
       jobTitle: null,
     };
     const res = await acceptInvitation({ rawToken: RAW_TOKEN, currentUserId: 'u-1' });
-    expect(res.member.memberType).toBe('client');
+    expect(res.members).toHaveLength(1);
   });
 
   it('招待が無効 (期限切れ等) なら 404', async () => {

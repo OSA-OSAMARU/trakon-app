@@ -13,6 +13,7 @@ function input(over: Partial<EntitlementInput> = {}): EntitlementInput {
     currentPeriodEnd: null,
     gracePeriodEndsAt: null,
     seatCount: 1,
+    viewerCount: 0,
     projectCount: 0,
     now: NOW,
     ...over,
@@ -134,8 +135,8 @@ describe('evaluateEntitlement — 解約予約', () => {
 describe('evaluateEntitlement — 上限と超過', () => {
   it('Free は会員 1 名・プロジェクト 2 件', () => {
     const e = evaluateEntitlement(input({ seatCount: 1, projectCount: 2 }));
-    expect(e.limits).toEqual({ seatLimit: 1, projectLimit: 2 });
-    expect(e.over).toEqual({ seats: 0, projects: 0 });
+    expect(e.limits).toEqual({ seatLimit: 1, viewerLimit: 0, projectLimit: 2 });
+    expect(e.over).toEqual({ seats: 0, viewers: 0, projects: 0 });
     expect(e.canCreateProject).toBe(false); // 上限ちょうどは作成不可 (境界値)
     expect(e.canInviteMember).toBe(false);
   });
@@ -169,7 +170,7 @@ describe('evaluateEntitlement — 上限と超過', () => {
       input({ planCode: 'team', status: 'canceled', seatCount: 4, projectCount: 7 }),
     );
     expect(e.effectivePlanCode).toBe('free');
-    expect(e.over).toEqual({ seats: 3, projects: 5 });
+    expect(e.over).toEqual({ seats: 3, viewers: 0, projects: 5 });
   });
 
   it('閲覧のみ状態では作成・招待ができない', () => {
@@ -208,5 +209,49 @@ describe('evaluateEntitlement — 入力の頑健性', () => {
   it('now を省略しても例外にならない', () => {
     const e = evaluateEntitlement({ ...input(), now: undefined });
     expect(e.level).toBe('full');
+  });
+});
+
+describe('evaluateEntitlement — 閲覧者の枠 (#160)', () => {
+  it('閲覧者は座席を消費しない (座席と別枠で数える)', () => {
+    const e = evaluateEntitlement(
+      input({ planCode: 'team', status: 'active', seatCount: 5, viewerCount: 3 }),
+    );
+    expect(e.limits.seatLimit).toBe(5);
+    expect(e.limits.viewerLimit).toBe(20);
+    expect(e.usage).toEqual({ seatCount: 5, viewerCount: 3, projectCount: 0 });
+    // 座席は満席だが、閲覧者はまだ招待できる
+    expect(e.canInviteMember).toBe(false);
+    expect(e.canInviteViewer).toBe(true);
+  });
+
+  it('閲覧者の上限に達すると canInviteViewer が false になる', () => {
+    const e = evaluateEntitlement(
+      input({ planCode: 'team', status: 'active', seatCount: 1, viewerCount: 20 }),
+    );
+    expect(e.canInviteMember).toBe(true);
+    expect(e.canInviteViewer).toBe(false);
+  });
+
+  it('Free は閲覧者も招待できない (viewerLimit = 0)', () => {
+    const e = evaluateEntitlement(input({ seatCount: 1, viewerCount: 0 }));
+    expect(e.limits.viewerLimit).toBe(0);
+    expect(e.canInviteViewer).toBe(false);
+  });
+
+  it('閲覧者の超過はメッセージに出る', () => {
+    const e = evaluateEntitlement(
+      input({ planCode: 'personal', status: 'active', seatCount: 1, viewerCount: 7 }),
+    );
+    expect(e.over.viewers).toBe(2);
+    expect(e.message).toContain('閲覧者の上限を超えています');
+  });
+
+  it('read_only のときは閲覧者も招待できない', () => {
+    const e = evaluateEntitlement(
+      input({ planCode: 'team', status: 'unpaid', seatCount: 1, viewerCount: 0 }),
+    );
+    expect(e.level).toBe('read_only');
+    expect(e.canInviteViewer).toBe(false);
   });
 });

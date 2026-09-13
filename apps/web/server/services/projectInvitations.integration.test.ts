@@ -238,13 +238,13 @@ describe('POST /invitations/:token/accept', () => {
       email: invitee.email,
     });
 
-    const res = await api<{ data: { member: { roleType: string } } }>(
+    const res = await api<{ data: { members: Array<{ roleType: string }> } }>(
       `/api/v1/invitations/${rawToken}/accept`,
       { method: 'POST', token: inviteeToken },
     );
 
     expect(res.status).toBe(201);
-    expect(res.body.data.member.roleType).toBe('admin');
+    expect(res.body.data.members[0]!.roleType).toBe('admin');
 
     // プロジェクト参加者にロールが反映される
     const member = await prisma.projectMember.findFirstOrThrow({
@@ -256,7 +256,12 @@ describe('POST /invitations/:token/accept', () => {
     const orgMember = await prisma.organizationMember.findFirstOrThrow({
       where: { organizationId: project.organizationId, userId: invitee.id },
     });
-    expect(orgMember).toMatchObject({ orgRole: 'member', deletedAt: null });
+    // 招待のロールが組織の既定ロールにもなる (#160)。管理者なので座席を消費する
+    expect(orgMember).toMatchObject({
+      orgRole: 'member',
+      defaultProjectRole: 'admin',
+      deletedAt: null,
+    });
 
     // 監査ログ
     expect(
