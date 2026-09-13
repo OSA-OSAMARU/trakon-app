@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -26,6 +26,7 @@ import { ApiClientError } from '@/lib/api';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
 import { authApi, type CurrentUser } from '@/features/auth/api';
 import { LoginInfoDialog, WithdrawDialog } from '@/features/auth/accountForms';
+import { AvatarCropper } from '@/components/trakon/AvatarCropper';
 
 /**
  * マイページ (Figma node 254:2)。
@@ -40,6 +41,9 @@ import { LoginInfoDialog, WithdrawDialog } from '@/features/auth/accountForms';
 
 /** 未選択を表す番兵。Radix Select は value='' を扱えないため。 */
 const NO_JOB_TITLE = '__none__';
+
+/** アップロード上限。server/lib/avatarStorage.ts の AVATAR_MAX_BYTES と揃える。 */
+const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
 
 const schema = z.object({
   fullName: z.string().trim().min(1, '名前は必須').max(100),
@@ -105,6 +109,7 @@ function MyPageInner({ user }: { user: CurrentUser }) {
   });
 
   const jobTitle = form.watch('jobTitle');
+  const avatar = useAvatarUpload();
 
   return (
     <>
@@ -129,16 +134,43 @@ function MyPageInner({ user }: { user: CurrentUser }) {
               <div className="flex items-center gap-4">
                 <Avatar
                   name={user.displayName || user.fullName || user.email}
+                  src={user.avatarUrl}
                   className="size-14 text-lg"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-body font-medium">プロフィール画像</p>
                   <p className="text-text-tertiary text-mini">
-                    担当者表示やコメントに使用されます
+                    担当者表示やコメントに使用されます（PNG / JPEG、10MB まで）
                   </p>
+                  {avatar.error && <p className="text-destructive mt-1 text-xs">{avatar.error}</p>}
                 </div>
-                {/* 画像のアップロードと円形トリミングは #157 で追加する */}
-                <Button type="button" variant="outline" size="sm" disabled title="準備中">
+                <input
+                  ref={avatar.inputRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  className="hidden"
+                  onChange={avatar.onFileChange}
+                  data-testid="avatar-file-input"
+                />
+                {user.avatarUrl && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => avatar.remove()}
+                    disabled={avatar.isPending}
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    画像を削除
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => avatar.inputRef.current?.click()}
+                  disabled={avatar.isPending}
+                >
                   画像を変更
                 </Button>
               </div>
@@ -239,6 +271,16 @@ function MyPageInner({ user }: { user: CurrentUser }) {
         </Card>
       </PageContainer>
 
+      {avatar.previewUrl && (
+        <AvatarCropper
+          imageSrc={avatar.previewUrl}
+          open
+          submitting={avatar.isPending}
+          onCancel={avatar.cancel}
+          onCropped={(blob) => avatar.upload(blob)}
+        />
+      )}
+
       <LoginInfoDialog
         user={user}
         open={loginInfoOpen}
@@ -247,6 +289,80 @@ function MyPageInner({ user }: { user: CurrentUser }) {
       <WithdrawDialog open={withdrawOpen} onClose={() => setWithdrawOpen(false)} />
     </>
   );
+}
+
+/**
+ * プロフィール画像の選択 → トリミング → アップロードをまとめたフック (#157)。
+ *
+ * ファイル選択の時点で拡張子とサイズを見て弾く。サーバー側でも同じ検証をするが、
+ * 10MB のファイルを送りつけてから 413 で返すのは無駄なので手前でも見る。
+ */
+function useAvatarUpload() {
+  const qc = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const clearPreview = () => {
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  const onSettled = () => {
+    qc.invalidateQueries({ queryKey: ['auth', 'sync'] });
+    clearPreview();
+  };
+
+  const uploadMut = useMutation({
+    mutationFn: (blob: Blob) => authApi.uploadAvatar(blob),
+    onSuccess: () => toast.success('プロフィール画像を更新しました'),
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '画像をアップロードできませんでした'),
+    onSettled,
+  });
+
+  const removeMut = useMutation({
+    mutationFn: () => authApi.removeAvatar(),
+    onSuccess: () => toast.success('プロフィール画像を削除しました'),
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '画像を削除できませんでした'),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['auth', 'sync'] }),
+  });
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // 同じファイルを選び直せるよう毎回クリアする
+    e.target.value = '';
+    if (!file) return;
+
+    setError(null);
+    if (file.type !== 'image/png' && file.type !== 'image/jpeg') {
+      setError('PNG または JPEG の画像を選んでください。');
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      setError('画像は 10MB 以下にしてください。');
+      return;
+    }
+    clearPreview();
+    setPreviewUrl(URL.createObjectURL(file));
+  };
+
+  return {
+    inputRef,
+    previewUrl,
+    error,
+    isPending: uploadMut.isPending || removeMut.isPending,
+    onFileChange,
+    cancel: () => {
+      clearPreview();
+      setError(null);
+    },
+    upload: (blob: Blob) => uploadMut.mutate(blob),
+    remove: () => removeMut.mutate(),
+  };
 }
 
 function Field({

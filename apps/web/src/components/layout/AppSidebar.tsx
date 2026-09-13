@@ -30,7 +30,12 @@ import { Wordmark } from '@/components/trakon/Wordmark';
 import { COMPANY, LEGAL_NAV } from '@/features/legal/companyInfo';
 
 export type SidebarProject = { id: string; name: string };
-export type SidebarUser = { displayName: string; email: string };
+export type SidebarUser = {
+  displayName: string;
+  email: string;
+  /** プロフィール画像 (#157)。未設定はイニシャル表示 */
+  avatarUrl?: string | null;
+};
 
 /**
  * ログイン後画面の左サイドバー (Figma node 9:2)。
@@ -126,7 +131,11 @@ export function AppSidebar({
                 type="button"
                 className="hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left"
               >
-                <Avatar name={user.displayName || user.email} className="size-9 text-body" />
+                <Avatar
+                  name={user.displayName || user.email}
+                  src={user.avatarUrl}
+                  className="size-9 text-body"
+                />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-body font-medium">{user.displayName}</span>
                   <span className="text-text-tertiary block truncate text-mini">
