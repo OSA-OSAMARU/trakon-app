@@ -2,12 +2,15 @@ import { prisma, type Prisma } from '@trakon/db';
 import { deriveBallHolder, type BallEventType, type BallHolderResult, type PlanState } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
-import { canProjectRole, type ProjectRole } from '@trakon/shared';
+import { getMailer } from '../lib/mailer.js';
+import { canProjectRole, resolveMemberProfile, type ProjectRole } from '@trakon/shared';
 import { toPlanDTO, type PlanDTO } from './plans.js';
 
 export type TossResult = {
   plan: PlanDTO;
   autoTossed: PlanDTO | null;
+  /** メール通知に失敗した場合の警告 (#79)。TOSS 自体は成功している */
+  warnings?: string[];
 };
 
 export type CompleteResult = {
@@ -399,6 +402,8 @@ export async function tossPlan(input: {
   currentUserId: string;
   currentMemberId: string;
   role: ProjectRole;
+  /** 通知メールに載せるリンクの起点 (#79)。未指定なら通知しない */
+  origin?: string;
 }): Promise<TossResult> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
@@ -441,7 +446,98 @@ export async function tossPlan(input: {
     await recordAudit({ tx, actorUserId: input.currentUserId, action: 'toss', planId: plan.id });
     return loadPlanWithIncludes(tx, plan.id, input.itemId);
   });
-  return { plan: toPlanDTO(result), autoTossed: null };
+
+  // 通知はコミット後に送る。送信に失敗しても TOSS は巻き戻さない (#79)。
+  // 「渡したのに戻された」より「渡ったが通知が届かなかった」方が実害が小さい。
+  const warnings = input.origin
+    ? await notifyBallTossed({
+        projectId: input.projectId,
+        successorPlanId: result.successorPlanId,
+        fromMemberName: result.progressManager?.name ?? result.fromMember?.name ?? '進行責任者',
+        origin: input.origin,
+      })
+    : [];
+
+  return {
+    plan: toPlanDTO(result),
+    autoTossed: null,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+}
+
+/**
+ * TOSS で新しくボールを持つことになった人へ通知する (#79)。
+ *
+ * 宛先は後続予定の実施者。アカウントを持つ人は通知先メール (未設定ならログイン用)、
+ * アカウントを持たない「表示されるだけの参加者」は参加者行のメール (#147 でこの用途のために
+ * 追加された列) を使う。どちらも無ければ何もしない。
+ *
+ * **TOSS の取り消しでは送らない。** 誤操作の取り消しは日常的に起こる操作で、そのたびに
+ * 「取り消されました」が届くと受け手に不要な負担がかかる。取り消しは履歴に残る。
+ */
+async function notifyBallTossed(input: {
+  projectId: string;
+  successorPlanId: string | null;
+  fromMemberName: string;
+  origin: string;
+}): Promise<string[]> {
+  if (!input.successorPlanId) return [];
+
+  const successor = await prisma.plan.findFirst({
+    where: { id: input.successorPlanId, deletedAt: null },
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+      scheduledDate: true,
+      item: { select: { id: true, name: true, project: { select: { name: true } } } },
+      executor: {
+        select: {
+          name: true,
+          email: true,
+          organizationName: true,
+          jobTitle: true,
+          user: {
+            select: {
+              organizationName: true,
+              jobTitle: true,
+              notificationEmail: true,
+              email: true,
+              avatarPath: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!successor?.executor) return [];
+
+  const to = resolveMemberProfile({
+    member: {
+      name: successor.executor.name,
+      organizationName: successor.executor.organizationName,
+      jobTitle: successor.executor.jobTitle,
+      email: successor.executor.email,
+    },
+    user: successor.executor.user,
+  }).email;
+  if (!to) return [];
+
+  try {
+    await getMailer().sendBallTossed({
+      to,
+      projectName: successor.item.project.name,
+      itemName: successor.item.name,
+      planTitle: successor.title,
+      fromName: input.fromMemberName,
+      dueDate: (successor.dueDate ?? successor.scheduledDate).toISOString().slice(0, 10),
+      planUrl: `${input.origin}/projects/${input.projectId}/items/${successor.item.id}`,
+    });
+  } catch (err) {
+    console.error('[tossPlan] failed to send ball-tossed email:', err);
+    return ['TOSS は完了しましたが、通知メールの送信に失敗しました。'];
+  }
+  return [];
 }
 
 // -----------------------------------------------------------------------------

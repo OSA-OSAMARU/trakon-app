@@ -40,11 +40,33 @@ export type SubscriptionCanceledEmail = {
   organizationName: string;
 };
 
+/**
+ * TOSS でボールが渡ったことの通知 (#79)。
+ *
+ * **TOSS の取り消しでは送らない。** 誤 TOSS の取り消しは日常的に起こりうる操作で、
+ * そのたびに「あなたへの依頼は取り消されました」が届くと受け手に不要な負担がかかる。
+ * 取り消しは ball_events に残るので追跡性は失われない。
+ */
+export type BallTossedEmail = {
+  to: string;
+  projectName: string;
+  itemName: string;
+  /** 受け取った側が対応する予定 (後続予定) */
+  planTitle: string;
+  /** TOSS した進行責任者の表示名 */
+  fromName: string;
+  /** 後続予定の期限。未設定なら null */
+  dueDate: string | null;
+  /** 予定を開く URL */
+  planUrl: string;
+};
+
 export type Mailer = {
   sendInvitation(input: InvitationEmail): Promise<void>;
   sendTrialWillEnd(input: TrialWillEndEmail): Promise<void>;
   sendPaymentFailed(input: PaymentFailedEmail): Promise<void>;
   sendSubscriptionCanceled(input: SubscriptionCanceledEmail): Promise<void>;
+  sendBallTossed(input: BallTossedEmail): Promise<void>;
 };
 
 // -----------------------------------------------------------------------------
@@ -74,6 +96,12 @@ function createDummyMailer(): Mailer {
       // eslint-disable-next-line no-console
       console.log(
         `[trakon][mailer/dummy] subscription_canceled -> ${input.to} | org="${input.organizationName}"`,
+      );
+    },
+    async sendBallTossed(input) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[trakon][mailer/dummy] ball_tossed -> ${input.to} | project="${input.projectName}" plan="${input.planTitle}" from="${input.fromName}" url=${input.planUrl}`,
       );
     },
   };
@@ -167,6 +195,21 @@ function createResendMailer(apiKey: string, fromEmail: string): Mailer {
           `${escapeHtml(input.organizationName)} の契約は解約されました。`,
           'ご利用いただきありがとうございました。',
           'プロジェクトやメンバーのデータは削除していません。再契約すればそのまま続きから利用できます。',
+        ],
+      });
+    },
+
+    // ボールが渡ったことの通知 (#79)。件名だけで「自分の番だ」と分かるようにする。
+    async sendBallTossed(input) {
+      await sendSimple(client, fromEmail, {
+        to: input.to,
+        subject: `【TRAKON】${input.planTitle} があなたの番になりました`,
+        heading: 'ボールがあなたに渡りました',
+        lines: [
+          `${escapeHtml(input.fromName)} さんから「${escapeHtml(input.planTitle)}」が渡されました。`,
+          `プロジェクト: ${escapeHtml(input.projectName)} / 制作物: ${escapeHtml(input.itemName)}`,
+          ...(input.dueDate ? [`期限: ${escapeHtml(input.dueDate)}`] : []),
+          `<a href="${escapeHtml(input.planUrl)}">スケジュールを開く</a>`,
         ],
       });
     },
