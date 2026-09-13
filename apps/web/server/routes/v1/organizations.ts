@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 
 import { prisma } from '@trakon/db';
-import { ORG_ROLES, type OrgRole } from '@trakon/shared';
+import { JOB_TITLES, ORG_ROLES, PROJECT_ROLES } from '@trakon/shared';
 import { z } from 'zod';
 
 import { ApiException } from '../../lib/errors.js';
@@ -10,9 +10,38 @@ import { requireOrgBillingRole, requireOrgMember } from '../../middleware/orgAut
 import { attachCurrentUserId } from '../../middleware/projectAuth.js';
 import { retainedProjectsBodySchema } from '../../schemas/billing.js';
 import { setRetainedProjects } from '../../services/billing/freeze.js';
+import {
+  changeDefaultProjectRole,
+  createOrgInvitation,
+  listMemberProjects,
+  listOrgMembers,
+  revokeOrgInvitation,
+} from '../../services/orgMembers.js';
 
-const updateOrgMemberBodySchema = z.object({
-  orgRole: z.enum(ORG_ROLES),
+const updateOrgMemberBodySchema = z
+  .object({
+    orgRole: z.enum(ORG_ROLES).optional(),
+    /** 画面の「権限」列 (#160)。参加中の全プロジェクトへ反映される */
+    defaultProjectRole: z.enum(PROJECT_ROLES).optional(),
+  })
+  .refine((v) => v.orgRole !== undefined || v.defaultProjectRole !== undefined, {
+    message: 'At least one field must be provided.',
+  });
+
+const createOrgInvitationBodySchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  email: z.string().trim().toLowerCase().email().max(320),
+  organizationName: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().trim().max(255).optional(),
+  ),
+  jobTitle: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.enum(JOB_TITLES).nullable().optional(),
+  ),
+  roleType: z.enum(PROJECT_ROLES),
+  /** 任意。未選択でも招待できる (組織に招いてから割り当てる運用も可) */
+  projectIds: z.array(z.string().uuid()).max(50).optional(),
 });
 
 /**
@@ -25,22 +54,47 @@ export const organizationsRoute = new Hono()
   .use('*', attachCurrentUserId())
   .use('*', requireOrgMember())
 
-  .get('/me/members', async (c) => {
+  /**
+   * 会員 (座席) の一覧。**保留中の招待も混ぜて返す** (#160)。
+   *
+   * 認可を requireOrgBillingRole に引き上げている。同僚の通知先メール・所属・職種を
+   * 返すようになったため、一般の会員には見せない (設計書 §3.4b)。
+   */
+  .get('/me/members', requireOrgBillingRole(), async (c) => {
     const { organizationId } = c.get('organization');
-    const rows = await prisma.organizationMember.findMany({
-      where: { organizationId, deletedAt: null },
-      orderBy: [{ orgRole: 'asc' }, { joinedAt: 'asc' }],
-      include: { user: { select: { id: true, displayName: true, email: true } } },
+    return c.json({ data: await listOrgMembers(organizationId) });
+  })
+
+  /** 参加PJ ドロワー (#160)。ボール保持数つきで返す */
+  .get('/me/members/:userId/projects', requireOrgBillingRole(), async (c) => {
+    const { organizationId } = c.get('organization');
+    const userId = c.req.param('userId');
+    return c.json({ data: await listMemberProjects(organizationId, userId) });
+  })
+
+  /** 組織単位の招待を作る (#160) */
+  .post('/me/invitations', requireOrgBillingRole(), async (c) => {
+    const { organizationId } = c.get('organization');
+    const body = createOrgInvitationBodySchema.parse(await c.req.json());
+    const origin = new URL(c.req.url).origin;
+    const result = await createOrgInvitation({
+      organizationId,
+      actorUserId: c.get('currentUserId'),
+      origin,
+      body,
     });
-    return c.json({
-      data: rows.map((m) => ({
-        userId: m.userId,
-        orgRole: m.orgRole as OrgRole,
-        displayName: m.user.displayName,
-        email: m.user.email,
-        joinedAt: m.joinedAt.toISOString(),
-      })),
+    return c.json({ data: { id: result.invitationId }, ...(result.warnings ? { warnings: result.warnings } : {}) }, 201);
+  })
+
+  /** 招待の取り消し = 枠の解放 (#160) */
+  .delete('/me/invitations/:invitationId', requireOrgBillingRole(), async (c) => {
+    const { organizationId } = c.get('organization');
+    await revokeOrgInvitation({
+      organizationId,
+      invitationId: c.req.param('invitationId'),
+      actorUserId: c.get('currentUserId'),
     });
+    return c.body(null, 204);
   })
 
   .patch('/me/members/:userId', requireOrgBillingRole(), async (c) => {
@@ -55,28 +109,49 @@ export const organizationsRoute = new Hono()
     if (!target) throw new ApiException('NOT_FOUND', 404, 'Organization member not found.');
 
     // オーナーは 1 名固定。降格させると課金操作の主体が居なくなる
-    if (target.orgRole === 'owner') {
+    if (body.orgRole !== undefined && target.orgRole === 'owner') {
       throw new ApiException('CANNOT_CHANGE_OWNER', 409, '組織のオーナーは変更できません。');
     }
 
-    await prisma.$transaction([
-      prisma.organizationMember.update({
-        where: { id: target.id },
-        data: { orgRole: body.orgRole },
-      }),
-      prisma.auditLog.create({
-        data: {
-          actorUserId: c.get('currentUserId'),
-          action: 'org_role_changed',
-          resourceType: 'organization',
-          resourceId: organizationId,
-          result: 'success',
-          extra: { targetUserId: userId, from: target.orgRole, to: body.orgRole },
-        },
-      }),
-    ]);
+    if (body.orgRole !== undefined) {
+      await prisma.$transaction([
+        prisma.organizationMember.update({
+          where: { id: target.id },
+          data: { orgRole: body.orgRole },
+        }),
+        prisma.auditLog.create({
+          data: {
+            actorUserId: c.get('currentUserId'),
+            action: 'org_role_changed',
+            resourceType: 'organization',
+            resourceId: organizationId,
+            result: 'success',
+            extra: { targetUserId: userId, from: target.orgRole, to: body.orgRole },
+          },
+        }),
+      ]);
+    }
 
-    return c.json({ data: { userId, orgRole: body.orgRole } });
+    // 権限 (#160) は参加中の全プロジェクトへ反映する。
+    // 座席の空き・最後の管理者の検証もこの中で行う。
+    const roleResult =
+      body.defaultProjectRole !== undefined
+        ? await changeDefaultProjectRole({
+            organizationId,
+            targetUserId: userId,
+            defaultProjectRole: body.defaultProjectRole,
+            actorUserId: c.get('currentUserId'),
+          })
+        : null;
+
+    return c.json({
+      data: {
+        userId,
+        orgRole: body.orgRole ?? target.orgRole,
+        defaultProjectRole: roleResult?.defaultProjectRole ?? null,
+        affectedProjectIds: roleResult?.affectedProjectIds ?? [],
+      },
+    });
   })
 
   .delete('/me/members/:userId', requireOrgBillingRole(), async (c) => {

@@ -50,6 +50,8 @@ export async function ensureOrganizationForUser(
       organizationId: existing.id,
       userId: input.userId,
       orgRole: 'owner',
+      // オーナーは常に管理者 (#160)。自分の組織から締め出されないための最終防衛線
+      defaultProjectRole: 'admin',
       isPrimary: true,
     });
     return { organizationId: existing.id };
@@ -67,6 +69,8 @@ export async function ensureOrganizationForUser(
       organizationId: organization.id,
       userId: input.userId,
       orgRole: 'owner',
+      // オーナーは常に管理者 (#160)
+      defaultProjectRole: 'admin',
       isPrimary: true,
     },
   });
