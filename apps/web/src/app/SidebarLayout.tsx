@@ -1,11 +1,9 @@
-import { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
-import { ProfileModal } from '@/features/auth/ProfileModal';
 import { projectsApi, projectsQueryKey } from '@/features/projects/api';
 import { useEntitlement } from '@/features/billing/useEntitlement';
 import { BillingStatusBanner } from '@/features/billing/BillingStatusBanner';
@@ -19,7 +17,6 @@ export function SidebarLayout() {
   const navigate = useNavigate();
   const { data } = useCurrentUser();
   const user = data && !data.requiresProfileCompletion ? data.user : null;
-  const [profileOpen, setProfileOpen] = useState(false);
 
   const projectsQuery = useQuery({
     queryKey: projectsQueryKey.all,
@@ -45,7 +42,7 @@ export function SidebarLayout() {
       <AppSidebar
         projects={projectsQuery.data ?? []}
         user={user}
-        onOpenProfile={() => setProfileOpen(true)}
+        onSignOut={signOut}
         planBadge={planBadge}
       />
 
@@ -54,16 +51,6 @@ export function SidebarLayout() {
         <BillingStatusBanner />
         <Outlet />
       </main>
-
-      {user && (
-        <ProfileModal
-          user={user}
-          open={profileOpen}
-          onClose={() => setProfileOpen(false)}
-          onSignOut={signOut}
-        />
-      )}
-
     </div>
   );
 }

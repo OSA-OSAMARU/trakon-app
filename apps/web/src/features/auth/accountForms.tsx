@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, LogOut } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { WITHDRAWAL_REASONS, type WithdrawalReason } from '@trakon/shared';
 
@@ -12,7 +12,6 @@ import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Avatar } from '@/components/ui/avatar';
 import {
   Dialog,
   DialogContent,
@@ -24,33 +23,33 @@ import {
 import { ApiClientError } from '@/lib/api';
 import { authApi, type CurrentUser } from './api';
 
+/**
+ * ログイン情報 (メール / パスワード) と退会のダイアログ (#156)。
+ *
+ * マイページ (features/account/MyPage) から開く。プロフィール本体の編集はページ側に
+ * 置き、ここには「認証情報を触る操作」と「取り返しのつかない操作」だけを残す。
+ */
+
 const AUTH_METHOD_LABEL: Record<CurrentUser['primaryAuthMethod'], string> = {
   password: 'メール + パスワード',
   google: 'Google',
   microsoft: 'Microsoft',
 };
 
-type Mode = 'view' | 'profile' | 'email' | 'password' | 'withdraw';
+type LoginInfoMode = 'menu' | 'email' | 'password';
 
-/**
- * プロフィール / 認証情報モーダル (プロトタイプ ProfileModal 準拠)。
- * - 表示 / 氏名・表示名の編集 / パスワード変更 を切替
- * - 更新は PATCH /auth/me、成功時 ['auth','sync'] を invalidate
- */
-export function ProfileModal({
+export function LoginInfoDialog({
   user,
   open,
   onClose,
-  onSignOut,
 }: {
   user: CurrentUser;
   open: boolean;
   onClose: () => void;
-  onSignOut: () => void;
 }) {
-  const [mode, setMode] = useState<Mode>('view');
+  const [mode, setMode] = useState<LoginInfoMode>('menu');
   const close = () => {
-    setMode('view');
+    setMode('menu');
     onClose();
   };
 
@@ -58,162 +57,73 @@ export function ProfileModal({
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>アカウント</DialogTitle>
+          <DialogTitle>ログイン情報を変更</DialogTitle>
           <DialogDescription>
-            {mode === 'password'
-              ? 'パスワードを変更します。'
-              : mode === 'email'
-                ? 'メールアドレスを変更します。確認メールで変更を確定します。'
-                : mode === 'profile'
-                  ? 'お名前と表示名を変更します。'
-                  : mode === 'withdraw'
-                    ? 'アカウントを退会します。この操作は取り消せません。'
-                    : 'プロフィール情報を確認・編集できます。'}
+            {mode === 'email'
+              ? 'メールアドレスを変更します。確認メールで変更を確定します。'
+              : mode === 'password'
+                ? 'パスワードを変更します。'
+                : 'ログインに使用するメールアドレスと認証情報を管理します。'}
           </DialogDescription>
         </DialogHeader>
 
-        {mode === 'view' && (
-          <ViewMode
-            user={user}
-            onEdit={() => setMode('profile')}
-            onChangeEmail={() => setMode('email')}
-            onChangePassword={() => setMode('password')}
-            onWithdraw={() => setMode('withdraw')}
-            onSignOut={onSignOut}
-            onClose={close}
-          />
+        {mode === 'menu' && (
+          <>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+              <dt className="text-muted-foreground">ログインメールアドレス</dt>
+              <dd className="break-all">{user.email}</dd>
+              <dt className="text-muted-foreground">認証方法</dt>
+              <dd>{AUTH_METHOD_LABEL[user.primaryAuthMethod]}</dd>
+            </dl>
+            {user.primaryAuthMethod === 'password' ? (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => setMode('email')}>
+                  メールアドレスを変更
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setMode('password')}>
+                  パスワードを変更
+                </Button>
+              </div>
+            ) : (
+              // OAuth ユーザーはメール / パスワードを TRAKON 側で持たないため変更できない
+              <p className="text-sm text-muted-foreground">
+                {AUTH_METHOD_LABEL[user.primaryAuthMethod]} でログインしています。
+                メールアドレスとパスワードは {AUTH_METHOD_LABEL[user.primaryAuthMethod]} 側で変更してください。
+              </p>
+            )}
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={close}>
+                閉じる
+              </Button>
+            </DialogFooter>
+          </>
         )}
-        {mode === 'profile' && <ProfileForm user={user} onDone={() => setMode('view')} />}
-        {mode === 'email' && <EmailForm user={user} onDone={() => setMode('view')} />}
-        {mode === 'password' && <PasswordForm onDone={() => setMode('view')} />}
-        {mode === 'withdraw' && <WithdrawForm onCancel={() => setMode('view')} />}
+        {mode === 'email' && <EmailForm user={user} onDone={() => setMode('menu')} />}
+        {mode === 'password' && <PasswordForm onDone={() => setMode('menu')} />}
       </DialogContent>
     </Dialog>
   );
 }
 
-function ViewMode({
-  user,
-  onEdit,
-  onChangeEmail,
-  onChangePassword,
-  onWithdraw,
-  onSignOut,
-  onClose,
-}: {
-  user: CurrentUser;
-  onEdit: () => void;
-  onChangeEmail: () => void;
-  onChangePassword: () => void;
-  onWithdraw: () => void;
-  onSignOut: () => void;
-  onClose: () => void;
-}) {
+export function WithdrawDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <>
-      <div className="flex items-center gap-3">
-        <Avatar
-          name={user.displayName || user.fullName || user.email}
-          className="size-12 text-base"
-        />
-        <div className="min-w-0">
-          <p className="truncate font-medium">{user.displayName}</p>
-          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
-        </div>
-      </div>
-
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-        <dt className="text-muted-foreground">氏名</dt>
-        <dd>{user.fullName}</dd>
-        <dt className="text-muted-foreground">表示名</dt>
-        <dd>{user.displayName}</dd>
-        <dt className="text-muted-foreground">認証方法</dt>
-        <dd>{AUTH_METHOD_LABEL[user.primaryAuthMethod]}</dd>
-      </dl>
-
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" onClick={onEdit}>
-          プロフィールを編集
-        </Button>
-        {user.primaryAuthMethod === 'password' && (
-          <Button variant="outline" size="sm" onClick={onChangeEmail}>
-            メールアドレスを変更
-          </Button>
-        )}
-        {user.primaryAuthMethod === 'password' && (
-          <Button variant="outline" size="sm" onClick={onChangePassword}>
-            パスワードを変更
-          </Button>
-        )}
-      </div>
-
-      <DialogFooter className="sm:justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onWithdraw}
-          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-        >
-          退会する
-        </Button>
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={onSignOut}>
-            <LogOut className="size-4" />
-            サインアウト
-          </Button>
-          <Button variant="outline" size="sm" onClick={onClose}>
-            閉じる
-          </Button>
-        </div>
-      </DialogFooter>
-    </>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>退会する</DialogTitle>
+          <DialogDescription>
+            アカウントを退会します。この操作は取り消せません。
+          </DialogDescription>
+        </DialogHeader>
+        <WithdrawForm onCancel={onClose} />
+      </DialogContent>
+    </Dialog>
   );
 }
 
-const profileSchema = z.object({
-  fullName: z.string().trim().min(1, '氏名は必須').max(100),
-  displayName: z.string().trim().min(1, '表示名は必須').max(50),
-});
-type ProfileValues = z.infer<typeof profileSchema>;
-
-function ProfileForm({ user, onDone }: { user: CurrentUser; onDone: () => void }) {
-  const qc = useQueryClient();
-  const form = useForm<ProfileValues>({
-    resolver: zodResolver(profileSchema),
-    defaultValues: { fullName: user.fullName, displayName: user.displayName },
-  });
-
-  const mut = useMutation({
-    mutationFn: (v: ProfileValues) => authApi.updateProfile(v),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['auth', 'sync'] });
-      toast.success('プロフィールを更新しました');
-      onDone();
-    },
-    onError: (e) =>
-      toast.error(e instanceof ApiClientError ? e.message : '更新に失敗しました'),
-  });
-
-  return (
-    <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-3">
-      <FormField label="氏名" error={form.formState.errors.fullName?.message}>
-        <Input {...form.register('fullName')} autoFocus />
-      </FormField>
-      <FormField label="表示名" error={form.formState.errors.displayName?.message}>
-        <Input {...form.register('displayName')} />
-      </FormField>
-      <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onDone} disabled={mut.isPending}>
-          キャンセル
-        </Button>
-        <Button type="submit" disabled={mut.isPending}>
-          {mut.isPending && <Loader2 className="size-4 animate-spin" />}
-          保存
-        </Button>
-      </DialogFooter>
-    </form>
-  );
-}
+// -----------------------------------------------------------------------------
+// メールアドレス変更
+// -----------------------------------------------------------------------------
 
 const emailSchema = (currentEmail: string) =>
   z.object({
@@ -292,6 +202,10 @@ function EmailForm({ user, onDone }: { user: CurrentUser; onDone: () => void }) 
   );
 }
 
+// -----------------------------------------------------------------------------
+// パスワード変更
+// -----------------------------------------------------------------------------
+
 const passwordSchema = z
   .object({
     newPassword: z
@@ -318,8 +232,7 @@ function PasswordForm({ onDone }: { onDone: () => void }) {
       toast.success('パスワードを変更しました');
       onDone();
     },
-    onError: (e) =>
-      toast.error(e instanceof ApiClientError ? e.message : '変更に失敗しました'),
+    onError: (e) => toast.error(e instanceof ApiClientError ? e.message : '変更に失敗しました'),
   });
 
   return (
@@ -343,10 +256,15 @@ function PasswordForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+// -----------------------------------------------------------------------------
+// 退会
+// -----------------------------------------------------------------------------
+
 const withdrawSchema = z.object({
-  reason: z.enum(WITHDRAWAL_REASONS.map((r) => r.value) as [WithdrawalReason, ...WithdrawalReason[]], {
-    errorMap: () => ({ message: '退会理由を選択してください' }),
-  }),
+  reason: z.enum(
+    WITHDRAWAL_REASONS.map((r) => r.value) as [WithdrawalReason, ...WithdrawalReason[]],
+    { errorMap: () => ({ message: '退会理由を選択してください' }) },
+  ),
   confirm: z.literal('退会', {
     errorMap: () => ({ message: '「退会」と正しく入力してください' }),
   }),
@@ -374,8 +292,7 @@ function WithdrawForm({ onCancel }: { onCancel: () => void }) {
       await supabase.auth.signOut({ scope: 'local' });
       navigate('/login', { replace: true });
     },
-    onError: (e) =>
-      toast.error(e instanceof ApiClientError ? e.message : '退会に失敗しました'),
+    onError: (e) => toast.error(e instanceof ApiClientError ? e.message : '退会に失敗しました'),
   });
 
   return (
@@ -388,7 +305,7 @@ function WithdrawForm({ onCancel }: { onCancel: () => void }) {
               <input
                 type="radio"
                 value={r.value}
-                className="size-4 shrink-0 appearance-none rounded-full border border-input bg-background checked:border-[5px] checked:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="border-input bg-background checked:border-primary focus-visible:ring-ring size-4 shrink-0 appearance-none rounded-full border checked:border-[5px] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
                 {...form.register('reason')}
               />
               {r.label}
@@ -396,7 +313,7 @@ function WithdrawForm({ onCancel }: { onCancel: () => void }) {
           ))}
         </div>
         {form.formState.errors.reason && (
-          <p className="text-xs text-destructive">{form.formState.errors.reason.message}</p>
+          <p className="text-destructive text-xs">{form.formState.errors.reason.message}</p>
         )}
       </fieldset>
 
@@ -414,7 +331,7 @@ function WithdrawForm({ onCancel }: { onCancel: () => void }) {
         <Button
           type="submit"
           disabled={mut.isPending}
-          className="bg-destructive text-white hover:bg-destructive/90"
+          className="bg-destructive hover:bg-destructive/90 text-white"
         >
           {mut.isPending && <Loader2 className="size-4 animate-spin" />}
           退会する
@@ -437,7 +354,7 @@ function FormField({
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-destructive text-xs">{error}</p>}
     </div>
   );
 }

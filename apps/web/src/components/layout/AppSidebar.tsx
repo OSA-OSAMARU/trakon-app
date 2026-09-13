@@ -6,8 +6,11 @@ import {
   List,
   MoreHorizontal,
   Plus,
+  CreditCard,
+  LogOut,
   Settings2,
   Share2,
+  UserRound,
   Users,
 } from 'lucide-react';
 
@@ -39,13 +42,13 @@ export type SidebarUser = { displayName: string; email: string };
 export function AppSidebar({
   projects,
   user,
-  onOpenProfile,
+  onSignOut,
   planBadge,
 }: {
   projects: SidebarProject[];
   /** 読込中・未ログインは null（フッターを Skeleton にする） */
   user: SidebarUser | null;
-  onOpenProfile: () => void;
+  onSignOut: () => void;
   /** プランバッジ。契約状態から注入する。null なら非表示 (Free) */
   planBadge?: { label: string; variant: 'brand' | 'secondary' } | null;
 }) {
@@ -113,26 +116,56 @@ export function AppSidebar({
         </div>
       </nav>
 
-      {/* ユーザー情報フッター: 全ページ共通で常時表示 (読込中は Skeleton) */}
+      {/* ユーザー情報フッター: 全ページ共通で常時表示 (読込中は Skeleton)。
+          アカウント系の導線はここに集約する (Figma node 254:2 のメニュー)。 */}
       <div className="border-border shrink-0 border-t px-3 py-3">
         {user ? (
-          <button
-            type="button"
-            onClick={onOpenProfile}
-            className="hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left"
-          >
-            <Avatar name={user.displayName || user.email} className="size-9 text-body" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-body font-medium">{user.displayName}</span>
-              <span className="text-text-tertiary block truncate text-mini">アカウント設定</span>
-              {planBadge && (
-                <Badge variant={planBadge.variant} size="sm" className="mt-1 font-bold">
-                  {planBadge.label}
-                </Badge>
-              )}
-            </span>
-            <MoreHorizontal className="text-text-tertiary size-[18px] shrink-0" aria-hidden />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left"
+              >
+                <Avatar name={user.displayName || user.email} className="size-9 text-body" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-body font-medium">{user.displayName}</span>
+                  <span className="text-text-tertiary block truncate text-mini">
+                    {user.email}
+                  </span>
+                  {planBadge && (
+                    <Badge variant={planBadge.variant} size="sm" className="mt-1 font-bold">
+                      {planBadge.label}
+                    </Badge>
+                  )}
+                </span>
+                <MoreHorizontal className="text-text-tertiary size-[18px] shrink-0" aria-hidden />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="top" className="w-52">
+              <DropdownMenuItem asChild>
+                <Link to="/settings/profile">
+                  <UserRound className="size-4" />
+                  マイページ
+                </Link>
+              </DropdownMenuItem>
+              {/* 組織のメンバー管理画面は #160 で追加する */}
+              <DropdownMenuItem disabled>
+                <Users className="size-4" />
+                メンバー管理
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/settings/billing">
+                  <CreditCard className="size-4" />
+                  プラン・お支払い
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={onSignOut}>
+                <LogOut className="size-4" />
+                ログアウト
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : (
           <div className="flex items-center gap-3 px-3 py-2">
             <Skeleton className="size-9 rounded-full" />

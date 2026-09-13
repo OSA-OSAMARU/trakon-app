@@ -29,7 +29,7 @@ const meta: Meta<typeof AppSidebar> = {
   args: {
     projects: PROJECTS,
     user: { displayName: '佐藤 航', email: 'sato@example.jp' },
-    onOpenProfile: () => {},
+    onSignOut: () => {},
   },
 };
 

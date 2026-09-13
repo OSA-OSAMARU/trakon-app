@@ -14,6 +14,7 @@ import { CommercePage } from './features/legal/CommercePage';
 import { CompanyPage } from './features/legal/CompanyPage';
 import { PrivacyPage } from './features/legal/PrivacyPage';
 import { TermsPage } from './features/legal/TermsPage';
+import { MyPage } from '@/features/account/MyPage';
 import { BillingPage } from './features/billing/BillingPage';
 import { ItemSchedulePage } from './features/plans/ItemSchedulePage';
 import { MembersPage } from './features/projects/MembersPage';
@@ -54,6 +55,7 @@ export function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/settings/profile" element={<MyPage />} />
           <Route path="/settings/billing" element={<BillingPage />} />
           <Route path="/projects" element={<ProjectListPage />} />
           <Route path="/projects/new" element={<ProjectCreatePage />} />
