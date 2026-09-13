@@ -30,7 +30,7 @@ import {
 } from './api';
 
 /**
- * SC-18 プランと請求 (設計書 §4.4 / 章7)。
+ * SC-18 プラン・お支払い (設計書 §4.4 / 章7、Figma node 263:18)。
  *
  * 状態表現の方針 (§4.5.2):
  *   - 課金起因の制限は**隠さず**、無効化 + 理由 + 復旧導線 (CTA) を出す
@@ -41,6 +41,13 @@ export function BillingPage() {
   const [params, setParams] = useSearchParams();
   const checkoutResult = params.get('checkout');
   const [awaitingWebhook, setAwaitingWebhook] = useState(checkoutResult === 'success');
+  /**
+   * プラン一覧の開閉 (Figma node 263:18)。
+   * デザインでは「現在のプラン」カードだけが見えていて、比較表は
+   * 「プランを変更」を押してから出る。ただし未契約 (実効 Free) のときは
+   * アップグレード導線が 1 クリック奥に隠れてしまうので最初から開いておく。
+   */
+  const [plansOpen, setPlansOpen] = useState(false);
   const qc = useQueryClient();
 
   const query = useQuery({
@@ -129,8 +136,12 @@ export function BillingPage() {
 
   return (
     <>
-      <PageHeader title="プランと請求" />
-      <PageContainer>
+      <PageHeader
+        width="md"
+        title="プラン・お支払い"
+        description="契約内容と利用状況、決済情報を管理します"
+      />
+      <PageContainer width="md">
         {query.isLoading && <Skeleton className="h-64 w-full rounded-md" />}
         {query.error && <p className="text-sm text-destructive">契約情報の取得に失敗しました</p>}
 
@@ -151,22 +162,25 @@ export function BillingPage() {
               onOpenPortal={() => portalMut.mutate()}
               onCancel={() => cancelMut.mutate()}
               onResume={() => resumeMut.mutate()}
+              onChangePlan={() => setPlansOpen((v) => !v)}
               disabled={anyPending || awaitingWebhook}
             />
 
-            <PlanComparison
-              // 契約プランではなく**実効プラン**で「利用中」を決める。
-              // 解約済みは実効 Free なので、同じプランへ申し込み直せる (§7.6)
-              current={query.data.entitlement.effectivePlanCode}
-              hasSubscription={hasLiveSubscription(query.data.subscription.status)}
-              canManage={query.data.orgRole === 'owner' || query.data.orgRole === 'admin'}
-              disabled={anyPending || awaitingWebhook}
-              onSelect={(plan) =>
-                hasLiveSubscription(query.data.subscription.status)
-                  ? changePlanMut.mutate(plan)
-                  : checkoutMut.mutate(plan)
-              }
-            />
+            {(plansOpen || query.data.entitlement.effectivePlanCode === 'free') && (
+              <PlanComparison
+                // 契約プランではなく**実効プラン**で「利用中」を決める。
+                // 解約済みは実効 Free なので、同じプランへ申し込み直せる (§7.6)
+                current={query.data.entitlement.effectivePlanCode}
+                hasSubscription={hasLiveSubscription(query.data.subscription.status)}
+                canManage={query.data.orgRole === 'owner' || query.data.orgRole === 'admin'}
+                disabled={anyPending || awaitingWebhook}
+                onSelect={(plan) =>
+                  hasLiveSubscription(query.data.subscription.status)
+                    ? changePlanMut.mutate(plan)
+                    : checkoutMut.mutate(plan)
+                }
+              />
+            )}
 
             {query.data.frozenProjectIds.length > 0 && (
               <RetainedProjectsCard
@@ -197,17 +211,24 @@ function Notice({ children, icon }: { children: React.ReactNode; icon?: React.Re
   );
 }
 
+/** 上限が null (無制限) のときは「無制限」と出す。 */
+function limitLabel(limit: number | null): string {
+  return limit === null ? '無制限' : String(limit);
+}
+
 function CurrentPlanCard({
   billing,
   onOpenPortal,
   onCancel,
   onResume,
+  onChangePlan,
   disabled,
 }: {
   billing: OrganizationBilling;
   onOpenPortal: () => void;
   onCancel: () => void;
   onResume: () => void;
+  onChangePlan: () => void;
   disabled: boolean;
 }) {
   const { subscription, entitlement } = billing;
@@ -220,28 +241,57 @@ function CurrentPlanCard({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">現在のプラン</CardTitle>
+        <CardTitle className="text-base">現在のプラン</CardTitle>
+        <p className="text-text-secondary mt-0.5 text-mini">
+          このアカウントの契約内容と利用上限を確認できます
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        {/* 契約中のプランを 1 か所で言い切る (Figma node 263:18) */}
+        <div className="bg-brand-subtle flex items-center justify-between gap-4 rounded-lg px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-text-tertiary text-tiny font-medium tracking-wider uppercase">
+              Current Plan
+            </p>
+            <p className="mt-0.5 text-2xl font-semibold">{spec.label}</p>
+            <p className="text-text-secondary mt-1 text-mini">
+              会員アカウント {limitLabel(spec.seatLimit)}人 / アクティブプロジェクト{' '}
+              {limitLabel(spec.projectLimit)}
+              {spec.monthlyPriceJpyIncTax
+                ? ` / 月額 ${spec.monthlyPriceJpyIncTax.toLocaleString()} 円 (税込)`
+                : ''}
+            </p>
+          </div>
           <Badge variant={entitlement.effectivePlanCode === 'free' ? 'secondary' : 'brand'}>
-            {spec.label}
+            利用中
           </Badge>
         </div>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        <p className="text-sm text-muted-foreground">{entitlement.message}</p>
 
+        <div>
+          <h3 className="text-body font-semibold">利用状況</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <UsageTile
+              label="会員アカウント枠"
+              value={`${entitlement.usage.seatCount} / ${limitLabel(entitlement.limits.seatLimit)} アカウント`}
+            />
+            <UsageTile
+              label="所有プロジェクト"
+              value={
+                entitlement.limits.projectLimit === null
+                  ? '無制限'
+                  : `${entitlement.usage.projectCount} / ${entitlement.limits.projectLimit} 件`
+              }
+            />
+          </div>
+          <p className="text-text-tertiary mt-2 text-mini">
+            招待されて参加しているプロジェクトは、所有プロジェクト数に含まれません。
+          </p>
+        </div>
+
+        <p className="text-muted-foreground text-sm">{entitlement.message}</p>
+
+        {/* 契約の細目。Figma には無いが、無いと解約予定や変更予定に気づけない */}
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <Row label="月額">
-            {spec.monthlyPriceJpyIncTax === null
-              ? '個別見積'
-              : `${spec.monthlyPriceJpyIncTax.toLocaleString()} 円 (税込)`}
-          </Row>
-          <Row label="会員アカウント">
-            {entitlement.usage.seatCount} / {entitlement.limits.seatLimit ?? '無制限'}
-          </Row>
-          <Row label="プロジェクト">
-            {entitlement.usage.projectCount} / {entitlement.limits.projectLimit ?? '無制限'}
-          </Row>
           {/* 終了した契約の日付は残っているだけなので出さない (解約後に
               「次回更新」が出ると更新されるように読めてしまう) */}
           {live && subscription.trialEnd && (
@@ -274,31 +324,55 @@ function CurrentPlanCard({
           </Notice>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          {subscription.hasStripeCustomer && (
-            <Button variant="outline" onClick={onOpenPortal} disabled={disabled || !canManage}>
-              お支払い方法・請求書
-            </Button>
-          )}
+        <div className="border-border flex flex-wrap items-center justify-end gap-2 border-t pt-4">
           {live &&
             (subscription.cancelAtPeriodEnd ? (
-              <Button variant="outline" onClick={onResume} disabled={disabled || !canManage}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onResume}
+                disabled={disabled || !canManage}
+                className="mr-auto"
+              >
                 解約を取り消す
               </Button>
             ) : (
-              <Button variant="outline" onClick={onCancel} disabled={disabled || !canManage}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onCancel}
+                disabled={disabled || !canManage}
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive mr-auto"
+              >
                 解約する
               </Button>
             ))}
+          {subscription.hasStripeCustomer && (
+            <Button variant="outline" onClick={onOpenPortal} disabled={disabled || !canManage}>
+              決済情報を管理
+            </Button>
+          )}
+          <Button onClick={onChangePlan} disabled={disabled || !canManage}>
+            プランを変更
+          </Button>
         </div>
 
         {!canManage && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             プランの変更・解約は組織のオーナーまたは管理者のみが行えます。
           </p>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function UsageTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-accent rounded-lg px-4 py-3">
+      <p className="text-text-secondary text-mini">{label}</p>
+      <p className="mt-1 text-lg font-semibold">{value}</p>
+    </div>
   );
 }
 
@@ -341,12 +415,16 @@ function PlanComparison({
               </div>
               <p className="text-2xl font-semibold">
                 {spec.monthlyPriceJpyIncTax?.toLocaleString() ?? '—'}
-                <span className="ml-1 text-xs font-normal text-muted-foreground">円 / 月(税込)</span>
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  円 / 月(税込)
+                </span>
               </p>
               <ul className="grid gap-1 text-xs text-muted-foreground">
                 <li>会員アカウント {spec.seatLimit ?? '無制限'} 名</li>
                 <li>プロジェクト {spec.projectLimit ?? '無制限'} 件</li>
-                <li>{spec.trialHours ? `無料トライアル ${spec.trialHours} 時間` : 'トライアルなし'}</li>
+                <li>
+                  {spec.trialHours ? `無料トライアル ${spec.trialHours} 時間` : 'トライアルなし'}
+                </li>
               </ul>
               {code !== 'free' && !isCurrent && (
                 <Button
@@ -398,7 +476,8 @@ function RetainedProjectsCard({
 
   const projects = projectsQuery.data ?? [];
   const active = projects.filter((p) => p.archivedAt === null);
-  const current = selected ?? active.filter((p) => !frozenProjectIds.includes(p.id)).map((p) => p.id);
+  const current =
+    selected ?? active.filter((p) => !frozenProjectIds.includes(p.id)).map((p) => p.id);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -433,9 +512,7 @@ function RetainedProjectsCard({
                 />
                 <label htmlFor={`retain-${p.id}`} className="flex items-center gap-2">
                   {p.name}
-                  {frozenProjectIds.includes(p.id) && (
-                    <Badge variant="secondary">閲覧のみ</Badge>
-                  )}
+                  {frozenProjectIds.includes(p.id) && <Badge variant="secondary">閲覧のみ</Badge>}
                 </label>
               </li>
             );

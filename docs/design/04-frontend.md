@@ -172,7 +172,7 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 | `/projects/:projectId/members?tab=manage` **(v1.1)** | SC-11 参加者管理 | ✅ | `ProjectMembersManagePage` |
 | `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（**v1.2：プロジェクト管理者のみ**） |
 | **`/settings/profile`** **(#156)** | **SC-15 マイページ（プロフィール／ログイン情報／退会）** | ✅ | **`MyPage`**（`features/account/MyPage.tsx`） |
-| **`/settings/billing`** **(v1.2)** | **SC-18 プラン・お支払い** | ✅ | **`BillingPage`** |
+| **`/settings/billing`** **(v1.2)** | **SC-18 プラン・お支払い**（#156 で「プランと請求」から改称） | ✅ | **`BillingPage`** |
 | **`/settings/members`** **(#160、未実装)** | **組織のメンバー管理（座席の内訳・権限・参加PJ）** | ✅ | **`OrgMembersPage`** |
 | `*` | 404 | — | `NotFoundPage` |
 
