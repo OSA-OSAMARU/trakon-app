@@ -154,10 +154,9 @@ describe('SidebarLayout', () => {
       'href',
       '/settings/billing',
     );
-    // 組織のメンバー管理は #160 で実装するまで非活性
     expect(screen.getByRole('menuitem', { name: 'メンバー管理' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
+      'href',
+      '/settings/members',
     );
 
     await user.click(screen.getByRole('menuitem', { name: 'ログアウト' }));

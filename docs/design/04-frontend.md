@@ -173,7 +173,7 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 | `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（**v1.2：プロジェクト管理者のみ**） |
 | **`/settings/profile`** **(#156)** | **SC-15 マイページ（プロフィール／ログイン情報／退会）** | ✅ | **`MyPage`**（`features/account/MyPage.tsx`） |
 | **`/settings/billing`** **(v1.2)** | **SC-18 プラン・お支払い**（#156 で「プランと請求」から改称） | ✅ | **`BillingPage`** |
-| **`/settings/members`** **(#160、未実装)** | **組織のメンバー管理（座席の内訳・権限・参加PJ）** | ✅ | **`OrgMembersPage`** |
+| **`/settings/members`** **(#160)** | **組織のメンバー管理（座席の内訳・権限・参加PJ）** | ✅ | **`OrgMembersPage`**（`features/organization/`） |
 | `*` | 404 | — | `NotFoundPage` |
 
 > Phase 1 で予約：ダッシュボードの「進行判定フィルター」タブ（FR-DASH-08）。
@@ -607,6 +607,10 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 
 **表示項目（PRD SC-11）**：
 - 上部タブ：「**メンバー**」（既定、SC-17 メンバーかんばん）／「**管理**」（SC-11 本画面）
+- **参加者は 2 種類あり、バッジで見分けられる（#160）**
+  - **「アカウント」**（`project_members.user_id` あり）… 契約の枠を消費し、ログインして編集できる。権限セレクトを出す
+  - **「表示のみ」**（`user_id` なし）… 予定上に名前が出るだけ。ログインできないので権限セレクトは出さない
+  - 前者の一覧・招待・権限変更は**組織のメンバー管理（`/settings/members`）**が担当する。この画面はプロジェクト単位の並び順・表示名を扱う
 - テーブル：名前／所属名／メール／種別（client/production）／sortOrder／受諾状態（accepted/pending/expired）／操作
 - ソートハンドルで `sortOrder` 変更（ドラッグ＆ドロップ、Phase 0）
 - 「+ 参加者を追加」ボタン → モーダル
