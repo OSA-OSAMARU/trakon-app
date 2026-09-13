@@ -16,8 +16,8 @@ export type CurrentUser = {
   notificationEmail: string | null;
   /** 実際の通知先 (#156)。notificationEmail ?? email。表示用 */
   effectiveNotificationEmail: string;
-  /** プロフィール画像の Storage キー (#157) */
-  avatarPath: string | null;
+  /** プロフィール画像の表示 URL (#157)。署名付き・1 時間有効。未設定は null */
+  avatarUrl: string | null;
   primaryAuthMethod: 'password' | 'google' | 'microsoft';
   createdAt: string;
 };
@@ -53,6 +53,13 @@ export const authApi = {
     apiRequest<CurrentUser>('/auth/me/complete-signup', { method: 'POST', body }),
   updateProfile: (body: UpdateProfileInput) =>
     apiRequest<CurrentUser>('/auth/me', { method: 'PATCH', body }),
+  /** プロフィール画像のアップロード (#157)。切り抜き済みの正方形 blob を送る */
+  uploadAvatar: (file: Blob, filename = 'avatar.webp') => {
+    const form = new FormData();
+    form.append('file', file, filename);
+    return apiRequest<CurrentUser>('/auth/me/avatar', { method: 'POST', body: form });
+  },
+  removeAvatar: () => apiRequest<CurrentUser>('/auth/me/avatar', { method: 'DELETE' }),
   deleteAccount: (body: DeleteAccountInput) =>
     apiRequest<{ ok: true }>('/auth/me', { method: 'DELETE', body }),
 };

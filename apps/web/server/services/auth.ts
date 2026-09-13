@@ -6,6 +6,13 @@ import { uuidv7 } from 'uuidv7';
 import { ApiException } from '../lib/errors.js';
 import { defaultOrganizationName, ensureOrganizationForUser } from './organizations.js';
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js';
+import {
+  assertValidAvatar,
+  buildAvatarPath,
+  removeAvatarObject,
+  signAvatarUrl,
+  uploadAvatarObject,
+} from '../lib/avatarStorage.js';
 
 /**
  * 個々の await をハードタイムアウトで包む。サーバーレスの 30 秒無音ハングを根絶し、
@@ -46,8 +53,11 @@ export type CurrentUserDTO = {
    * 呼び出し側が毎回フォールバックを書かなくて済むよう DTO で解決しておく。
    */
   effectiveNotificationEmail: string;
-  /** プロフィール画像の Storage キー (#157)。未設定は null */
-  avatarPath: string | null;
+  /**
+   * プロフィール画像の表示 URL (#157)。非公開バケットの署名付き URL (1 時間有効)。
+   * 未設定・署名失敗は null (画面は頭文字アバターへフォールバックする)。
+   */
+  avatarUrl: string | null;
   primaryAuthMethod: 'password' | 'google' | 'microsoft';
   createdAt: string;
 };
@@ -64,9 +74,9 @@ function toDTO(user: {
   organizationName?: string | null;
   jobTitle?: string | null;
   notificationEmail?: string | null;
-  avatarPath?: string | null;
   primaryAuthMethod: string;
   createdAt: Date;
+  avatarUrl?: string | null;
 }): CurrentUserDTO {
   return {
     id: user.id,
@@ -80,10 +90,18 @@ function toDTO(user: {
       notificationEmail: user.notificationEmail ?? null,
       email: user.email,
     }),
-    avatarPath: user.avatarPath ?? null,
+    avatarUrl: user.avatarUrl ?? null,
     primaryAuthMethod: user.primaryAuthMethod as CurrentUserDTO['primaryAuthMethod'],
     createdAt: user.createdAt.toISOString(),
   };
+}
+
+/**
+ * アイコンの署名付き URL を付けた DTO を返す (#157)。
+ * 非公開バケットなので保存しているのはキーだけで、URL は都度発行する。
+ */
+async function toDTOSigned(user: Parameters<typeof toDTO>[0] & { avatarPath?: string | null }) {
+  return toDTO({ ...user, avatarUrl: await signAvatarUrl(user.avatarPath ?? null) });
 }
 
 type TrakonProvider = 'google' | 'microsoft';
@@ -125,7 +143,7 @@ export async function syncUser(authUserId: string, jwtEmail: string): Promise<Sy
     // auth.users.email が変わり JWT の email クレームも新メールになる。public.users.email は
     // ここで追随させる (webhook を使わず、次回 sync でリコンサイルする)。
     const reconciled = await reconcileEmailIfChanged(existing, jwtEmail);
-    return { status: 'ready', user: toDTO(reconciled) };
+    return { status: 'ready', user: await toDTOSigned(reconciled) };
   }
 
   const supabase = getSupabaseAdmin();
@@ -190,7 +208,7 @@ export async function syncUser(authUserId: string, jwtEmail: string): Promise<Sy
     return user;
   });
 
-  return { status: 'ready', user: toDTO(created) };
+  return { status: 'ready', user: await toDTOSigned(created) };
 }
 
 type UserRow = NonNullable<Awaited<ReturnType<typeof prisma.user.findUnique>>>;
@@ -333,7 +351,7 @@ export async function completeSignup(input: {
   );
   step('transaction:done');
 
-  return toDTO(user);
+  return toDTOSigned(user);
 }
 
 /**
@@ -394,13 +412,85 @@ export async function updateProfile(input: {
     return u;
   });
 
-  return toDTO(updated);
+  return toDTOSigned(updated);
+}
+
+/**
+ * プロフィール画像を差し替える (#157)。
+ *
+ * 検証 → アップロード → DB 更新 → 旧オブジェクト削除 の順に行う。
+ * 先に旧を消すと、アップロード失敗時にアイコンだけ消えた状態が残る。
+ */
+export async function replaceAvatar(input: {
+  authUserId: string;
+  bytes: Uint8Array;
+  size: number;
+  declaredType: string;
+}): Promise<CurrentUserDTO> {
+  const existing = await prisma.user.findUnique({ where: { authUserId: input.authUserId } });
+  if (!existing || existing.deletedAt) {
+    throw new ApiException('PROFILE_NOT_COMPLETED', 404, 'User profile not found.');
+  }
+
+  const mimeType = assertValidAvatar({
+    size: input.size,
+    declaredType: input.declaredType,
+    bytes: input.bytes,
+  });
+  const path = buildAvatarPath(existing.id, mimeType);
+  await uploadAvatarObject({ path, bytes: input.bytes, mimeType });
+
+  const previous = existing.avatarPath;
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({ where: { id: existing.id }, data: { avatarPath: path } });
+    await tx.auditLog.create({
+      data: {
+        actorUserId: u.id,
+        action: 'update_profile',
+        resourceType: 'user',
+        resourceId: u.id,
+        result: 'success',
+        extra: { field: 'avatar' },
+      },
+    });
+    return u;
+  });
+  await removeAvatarObject(previous);
+
+  return toDTOSigned(updated);
+}
+
+/** プロフィール画像を外す (#157)。未設定でも冪等に成功する。 */
+export async function removeAvatar(authUserId: string): Promise<CurrentUserDTO> {
+  const existing = await prisma.user.findUnique({ where: { authUserId } });
+  if (!existing || existing.deletedAt) {
+    throw new ApiException('PROFILE_NOT_COMPLETED', 404, 'User profile not found.');
+  }
+  if (!existing.avatarPath) return toDTOSigned(existing);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({ where: { id: existing.id }, data: { avatarPath: null } });
+    await tx.auditLog.create({
+      data: {
+        actorUserId: u.id,
+        action: 'update_profile',
+        resourceType: 'user',
+        resourceId: u.id,
+        result: 'success',
+        extra: { field: 'avatar', removed: true },
+      },
+    });
+    return u;
+  });
+  await removeAvatarObject(existing.avatarPath);
+
+  return toDTOSigned(updated);
 }
 
 export async function getCurrentUser(authUserId: string): Promise<CurrentUserDTO | null> {
   const user = await prisma.user.findUnique({ where: { authUserId } });
   // 退会済み (deletedAt) は未存在として扱う (締め出し)。
-  return user && !user.deletedAt ? toDTO(user) : null;
+  return user && !user.deletedAt ? toDTOSigned(user) : null;
 }
 
 /**
@@ -441,8 +531,7 @@ export async function deleteAccount(input: {
           email: `deleted+${existing.id}@trakon.invalid`,
           fullName: '退会済みユーザー',
           displayName: '退会済みユーザー',
-          // 個人を特定しうる項目は残さない (#156 / #157)。
-          // Storage 上のアイコン実体の削除は #157 の avatarStorage 側で行う。
+          // 個人を特定しうる項目は残さない (#156 / #157)
           organizationName: null,
           jobTitle: null,
           notificationEmail: null,

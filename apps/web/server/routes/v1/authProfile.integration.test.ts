@@ -23,7 +23,7 @@ type MeBody = {
     jobTitle: string | null;
     notificationEmail: string | null;
     effectiveNotificationEmail: string;
-    avatarPath: string | null;
+    avatarUrl: string | null;
   };
 };
 
@@ -38,7 +38,7 @@ describe('プロフィール項目 (#156)', () => {
       expect(res.body.data.jobTitle).toBeNull();
       expect(res.body.data.notificationEmail).toBeNull();
       expect(res.body.data.effectiveNotificationEmail).toBe('login@example.test');
-      expect(res.body.data.avatarPath).toBeNull();
+      expect(res.body.data.avatarUrl).toBeNull();
     });
 
     it('通知先メールを設定するとそちらが実効値になる', async () => {

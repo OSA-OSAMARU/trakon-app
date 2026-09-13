@@ -60,7 +60,7 @@ const baseUser: CurrentUser = {
   jobTitle: null,
   notificationEmail: null,
   effectiveNotificationEmail: 'me@example.com',
-  avatarPath: null,
+  avatarUrl: null,
   primaryAuthMethod: 'password',
   createdAt: '2026-01-01T00:00:00Z',
 };
