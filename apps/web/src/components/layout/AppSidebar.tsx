@@ -157,10 +157,11 @@ export function AppSidebar({
                   マイページ
                 </Link>
               </DropdownMenuItem>
-              {/* 組織のメンバー管理画面は #160 で追加する */}
-              <DropdownMenuItem disabled>
-                <Users className="size-4" />
-                メンバー管理
+              <DropdownMenuItem asChild>
+                <Link to="/settings/members">
+                  <Users className="size-4" />
+                  メンバー管理
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/settings/billing">

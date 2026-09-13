@@ -20,6 +20,8 @@ import { Loader2, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare, GripVertica
 import { MemberKanbanTab } from '@/features/plans/MemberKanbanTab';
 import { toast } from 'sonner';
 
+import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -283,7 +285,23 @@ function ManageTab({ projectId }: { projectId: string }) {
                         <GripVertical className="size-4" />
                       </span>
                     </TableCell>
-                    <TableCell className="font-medium">{m.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-2">
+                        <Avatar name={m.name} src={m.avatarUrl} className="size-6 text-mini" />
+                        <span className="truncate">{m.name}</span>
+                        {/* アカウントを持つ人と、予定上に表示されるだけの人を見分けられるようにする (#160)。
+                            前者だけが契約の枠を消費し、編集操作ができる。 */}
+                        {m.userId ? (
+                          <Badge variant="secondary" size="sm">
+                            アカウント
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" size="sm">
+                            表示のみ
+                          </Badge>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {m.organizationName || '—'}
                     </TableCell>
@@ -300,28 +318,35 @@ function ManageTab({ projectId }: { projectId: string }) {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Select
-                        value={m.roleType}
-                        onValueChange={(v) =>
-                          roleMut.mutate({ memberId: m.id, roleType: v as ProjectRole })
-                        }
-                        disabled={roleMut.isPending || isLastAdmin(m)}
-                      >
-                        <SelectTrigger className="h-8 w-32" aria-label={`${m.name} の権限`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PROJECT_ROLES.map((r) => (
-                            <SelectItem key={r} value={r}>
-                              {PROJECT_ROLE_LABEL[r]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {isLastAdmin(m) && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          管理者は 1 名以上必要です
-                        </p>
+                      {m.userId ? (
+                        <>
+                          <Select
+                            value={m.roleType}
+                            onValueChange={(v) =>
+                              roleMut.mutate({ memberId: m.id, roleType: v as ProjectRole })
+                            }
+                            disabled={roleMut.isPending || isLastAdmin(m)}
+                          >
+                            <SelectTrigger className="h-8 w-32" aria-label={`${m.name} の権限`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PROJECT_ROLES.map((r) => (
+                                <SelectItem key={r} value={r}>
+                                  {PROJECT_ROLE_LABEL[r]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {isLastAdmin(m) && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              管理者は 1 名以上必要です
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        /* ログインできない相手に権限を持たせても意味がないので出さない (#160) */
+                        <span className="text-muted-foreground text-xs">—</span>
                       )}
                     </TableCell>
                     <TableCell>

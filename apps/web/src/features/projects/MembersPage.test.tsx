@@ -417,3 +417,37 @@ describe('MembersPage 権限ロール (integration)', () => {
     );
   });
 });
+
+describe('参加者の区別 (#160)', () => {
+  it('アカウントを持つ人と表示されるだけの人をバッジで見分けられる', async () => {
+    stubMembers([
+      member({ id: 'm1', userId: 'u1', name: 'アカウントの人' }),
+      member({ id: 'm2', userId: null, name: '表示だけの人' }),
+    ]);
+    renderMembers('/projects/p1/members?tab=manage');
+
+    const withAccount = (await screen.findByText('アカウントの人')).closest('tr')!;
+    const displayOnly = screen.getByText('表示だけの人').closest('tr')!;
+
+    expect(within(withAccount).getByText('アカウント')).toBeInTheDocument();
+    expect(within(displayOnly).getByText('表示のみ')).toBeInTheDocument();
+  });
+
+  it('ログインできない相手には権限セレクトを出さない', async () => {
+    stubMembers([
+      member({ id: 'm1', userId: 'u1', name: 'アカウントの人', roleType: 'admin' }),
+      member({ id: 'm2', userId: null, name: '表示だけの人' }),
+      // 管理者が 1 名だとセレクトが無効化されるため、もう 1 名管理者を置く
+      member({ id: 'm3', userId: 'u3', name: 'もう一人の管理者', roleType: 'admin' }),
+    ]);
+    renderMembers('/projects/p1/members?tab=manage');
+
+    await screen.findByText('アカウントの人');
+    expect(
+      screen.getByRole('combobox', { name: 'アカウントの人 の権限' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: '表示だけの人 の権限' }),
+    ).not.toBeInTheDocument();
+  });
+});
