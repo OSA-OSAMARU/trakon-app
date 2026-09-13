@@ -23,8 +23,16 @@ export type ProjectSummary = {
   overdueCount: number;
 };
 
+/** 登録済み予定が占める日付範囲 (#155)。予定が 1 件も無ければ null。 */
+export type PlansDateRange = { min: string; max: string; count: number };
+
 export type ProjectDetail = ProjectSummary & {
   counts: { memberCount: number; itemCount: number };
+  /**
+   * プロジェクト期間はこの範囲を必ず包含していなければならない (#155)。
+   * 期間外の予定は縦型スケジュールに描画先の行が無く、表示が壊れるため。
+   */
+  plansDateRange: PlansDateRange | null;
 };
 
 export type ProjectItem = {

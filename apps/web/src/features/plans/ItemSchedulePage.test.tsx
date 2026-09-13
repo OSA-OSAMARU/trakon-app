@@ -152,6 +152,7 @@ const projectDetail: ProjectDetail = {
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
   counts: { memberCount: 2, itemCount: 2 },
+  plansDateRange: null,
 };
 
 const items: ProjectItem[] = [
@@ -525,6 +526,41 @@ describe('ItemSchedulePage (integration)', () => {
   // ---------------------------------------------------------------------------
   // ヘッダのナビゲーションリンク
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // プロジェクト期間外の予定への注意帯 (#155)
+  // ---------------------------------------------------------------------------
+
+  it('期間外の予定があると注意帯を出す (#155)', async () => {
+    setupReads({
+      plansResp: [
+        ...PLANS,
+        makePlan({
+          id: 'plan-out',
+          title: '期間外の予定',
+          category: 'design',
+          colorTheme: null,
+          // プロジェクト期間は 2026-06-18 〜 2026-06-25
+          scheduledDate: '2026-07-01',
+          dueDate: '2026-07-03',
+          ballState: 'in_progress',
+        }),
+      ],
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText(/の外にある予定が 1 件あります。/),
+    ).toBeInTheDocument();
+  });
+
+  it('すべて期間内なら注意帯は出さない (#155)', async () => {
+    setupReads();
+    renderPage();
+
+    await screen.findByText('トップページ');
+    expect(screen.queryByText(/の外にある予定が/)).not.toBeInTheDocument();
+  });
+
   it('ヘッダにメンバー / プロジェクト情報リンクを描画する', async () => {
     setupReads();
     renderPage();

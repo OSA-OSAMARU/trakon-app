@@ -37,6 +37,7 @@ const stubSummary: ProjectSummary = {
 const stubDetail: ProjectDetail = {
   ...stubSummary,
   counts: { memberCount: 1, itemCount: 2 },
+  plansDateRange: null,
 };
 
 const stubItem: ProjectItem = {
