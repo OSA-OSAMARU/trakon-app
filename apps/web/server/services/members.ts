@@ -1,4 +1,5 @@
 import { prisma } from '@trakon/db';
+import { resolveMemberProfile } from '@trakon/shared';
 import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
@@ -9,17 +10,45 @@ export type MemberDTO = {
   id: string;
   userId: string | null;
   name: string;
-  /** スケジュール担当者としての登録ではメールは任意 (未登録は null) */
+  /**
+   * 表示用メール。アカウント紐付け済みなら users の通知先メール
+   * (未設定ならログイン用メール)、未紐付けなら参加者行のメール (#156)
+   */
   email: string | null;
+  /** 所属名。アカウント紐付け済みなら users 側が正 (#156) */
   organizationName: string;
   memberType: MemberType;
-  /** 職種 (#147)。表示用で権限には影響しない */
+  /** 職種 (#147)。アカウント紐付け済みなら users 側が正 (#156)。権限には影響しない */
   jobTitle: JobTitle | null;
+  /** プロフィール画像の Storage キー (#157)。アカウント未紐付けは null */
+  avatarPath: string | null;
   /** 権限ロール (FR-ROLE-01)。操作権限の唯一の根拠 */
   roleType: ProjectRole;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+};
+
+/**
+ * 参加者行に紐付くアカウントの、プロフィール解決に必要な列だけ (#156)。
+ * すべての findMany / update でこの include を使う。
+ */
+export const MEMBER_USER_SELECT = {
+  select: {
+    organizationName: true,
+    jobTitle: true,
+    notificationEmail: true,
+    email: true,
+    avatarPath: true,
+  },
+} as const;
+
+type MemberUserRow = {
+  organizationName: string | null;
+  jobTitle: string | null;
+  notificationEmail: string | null;
+  email: string;
+  avatarPath: string | null;
 };
 
 function toDTO(m: {
@@ -34,15 +63,28 @@ function toDTO(m: {
   sortOrder: number;
   createdAt: Date;
   updatedAt: Date;
+  user?: MemberUserRow | null;
 }): MemberDTO {
+  // 所属名 / 職種 / メール / アイコンは users を正とする (#156)。
+  // アカウント未紐付けの表示専用メンバーは参加者行の値がそのまま使われる。
+  const profile = resolveMemberProfile({
+    member: {
+      name: m.name,
+      organizationName: m.organizationName,
+      jobTitle: m.jobTitle,
+      email: m.email,
+    },
+    user: m.user ?? null,
+  });
   return {
     id: m.id,
     userId: m.userId,
-    name: m.name,
-    email: m.email,
-    organizationName: m.organizationName,
+    name: profile.name,
+    email: profile.email,
+    organizationName: profile.organizationName,
     memberType: m.memberType as MemberType,
-    jobTitle: (m.jobTitle as JobTitle | null) ?? null,
+    jobTitle: (profile.jobTitle as JobTitle | null) ?? null,
+    avatarPath: profile.avatarPath,
     roleType: m.roleType as ProjectRole,
     sortOrder: m.sortOrder,
     createdAt: m.createdAt.toISOString(),
@@ -54,6 +96,7 @@ export async function listMembers(projectId: string): Promise<MemberDTO[]> {
   const rows = await prisma.projectMember.findMany({
     where: { projectId, deletedAt: null },
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    include: { user: MEMBER_USER_SELECT },
   });
   return rows.map((m) => toDTO(m));
 }
@@ -165,6 +208,7 @@ export async function updateMember(input: {
       roleType: input.body.roleType ?? undefined,
       sortOrder: input.body.sortOrder ?? undefined,
     },
+    include: { user: MEMBER_USER_SELECT },
   });
   return toDTO(updated);
 }

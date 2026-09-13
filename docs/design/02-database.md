@@ -317,6 +317,10 @@ erDiagram
 | email | text | × | — | ログインID。Supabase Auth と同期（`auth.users.email` のキャッシュ）。ユニーク |
 | **full_name** | text | × | — | **本名**（招待・請求書類用、v1.1 追加、FR-AUTH-11）|
 | **display_name** | text | × | — | **表示名・ハンドル**（画面表示・チップ、v1.1 で本名と分離）|
+| **organization_name** | text | ○ | NULL | **所属名**（#156 追加、マイページで編集）。自由記述。組織 `organizations` は課金の契約主体で別概念のためリレーションにしない |
+| **job_title** | text | ○ | NULL | **職種**（#156 追加）。`JOB_TITLES` 18 値（CHECK、`ck_pm_job_title` と同一） |
+| **notification_email** | text | ○ | NULL | **通知先メール**（#156 追加）。**NULL = ログイン用 `email` を使う**。`email` は Supabase 側の変更に追随して再同期されるため、コピーを持たせない |
+| **avatar_path** | text | ○ | NULL | **プロフィール画像**（#157 追加）。Supabase Storage のオブジェクトキー（URL ではない） |
 | **primary_auth_method** | text | × | 'password' | **'password' / 'google' / 'microsoft'**（CHECK、同一メール1認証手段制約、v1.1 追加、FR-AUTH-12）|
 | created_at | timestamptz | × | now() | |
 | updated_at | timestamptz | × | now() | DBトリガで更新 |
@@ -326,6 +330,7 @@ erDiagram
 - `uq_users_auth_user_id`（auth_user_id ユニーク）
 - `uq_users_email`（email ユニーク、deleted_at IS NULL のみ → 部分インデックス）
 - `ck_users_primary_auth_method` CHECK (primary_auth_method IN ('password','google','microsoft'))
+- `ck_users_job_title` CHECK (job_title IS NULL OR job_title IN (…18 値…)) ← **#156 追加。`ck_pm_job_title` と同一の値集合**
 - `ck_users_full_name_length` CHECK (char_length(full_name) BETWEEN 1 AND 100)
 - `ck_users_display_name_length` CHECK (char_length(display_name) BETWEEN 1 AND 50)
 - インデックス：`idx_users_auth_user_id`（JWT 検証時の高速参照）
@@ -338,6 +343,14 @@ erDiagram
 - パスワードハッシュは Supabase Auth が `auth.users.encrypted_password` に保持、本テーブルには持たせない
 - 招待受諾フロー（FR-AUTH-02）：`invitations.token_hash` 検証 → Supabase Auth でユーザー作成 → アプリ DB の `users` 行作成 → `project_members.user_id` を埋める、の順
 - **OAuth サインアップフロー（v1.1、UC-24）**：FE が Supabase Auth `signInWithOAuth` → コールバック → BE `/auth/me/sync` で users 行 INSERT（primary_auth_method = 'google' or 'microsoft'）、oauth_identities INSERT
+- **所属名 / 職種 / メールの解決（#156）**：表示に使う所属名・職種・メールは **users 側が正**とし、
+  `project_members` 側の値は「アカウント未紐付けの参加者（フリープランの表示専用メンバー）」のためのもの、
+  および「プロジェクト別の上書き」として扱う（read-through）。解決は
+  `packages/shared/src/domain/memberProfile.ts` の `resolveMemberProfile()` 1 箇所に集約する。
+  スナップショット方式にしないのは、マイページで直した所属名が既存プロジェクトに反映されず、
+  直す手段もどこにも無い状態になるため。
+  招待受諾時（`services/invitations.ts`）は、アカウント側が空なら招待行の値を引き継いだうえで
+  **参加者行の `organization_name` / `job_title` を空にする**（正を users に一本化する）。
 - **Magic-link サインアップフロー（v1.1、UC-01 改訂）**：FE がメール入力 → Supabase Auth Magic-link 送信 → リンク押下後に詳細入力（full_name / display_name / password）→ `/auth/me/complete-signup` で users 行 INSERT + Supabase Auth `updateUser({ password })` で恒久パスワード設定
 
 ---

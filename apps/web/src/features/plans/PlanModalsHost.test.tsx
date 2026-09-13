@@ -47,6 +47,7 @@ const members: ProjectMember[] = [
     organizationName: 'Acme',
     memberType: 'production',
     jobTitle: null,
+    avatarPath: null,
     roleType: 'editor',
     sortOrder: 0,
     createdAt: '2026-06-01T00:00:00.000Z',

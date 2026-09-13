@@ -6,5 +6,6 @@ export * from './schemas/index.js';
 export * from './domain/ballHolder.js';
 export * from './domain/ballBoard.js';
 export * from './domain/projectRole.js';
+export * from './domain/memberProfile.js';
 export * from './domain/entitlement.js';
 export * from './domain/projectFreeze.js';

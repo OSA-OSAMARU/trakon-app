@@ -94,6 +94,7 @@ const MEMBERS: ProjectMember[] = [sugino, ishihara, yokoyama, aoki].map((m, i) =
   organizationName: m.organizationName,
   memberType: m.memberType,
   jobTitle: null,
+  avatarPath: null,
   roleType: 'editor',
   sortOrder: i,
   createdAt: '2026-07-01T00:00:00.000Z',

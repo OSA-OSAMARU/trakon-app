@@ -18,6 +18,8 @@ type MockMember = {
   name: string;
   email: string;
   organizationName: string;
+  /** 職種 (#156)。受諾時にアカウント側へ引き継ぐ */
+  jobTitle: string | null;
   memberType: string;
   roleType: string;
   deletedAt: Date | null;
@@ -35,7 +37,13 @@ type MockInvitation = {
   organizationId: string;
   roleType: string;
 };
-type MockUser = { id: string; email: string };
+type MockUser = {
+  id: string;
+  email: string;
+  /** 所属名 / 職種 (#156)。空なら受諾時に招待行から引き継ぐ */
+  organizationName: string | null;
+  jobTitle: string | null;
+};
 type MockAudit = {
   id: string;
   actorUserId: string | null;
@@ -75,26 +83,52 @@ const withIncludes = (inv: MockInvitation) => {
       name: member.name,
       email: member.email,
       organizationName: member.organizationName,
+      jobTitle: member.jobTitle,
       memberType: member.memberType,
     },
   };
 };
 
 const invitationTx = {
-  update: vi.fn(
-    async ({ where, data }: { where: { id: string }; data: { acceptedAt: Date } }) => {
-      const inv = invitationStore[where.id]!;
-      inv.acceptedAt = data.acceptedAt;
-      return inv;
-    },
-  ),
+  update: vi.fn(async ({ where, data }: { where: { id: string }; data: { acceptedAt: Date } }) => {
+    const inv = invitationStore[where.id]!;
+    inv.acceptedAt = data.acceptedAt;
+    return inv;
+  }),
 };
 const memberTx = {
   update: vi.fn(
-    async ({ where, data }: { where: { id: string }; data: { userId: string } }) => {
+    async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: { userId: string; organizationName?: string; jobTitle?: string | null };
+    }) => {
       const m = memberStore[where.id]!;
       m.userId = data.userId;
+      // 受諾後は users 側が正になるため参加者行からは落とす (#156)
+      if (data.organizationName !== undefined) m.organizationName = data.organizationName;
+      if (data.jobTitle !== undefined) m.jobTitle = data.jobTitle;
       return m;
+    },
+  ),
+};
+
+// 受諾時の「アカウント側が空なら招待行の値を引き継ぐ」用 (#156)。
+const userTx = {
+  update: vi.fn(
+    async ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: { organizationName?: string; jobTitle?: string };
+    }) => {
+      const u = userStore[where.id]!;
+      if (data.organizationName !== undefined) u.organizationName = data.organizationName;
+      if (data.jobTitle !== undefined) u.jobTitle = data.jobTitle;
+      return u;
     },
   ),
 };
@@ -151,12 +185,14 @@ const orgMemberTx = {
       return row;
     },
   ),
-  update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<MockOrgMember> }) => {
-    const row = orgMemberStore[where.id];
-    if (!row) throw new Error('record not found');
-    Object.assign(row, data);
-    return row;
-  }),
+  update: vi.fn(
+    async ({ where, data }: { where: { id: string }; data: Partial<MockOrgMember> }) => {
+      const row = orgMemberStore[where.id];
+      if (!row) throw new Error('record not found');
+      Object.assign(row, data);
+      return row;
+    },
+  ),
 };
 
 const prismaMock = {
@@ -220,6 +256,7 @@ const prismaMock = {
       projectMember: memberTx,
       auditLog: auditTx,
       organizationMember: orgMemberTx,
+      user: userTx,
     });
   }),
 };
@@ -249,6 +286,7 @@ function seedValidInvitation(
     name: '招待 太郎',
     email: 'invitee@example.com',
     organizationName: '組織X',
+    jobTitle: null,
     memberType: 'client',
     roleType: 'editor',
     deletedAt: null,
@@ -348,7 +386,12 @@ describe('verifyInvitation', () => {
 describe('acceptInvitation', () => {
   it('成功: member.user_id 紐付け / invitation.accepted_at 設定 / audit ログ作成', async () => {
     const { inv, member, project } = seedValidInvitation();
-    userStore['u-1'] = { id: 'u-1', email: 'invitee@example.com' };
+    userStore['u-1'] = {
+      id: 'u-1',
+      email: 'invitee@example.com',
+      organizationName: null,
+      jobTitle: null,
+    };
 
     const res = await acceptInvitation({ rawToken: RAW_TOKEN, currentUserId: 'u-1' });
 
@@ -386,14 +429,24 @@ describe('acceptInvitation', () => {
 
   it('メール大文字小文字を無視して一致判定する', async () => {
     seedValidInvitation({ member: { email: 'Invitee@Example.com' } });
-    userStore['u-1'] = { id: 'u-1', email: 'invitee@example.com' };
+    userStore['u-1'] = {
+      id: 'u-1',
+      email: 'invitee@example.com',
+      organizationName: null,
+      jobTitle: null,
+    };
     const res = await acceptInvitation({ rawToken: RAW_TOKEN, currentUserId: 'u-1' });
     expect(res.member.memberType).toBe('client');
   });
 
   it('招待が無効 (期限切れ等) なら 404', async () => {
     seedValidInvitation({ inv: { revokedAt: new Date('2026-01-01T00:00:00Z') } });
-    userStore['u-1'] = { id: 'u-1', email: 'invitee@example.com' };
+    userStore['u-1'] = {
+      id: 'u-1',
+      email: 'invitee@example.com',
+      organizationName: null,
+      jobTitle: null,
+    };
     await expect(
       acceptInvitation({ rawToken: RAW_TOKEN, currentUserId: 'u-1' }),
     ).rejects.toMatchObject({ code: 'INVITATION_NOT_FOUND_OR_EXPIRED', status: 404 });
@@ -409,7 +462,12 @@ describe('acceptInvitation', () => {
 
   it('招待先メールと一致しないと 403 INVITATION_EMAIL_MISMATCH', async () => {
     seedValidInvitation();
-    userStore['u-1'] = { id: 'u-1', email: 'other@example.com' };
+    userStore['u-1'] = {
+      id: 'u-1',
+      email: 'other@example.com',
+      organizationName: null,
+      jobTitle: null,
+    };
     await expect(
       acceptInvitation({ rawToken: RAW_TOKEN, currentUserId: 'u-1' }),
     ).rejects.toMatchObject({ code: 'INVITATION_EMAIL_MISMATCH', status: 403 });
@@ -417,7 +475,12 @@ describe('acceptInvitation', () => {
 
   it('既に別 member 行で参加済なら 409 ALREADY_MEMBER', async () => {
     const { project } = seedValidInvitation();
-    userStore['u-1'] = { id: 'u-1', email: 'invitee@example.com' };
+    userStore['u-1'] = {
+      id: 'u-1',
+      email: 'invitee@example.com',
+      organizationName: null,
+      jobTitle: null,
+    };
     // 同一プロジェクトに別 member 行 (招待対象 m-1 とは別 id) で既に参加
     memberStore['m-dup'] = {
       id: 'm-dup',
@@ -426,6 +489,7 @@ describe('acceptInvitation', () => {
       name: '既存',
       email: 'invitee@example.com',
       organizationName: '組織X',
+      jobTitle: null,
       roleType: 'editor',
       memberType: 'production',
       deletedAt: null,
