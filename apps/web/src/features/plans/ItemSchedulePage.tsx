@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, differenceInDays, format, parseISO } from 'date-fns';
-import { KanbanSquare, Plus, Settings } from 'lucide-react';
+import { Plus, Settings, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiClientError } from '@/lib/api';
@@ -271,8 +271,8 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
             </Select>
             <Button variant="ghost" size="sm" asChild>
               <Link to={`/projects/${projectId}/members`}>
-                <KanbanSquare className="size-4" />
-                メンバーかんばん
+                <Users className="size-4" />
+                メンバー
               </Link>
             </Button>
             <Button variant="ghost" size="sm" asChild>
