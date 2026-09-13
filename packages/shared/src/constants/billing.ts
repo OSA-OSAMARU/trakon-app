@@ -21,8 +21,18 @@ export type BillingPlanSpec = {
   label: string;
   /** 月額 (税込)。null は個別見積 */
   monthlyPriceJpyIncTax: number | null;
-  /** 会員アカウント数の上限。null は無制限 */
+  /**
+   * 座席 (管理者・編集者) 数の上限。null は無制限。
+   * **閲覧者は座席を消費しない** (#160)。閲覧者の上限は viewerLimit で別に持つ。
+   */
   seatLimit: number | null;
+  /**
+   * 閲覧者数の上限。null は無制限、0 は招待そのものを許さない (#160)。
+   *
+   * 閲覧者は座席を消費しないが、無制限に招待できると
+   * 「¥980 で閲覧アカウントを無限に配る」ことができてしまうため上限を設ける。
+   */
+  viewerLimit: number | null;
   /** プロジェクト数の上限。null は無制限 */
   projectLimit: number | null;
   /** 無料トライアル時間。null はトライアルなし */
@@ -37,6 +47,8 @@ export const BILLING_PLANS: Record<BillingPlanCode, BillingPlanSpec> = {
     label: 'Free',
     monthlyPriceJpyIncTax: 0,
     seatLimit: 1,
+    // Free は招待そのものができない (座席 1 = オーナー本人で埋まる)
+    viewerLimit: 0,
     projectLimit: 2,
     trialHours: null,
     stripeManaged: false,
@@ -46,6 +58,7 @@ export const BILLING_PLANS: Record<BillingPlanCode, BillingPlanSpec> = {
     label: 'Personal',
     monthlyPriceJpyIncTax: 980,
     seatLimit: 1,
+    viewerLimit: 5,
     projectLimit: 10,
     trialHours: 120,
     stripeManaged: true,
@@ -56,6 +69,7 @@ export const BILLING_PLANS: Record<BillingPlanCode, BillingPlanSpec> = {
     label: 'Team',
     monthlyPriceJpyIncTax: 9800,
     seatLimit: 5,
+    viewerLimit: 20,
     projectLimit: null,
     trialHours: 120,
     stripeManaged: true,
@@ -66,6 +80,7 @@ export const BILLING_PLANS: Record<BillingPlanCode, BillingPlanSpec> = {
     label: 'Enterprise',
     monthlyPriceJpyIncTax: null,
     seatLimit: null,
+    viewerLimit: null,
     projectLimit: null,
     trialHours: null,
     stripeManaged: false,

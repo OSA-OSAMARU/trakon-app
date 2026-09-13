@@ -22,7 +22,7 @@ import {
 
 import { getServerEnv } from '../../lib/env.js';
 import { ApiException } from '../../lib/errors.js';
-import { countActiveProjects, countSeats } from '../organizations.js';
+import { countActiveProjects, countSeatUsage } from '../organizations.js';
 import { getStripe } from './stripeClient.js';
 
 export type ChangeablePlan = Extract<BillingPlanCode, 'personal' | 'team'>;
@@ -126,15 +126,18 @@ async function downgradeToPersonal(input: {
   subscription: SubscriptionRow;
 }): Promise<{ appliedImmediately: boolean; pendingPlanCode: BillingPlanCode }> {
   const target = BILLING_PLANS.personal;
-  const [seatCount, projectCount] = await Promise.all([
-    countSeats(prisma, input.organizationId),
+  const [seats, projectCount] = await Promise.all([
+    countSeatUsage(prisma, input.organizationId),
     countActiveProjects(prisma, input.organizationId),
   ]);
+  const { seatCount, viewerCount } = seats;
 
   const overSeats = target.seatLimit !== null && seatCount > target.seatLimit;
+  // 閲覧者も別枠の上限がある (#160)。降格で閲覧者があふれる場合も受け付けない
+  const overViewers = target.viewerLimit !== null && viewerCount > target.viewerLimit;
   const overProjects = target.projectLimit !== null && projectCount > target.projectLimit;
 
-  if (overSeats || overProjects) {
+  if (overSeats || overViewers || overProjects) {
     // 何を整理すればよいか分かるよう、超過しているものを詳細で返す (§7.7.2)
     const excessProjects = overProjects
       ? await prisma.project.findMany({
@@ -152,6 +155,8 @@ async function downgradeToPersonal(input: {
       {
         seatCount,
         seatLimit: target.seatLimit,
+        viewerCount,
+        viewerLimit: target.viewerLimit,
         projectCount,
         projectLimit: target.projectLimit,
         excessProjects,

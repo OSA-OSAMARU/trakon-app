@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiException } from '../lib/errors.js';
 import {
   countActiveProjects,
-  countSeats,
+  countSeatUsage,
   defaultOrganizationName,
   ensureOrganizationForUser,
   ensureOrganizationMember,
@@ -13,7 +13,7 @@ import {
 // 実 DB を使う経路は organizations.integration.test.ts が見る。
 // ここでは DB を差し替えて、分岐 (既存/新規・論理削除からの復活・既定組織の解決) を固定する。
 
-type Db = Parameters<typeof countSeats>[0];
+type Db = Parameters<typeof countSeatUsage>[0];
 
 function fakeDb(over: Record<string, unknown>): Db {
   return over as unknown as Db;
@@ -73,7 +73,7 @@ describe('ensureOrganizationForUser', () => {
 });
 
 describe('ensureOrganizationMember', () => {
-  it('会員行が無ければ作る (既定は member かつ is_primary なし)', async () => {
+  it('会員行が無ければ作る (既定は member / 既定ロール editor / is_primary なし)', async () => {
     const create = vi.fn().mockResolvedValue({ id: 'om-9' });
     const db = fakeDb({
       organizationMember: { findUnique: vi.fn().mockResolvedValue(null), create },
@@ -83,7 +83,14 @@ describe('ensureOrganizationMember', () => {
 
     expect(result).toEqual({ id: 'om-9', created: true });
     expect(create).toHaveBeenCalledWith({
-      data: { organizationId: 'org-1', userId: 'u-2', orgRole: 'member', isPrimary: false },
+      data: {
+        organizationId: 'org-1',
+        userId: 'u-2',
+        orgRole: 'member',
+        // 既定は編集者。閲覧者だけが座席を消費しない (#160)
+        defaultProjectRole: 'editor',
+        isPrimary: false,
+      },
       select: { id: true },
     });
   });
@@ -175,24 +182,38 @@ describe('resolvePrimaryOrganization', () => {
 
 describe('カウント', () => {
   it('座席は有効な組織メンバーと、未受諾で期限内の招待を足したもの', async () => {
-    // 招待中も座席を押さえないと、大量に招待してから一斉受諾で上限を超えられる
-    const memberCount = vi.fn().mockResolvedValue(3);
-    const invitationCount = vi.fn().mockResolvedValue(2);
+    // 招待中も枠を押さえないと、大量に招待してから一斉受諾で上限を超えられる。
+    // countSeatUsage は座席用 (admin/editor) と閲覧者用でそれぞれ 2 回ずつ数える。
+    const memberCount = vi.fn().mockResolvedValueOnce(3).mockResolvedValueOnce(4);
+    const invitationCount = vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1);
     const db = fakeDb({
       organizationMember: { count: memberCount },
       invitation: { count: invitationCount },
     });
 
-    expect(await countSeats(db, 'org-1')).toBe(5);
+    expect(await countSeatUsage(db, 'org-1')).toEqual({ seatCount: 5, viewerCount: 5 });
+    // 座席は管理者・編集者だけを数える (#160)
     expect(memberCount).toHaveBeenCalledWith({
-      where: { organizationId: 'org-1', deletedAt: null },
+      where: {
+        organizationId: 'org-1',
+        deletedAt: null,
+        defaultProjectRole: { in: ['admin', 'editor'] },
+      },
+    });
+    // 閲覧者は別枠
+    expect(memberCount).toHaveBeenCalledWith({
+      where: { organizationId: 'org-1', deletedAt: null, defaultProjectRole: 'viewer' },
     });
     expect(invitationCount).toHaveBeenCalledWith({
       where: expect.objectContaining({
         organizationId: 'org-1',
         acceptedAt: null,
         revokedAt: null,
+        roleType: { in: ['admin', 'editor'] },
       }),
+    });
+    expect(invitationCount).toHaveBeenCalledWith({
+      where: expect.objectContaining({ roleType: 'viewer' }),
     });
   });
 

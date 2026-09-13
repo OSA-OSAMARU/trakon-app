@@ -26,8 +26,13 @@ export type EntitlementInput = {
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | Date | null;
   gracePeriodEndsAt: string | Date | null;
-  /** 会員アカウント数 (有効な組織メンバー + 未受諾かつ有効期限内の招待) */
+  /**
+   * 座席数 = 管理者・編集者の会員アカウント数 (#160)。
+   * 有効な組織メンバー + 未受諾かつ有効期限内の招待のうち、座席を消費するロールのもの。
+   */
   seatCount: number;
+  /** 閲覧者数 (#160)。座席とは別枠で数える */
+  viewerCount: number;
   /** 未削除・未アーカイブのプロジェクト数 */
   projectCount: number;
   /** テスト用に注入可能。既定は現在時刻 */
@@ -60,7 +65,10 @@ export type EntitlementReason =
   | 'incomplete';
 
 export type EntitlementLimits = {
+  /** 管理者・編集者の上限 (#160)。閲覧者は含まない */
   seatLimit: number | null;
+  /** 閲覧者の上限 (#160)。0 は招待そのものを許さない */
+  viewerLimit: number | null;
   projectLimit: number | null;
 };
 
@@ -75,11 +83,14 @@ export type Entitlement = {
    */
   effectivePlanCode: BillingPlanCode;
   limits: EntitlementLimits;
-  usage: { seatCount: number; projectCount: number };
+  usage: { seatCount: number; viewerCount: number; projectCount: number };
   /** 上限の超過数。0 なら余裕あり */
-  over: { seats: number; projects: number };
+  over: { seats: number; viewers: number; projects: number };
   canCreateProject: boolean;
+  /** 管理者・編集者を招待できるか (#160) */
   canInviteMember: boolean;
+  /** 閲覧者を招待できるか (#160)。座席とは別枠 */
+  canInviteViewer: boolean;
   /** 支払猶予の期限 (ISO 文字列)。猶予中でなければ null */
   graceEndsAt: string | null;
   /** 現在の請求期間の終了日時 (ISO 文字列) */
@@ -168,7 +179,7 @@ function buildMessage(input: {
   level: EntitlementLevel;
   reason: EntitlementReason;
   effectivePlanCode: BillingPlanCode;
-  over: { seats: number; projects: number };
+  over: { seats: number; viewers: number; projects: number };
 }): string {
   const planLabel = BILLING_PLANS[input.effectivePlanCode].label;
 
@@ -194,7 +205,10 @@ function buildMessage(input: {
     return `${planLabel} プランの上限を超えているため、${input.over.projects} 件のプロジェクトが閲覧のみになっています。`;
   }
   if (input.over.seats > 0) {
-    return `${planLabel} プランの会員アカウント上限を超えています。`;
+    return `${planLabel} プランの管理者・編集者の上限を超えています。`;
+  }
+  if (input.over.viewers > 0) {
+    return `${planLabel} プランの閲覧者の上限を超えています。`;
   }
   return `${planLabel} プランを利用中です。`;
 }
@@ -219,11 +233,13 @@ export function evaluateEntitlement(input: EntitlementInput): Entitlement {
   const spec = BILLING_PLANS[resolved.effectivePlanCode];
   const limits: EntitlementLimits = {
     seatLimit: spec.seatLimit,
+    viewerLimit: spec.viewerLimit,
     projectLimit: spec.projectLimit,
   };
 
   const over = {
     seats: overBy(input.seatCount, limits.seatLimit),
+    viewers: overBy(input.viewerCount, limits.viewerLimit),
     projects: overBy(input.projectCount, limits.projectLimit),
   };
 
@@ -233,6 +249,8 @@ export function evaluateEntitlement(input: EntitlementInput): Entitlement {
     writable && (limits.projectLimit === null || input.projectCount < limits.projectLimit);
   const canInviteMember =
     writable && (limits.seatLimit === null || input.seatCount < limits.seatLimit);
+  const canInviteViewer =
+    writable && (limits.viewerLimit === null || input.viewerCount < limits.viewerLimit);
 
   return {
     level: resolved.level,
@@ -240,10 +258,15 @@ export function evaluateEntitlement(input: EntitlementInput): Entitlement {
     planCode: input.planCode,
     effectivePlanCode: resolved.effectivePlanCode,
     limits,
-    usage: { seatCount: input.seatCount, projectCount: input.projectCount },
+    usage: {
+      seatCount: input.seatCount,
+      viewerCount: input.viewerCount,
+      projectCount: input.projectCount,
+    },
     over,
     canCreateProject,
     canInviteMember,
+    canInviteViewer,
     graceEndsAt: resolved.reason === 'in_grace_period' ? toIso(gracePeriodEndsAt) : null,
     periodEndsAt: toIso(currentPeriodEnd),
     message: buildMessage({ ...resolved, over }),
