@@ -46,9 +46,16 @@ describe('ensureOrganizationForUser', () => {
     expect(organizationCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { name: '川津 の組織', ownerUserId: 'u-1' } }),
     );
-    // オーナーは is_primary 付きで入る (既定の所属組織になる)
+    // オーナーは is_primary 付きで入る (既定の所属組織になる)。
+    // 既定ロールは admin 固定 (#160)。自分の組織から締め出されないための最終防衛線
     expect(memberCreate).toHaveBeenCalledWith({
-      data: { organizationId: 'org-1', userId: 'u-1', orgRole: 'owner', isPrimary: true },
+      data: {
+        organizationId: 'org-1',
+        userId: 'u-1',
+        orgRole: 'owner',
+        defaultProjectRole: 'admin',
+        isPrimary: true,
+      },
     });
   });
 

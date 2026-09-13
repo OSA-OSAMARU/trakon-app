@@ -351,9 +351,12 @@ flowchart TB
 | `POST /api/v1/billing/portal-session` | ❌ | ❌ | ✅ | Customer Portal Session を都度生成。**URL は保存しない** |
 | `POST /api/v1/billing/plan` | ❌ | ❌ | ✅ | プラン変更（Personal ⇄ Team） |
 | `POST /api/v1/billing/cancel` / `resume` | ❌ | ❌ | ✅ | 解約予約 / 取り消し |
-| `GET /api/v1/organizations/me/members` | ❌ | ✅ | ✅ | 組織の会員アカウント一覧（座席の内訳） |
-| `PATCH /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織ロールの変更 |
+| `GET /api/v1/organizations/me/members` | ❌ | ❌ | ✅ | 会員アカウント一覧 + **保留中の招待**（座席の内訳）。**#160 で一般会員には非公開にした**（同僚の通知先メール・所属・職種を返すため） |
+| `GET /api/v1/organizations/me/members/:userId/projects` **(#160)** | ❌ | ❌ | ✅ | その人の参加プロジェクトとボール保持数（参加PJ ドロワー） |
+| `PATCH /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織ロール（課金権限）／**既定のプロジェクト権限**の変更。後者は参加中の全プロジェクトへ反映される（#160） |
 | `DELETE /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織からの除外（座席の解放） |
+| `POST /api/v1/organizations/me/invitations` **(#160)** | ❌ | ❌ | ✅ | **組織単位の招待**。参加プロジェクトの選択は任意 |
+| `DELETE /api/v1/organizations/me/invitations/:invitationId` **(#160)** | ❌ | ❌ | ✅ | 招待の取り消し（枠の解放） |
 | `POST /api/v1/organizations/me/retained-projects` | ❌ | ❌ | ✅ | 上限超過時に維持するプロジェクトを選択（FR-BILL-11） |
 
 招待系はプロジェクト配下に置く（プロジェクトロールで判定する）：
@@ -431,9 +434,12 @@ flowchart TB
 | Billing | POST | `/billing/plan` | UC-28 | SC-18 |
 | Billing | POST | `/billing/cancel` | UC-29 | SC-18 |
 | Billing | POST | `/billing/resume` | UC-29 | SC-18 |
-| Organizations | GET | `/organizations/me/members` | UC-22 | SC-15 |
-| Organizations | PATCH | `/organizations/me/members/:userId` | UC-22 | SC-15 |
-| Organizations | DELETE | `/organizations/me/members/:userId` | UC-22 | SC-15 |
+| Organizations | GET | `/organizations/me/members` | UC-22 | メンバー管理 |
+| Organizations | GET | `/organizations/me/members/:userId/projects` **(#160)** | UC-22 | メンバー管理 |
+| Organizations | PATCH | `/organizations/me/members/:userId` | UC-22 | メンバー管理 |
+| Organizations | DELETE | `/organizations/me/members/:userId` | UC-22 | メンバー管理 |
+| Organizations | POST | `/organizations/me/invitations` **(#160)** | UC-31 | メンバー管理 |
+| Organizations | DELETE | `/organizations/me/invitations/:invitationId` **(#160)** | UC-31 | メンバー管理 |
 | Organizations | POST | `/organizations/me/retained-projects` | UC-29 | SC-18 |
 | Invitations | GET | `/projects/:projectId/invitations` | UC-31 | SC-11 |
 | Invitations | POST | `/projects/:projectId/invitations` | UC-31 | SC-11 |

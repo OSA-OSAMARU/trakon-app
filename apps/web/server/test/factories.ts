@@ -63,6 +63,8 @@ export async function createOrganization(args: { ownerUserId: string; name?: str
       organizationId: organization.id,
       userId: args.ownerUserId,
       orgRole: 'owner',
+      // オーナーは常に管理者 (#160)。本番の ensureOrganizationForUser と揃える
+      defaultProjectRole: 'admin',
       isPrimary: true,
     },
   });

@@ -250,7 +250,7 @@ export async function updateMember(input: {
  * 作成者は role_type によらず常に管理者として扱われる (FR-ROLE-04) ため、
  * 作成者の member 行が残っていれば管理者は必ず 1 名以上いる。
  */
-async function assertNotLastAdmin(projectId: string, excludeMemberId: string): Promise<void> {
+export async function assertNotLastAdmin(projectId: string, excludeMemberId: string): Promise<void> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
     select: { createdBy: true },
