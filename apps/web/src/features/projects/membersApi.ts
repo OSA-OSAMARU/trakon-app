@@ -9,8 +9,10 @@ export type ProjectMember = {
   email: string | null;
   organizationName: string;
   memberType: MemberType;
-  /** 職種 (#147)。表示用で権限には影響しない */
+  /** 職種 (#147)。アカウント紐付け済みなら users 側が正 (#156)。権限には影響しない */
   jobTitle: JobTitle | null;
+  /** プロフィール画像の Storage キー (#157)。アカウント未紐付けは null */
+  avatarPath: string | null;
   /** 権限ロール (FR-ROLE-01)。操作権限の唯一の根拠 */
   roleType: ProjectRole;
   sortOrder: number;

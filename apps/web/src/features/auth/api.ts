@@ -1,12 +1,23 @@
-import type { WithdrawalReason } from '@trakon/shared';
+import type { JobTitle, WithdrawalReason } from '@trakon/shared';
 
 import { apiRequest } from '@/lib/api';
 
 export type CurrentUser = {
   id: string;
+  /** ログイン用メール */
   email: string;
   fullName: string;
   displayName: string;
+  /** 所属名 (#156)。未設定は null */
+  organizationName: string | null;
+  /** 職種 (#156)。未設定は null */
+  jobTitle: JobTitle | null;
+  /** 通知先メールの生値 (#156)。フォームはこちらを束縛する */
+  notificationEmail: string | null;
+  /** 実際の通知先 (#156)。notificationEmail ?? email。表示用 */
+  effectiveNotificationEmail: string;
+  /** プロフィール画像の Storage キー (#157) */
+  avatarPath: string | null;
   primaryAuthMethod: 'password' | 'google' | 'microsoft';
   createdAt: string;
 };
@@ -24,6 +35,10 @@ export type CompleteSignupInput = {
 export type UpdateProfileInput = {
   fullName?: string;
   displayName?: string;
+  /** null / '' で未設定に戻す (#156) */
+  organizationName?: string | null;
+  jobTitle?: JobTitle | null;
+  notificationEmail?: string | null;
   newPassword?: string;
 };
 

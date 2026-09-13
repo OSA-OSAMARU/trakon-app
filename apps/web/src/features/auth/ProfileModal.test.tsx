@@ -43,6 +43,11 @@ const user: CurrentUser = {
   email: 'me@example.com',
   fullName: '山田 太郎',
   displayName: 'たろ',
+  organizationName: null,
+  jobTitle: null,
+  notificationEmail: null,
+  effectiveNotificationEmail: 'me@example.com',
+  avatarPath: null,
   primaryAuthMethod: 'password',
   createdAt: '2026-01-01T00:00:00Z',
 };

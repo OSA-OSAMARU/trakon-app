@@ -58,7 +58,7 @@ export async function acceptInvitation(input: {
 
   const user = await prisma.user.findUnique({
     where: { id: input.currentUserId },
-    select: { id: true, email: true },
+    select: { id: true, email: true, organizationName: true, jobTitle: true },
   });
   if (!user) throw new ApiException('PROFILE_NOT_COMPLETED', 404, 'Profile is required.');
 
@@ -102,11 +102,36 @@ export async function acceptInvitation(input: {
     );
   }
 
+  // 招待の参加者行に入っていた所属名 / 職種を、アカウント側が空なら引き継ぐ (#156)。
+  // 受諾後は users 側が正になるため、参加者行からは落とす。
+  const seedOrganizationName =
+    !user.organizationName && inv.invitedMember.organizationName
+      ? inv.invitedMember.organizationName
+      : undefined;
+  const seedJobTitle =
+    !user.jobTitle && inv.invitedMember.jobTitle ? inv.invitedMember.jobTitle : undefined;
+
   const result = await prisma.$transaction(async (tx) => {
+    if (seedOrganizationName !== undefined || seedJobTitle !== undefined) {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          ...(seedOrganizationName !== undefined && { organizationName: seedOrganizationName }),
+          ...(seedJobTitle !== undefined && { jobTitle: seedJobTitle }),
+        },
+      });
+    }
     const updatedMember = await tx.projectMember.update({
       where: { id: inv.invitedMember.id },
-      // 招待時に指定されたロールを付与する (FR-ROLE-03)
-      data: { userId: user.id, roleType: inv.roleType },
+      data: {
+        // 招待時に指定されたロールを付与する (FR-ROLE-03)
+        userId: user.id,
+        roleType: inv.roleType,
+        // アカウント紐付け後は users.organization_name / job_title が正 (#156)。
+        // 参加者行に残すとプロジェクト別の上書きになり、マイページの編集が反映されない。
+        organizationName: '',
+        jobTitle: null,
+      },
     });
     await tx.invitation.update({
       where: { id: inv.id },
@@ -165,6 +190,8 @@ async function findActiveInvitation(rawToken: string) {
           name: true,
           email: true,
           organizationName: true,
+          // 受諾時にアカウント側が空なら引き継ぐ (#156)
+          jobTitle: true,
           memberType: true,
         },
       },

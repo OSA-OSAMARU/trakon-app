@@ -59,7 +59,7 @@ export const authRoute = new Hono()
     });
   })
 
-  /** プロフィール / 認証情報の更新 (氏名・表示名・パスワード) */
+  /** プロフィール / 認証情報の更新 (氏名・表示名・所属名・職種・通知先メール・パスワード) */
   .patch('/me', async (c) => {
     const authUser = c.get('authUser');
     const body = updateProfileBodySchema.parse(await c.req.json());
@@ -67,6 +67,9 @@ export const authRoute = new Hono()
       authUserId: authUser.authUserId,
       fullName: body.fullName,
       displayName: body.displayName,
+      organizationName: body.organizationName,
+      jobTitle: body.jobTitle,
+      notificationEmail: body.notificationEmail,
       newPassword: body.newPassword,
     });
     return c.json({ data: user });

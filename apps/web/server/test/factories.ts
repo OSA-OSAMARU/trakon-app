@@ -22,6 +22,12 @@ export async function createUser(overrides: Partial<{
   email: string;
   fullName: string;
   displayName: string;
+  /** 所属名 (#156)。既定は未設定 */
+  organizationName: string | null;
+  /** 職種 (#156)。既定は未設定 */
+  jobTitle: string | null;
+  /** 通知先メール (#156)。既定は未設定 = ログイン用メールを使う */
+  notificationEmail: string | null;
   primaryAuthMethod: string;
   withOrganization: boolean;
 }> = {}) {
@@ -32,6 +38,9 @@ export async function createUser(overrides: Partial<{
       email: overrides.email ?? `user-${tag}@example.test`,
       fullName: overrides.fullName ?? `User ${tag}`,
       displayName: overrides.displayName ?? `user-${tag}`,
+      organizationName: overrides.organizationName ?? null,
+      jobTitle: overrides.jobTitle ?? null,
+      notificationEmail: overrides.notificationEmail ?? null,
       primaryAuthMethod: overrides.primaryAuthMethod ?? 'password',
     },
   });
@@ -160,6 +169,8 @@ export async function createMember(args: {
   name?: string;
   email?: string;
   organizationName?: string;
+  /** 職種。参加者行側の値 (#156 でアカウント紐付け時は users 側が正) */
+  jobTitle?: string | null;
   memberType?: 'client' | 'production' | 'partner';
   roleType?: 'admin' | 'editor' | 'viewer';
   sortOrder?: number;
@@ -172,6 +183,7 @@ export async function createMember(args: {
       name: args.name ?? `Member ${tag}`,
       email: args.email ?? `member-${tag}@example.test`,
       organizationName: args.organizationName ?? 'Acme',
+      jobTitle: args.jobTitle ?? null,
       memberType: args.memberType ?? 'production',
       roleType: args.roleType ?? 'editor',
       sortOrder: args.sortOrder ?? 0,
@@ -300,6 +312,9 @@ export async function setupProjectWithDirector(opts: {
     userId: user.id,
     name: user.fullName,
     email: user.email,
+    // アカウント紐付け済みの参加者行は所属名 / 職種を持たない (#156)。
+    // createProject が作る作成者の行と同じ形にする。
+    organizationName: '',
     memberType: opts.memberType ?? 'production',
     // 作成者は常に管理者 (FR-ROLE-04)。列にも明示しておく
     roleType: 'admin',

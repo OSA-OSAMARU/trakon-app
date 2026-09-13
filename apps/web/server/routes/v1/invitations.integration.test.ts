@@ -130,6 +130,85 @@ describe('invitations routes (integration)', () => {
       });
       expect(updated!.userId).toBe(invitee.id);
     });
+
+    it('受諾すると招待行の所属名 / 職種をアカウント側へ引き継ぎ、参加者行からは落とす (#156)', async () => {
+      const { project, user } = await setupProjectWithDirector();
+      await setBillingSubscription({
+        organizationId: await primaryOrganizationId(user.id),
+        planCode: 'team',
+        status: 'active',
+      });
+      const member = await createMember({
+        projectId: project.id,
+        userId: null,
+        email: 'invitee2@example.test',
+        organizationName: '博報堂',
+        jobTitle: 'designer',
+        memberType: 'production',
+      });
+      const { rawToken } = await seedInvitation({
+        projectId: project.id,
+        invitedMemberId: member.id,
+        email: 'invitee2@example.test',
+      });
+      // 所属名 / 職種が未設定のユーザー
+      const invitee = await createUser({ email: 'invitee2@example.test' });
+      const token = await signTestJwt({ authUserId: invitee.authUserId, email: invitee.email });
+
+      const res = await api(`/api/v1/invitations/${rawToken}/accept`, { method: 'POST', token });
+      expect(res.status).toBe(201);
+
+      // アカウント側に引き継がれる
+      const u = await prisma.user.findUniqueOrThrow({
+        where: { id: invitee.id },
+        select: { organizationName: true, jobTitle: true },
+      });
+      expect(u.organizationName).toBe('博報堂');
+      expect(u.jobTitle).toBe('designer');
+
+      // 参加者行には残さない (残すとプロジェクト別の上書きになり、
+      // マイページの編集が反映されなくなる)
+      const m = await prisma.projectMember.findUniqueOrThrow({
+        where: { id: member.id },
+        select: { organizationName: true, jobTitle: true },
+      });
+      expect(m.organizationName).toBe('');
+      expect(m.jobTitle).toBeNull();
+    });
+
+    it('アカウント側に既に所属名がある場合は招待行の値で上書きしない (#156)', async () => {
+      const { project, user } = await setupProjectWithDirector();
+      await setBillingSubscription({
+        organizationId: await primaryOrganizationId(user.id),
+        planCode: 'team',
+        status: 'active',
+      });
+      const member = await createMember({
+        projectId: project.id,
+        userId: null,
+        email: 'invitee3@example.test',
+        organizationName: '博報堂',
+        memberType: 'production',
+      });
+      const { rawToken } = await seedInvitation({
+        projectId: project.id,
+        invitedMemberId: member.id,
+        email: 'invitee3@example.test',
+      });
+      const invitee = await createUser({
+        email: 'invitee3@example.test',
+        organizationName: '本人が設定した所属',
+      });
+      const token = await signTestJwt({ authUserId: invitee.authUserId, email: invitee.email });
+
+      await api(`/api/v1/invitations/${rawToken}/accept`, { method: 'POST', token });
+
+      const u = await prisma.user.findUniqueOrThrow({
+        where: { id: invitee.id },
+        select: { organizationName: true },
+      });
+      expect(u.organizationName).toBe('本人が設定した所属');
+    });
   });
 
   describe('異常系', () => {

@@ -1,5 +1,6 @@
 import { prisma } from '@trakon/db';
-import type { WithdrawalReason } from '@trakon/shared';
+import { effectiveNotificationEmail } from '@trakon/shared';
+import type { JobTitle, WithdrawalReason } from '@trakon/shared';
 import { uuidv7 } from 'uuidv7';
 
 import { ApiException } from '../lib/errors.js';
@@ -30,9 +31,23 @@ const STEP_TIMEOUT_MS = 10_000;
 
 export type CurrentUserDTO = {
   id: string;
+  /** ログイン用メール (Supabase Auth と同期) */
   email: string;
   fullName: string;
   displayName: string;
+  /** 所属名 (#156)。未設定は null */
+  organizationName: string | null;
+  /** 職種 (#156)。JOB_TITLES のいずれか。未設定は null */
+  jobTitle: JobTitle | null;
+  /** 通知先メールの生値 (#156)。null = 未設定。マイページのフォームはこちらを束縛する */
+  notificationEmail: string | null;
+  /**
+   * 実際に通知を送る宛先 (#156)。notificationEmail ?? email。
+   * 呼び出し側が毎回フォールバックを書かなくて済むよう DTO で解決しておく。
+   */
+  effectiveNotificationEmail: string;
+  /** プロフィール画像の Storage キー (#157)。未設定は null */
+  avatarPath: string | null;
   primaryAuthMethod: 'password' | 'google' | 'microsoft';
   createdAt: string;
 };
@@ -46,6 +61,10 @@ function toDTO(user: {
   email: string;
   fullName: string;
   displayName: string;
+  organizationName?: string | null;
+  jobTitle?: string | null;
+  notificationEmail?: string | null;
+  avatarPath?: string | null;
   primaryAuthMethod: string;
   createdAt: Date;
 }): CurrentUserDTO {
@@ -54,6 +73,14 @@ function toDTO(user: {
     email: user.email,
     fullName: user.fullName,
     displayName: user.displayName,
+    organizationName: user.organizationName ?? null,
+    jobTitle: (user.jobTitle as JobTitle | null | undefined) ?? null,
+    notificationEmail: user.notificationEmail ?? null,
+    effectiveNotificationEmail: effectiveNotificationEmail({
+      notificationEmail: user.notificationEmail ?? null,
+      email: user.email,
+    }),
+    avatarPath: user.avatarPath ?? null,
     primaryAuthMethod: user.primaryAuthMethod as CurrentUserDTO['primaryAuthMethod'],
     createdAt: user.createdAt.toISOString(),
   };
@@ -319,6 +346,10 @@ export async function updateProfile(input: {
   authUserId: string;
   fullName?: string;
   displayName?: string;
+  /** null で未設定に戻す (#156) */
+  organizationName?: string | null;
+  jobTitle?: JobTitle | null;
+  notificationEmail?: string | null;
   newPassword?: string;
 }): Promise<CurrentUserDTO> {
   const existing = await prisma.user.findUnique({ where: { authUserId: input.authUserId } });
@@ -342,6 +373,13 @@ export async function updateProfile(input: {
       data: {
         ...(input.fullName !== undefined && { fullName: input.fullName }),
         ...(input.displayName !== undefined && { displayName: input.displayName }),
+        ...(input.organizationName !== undefined && {
+          organizationName: input.organizationName,
+        }),
+        ...(input.jobTitle !== undefined && { jobTitle: input.jobTitle }),
+        ...(input.notificationEmail !== undefined && {
+          notificationEmail: input.notificationEmail,
+        }),
       },
     });
     await tx.auditLog.create({
@@ -403,6 +441,12 @@ export async function deleteAccount(input: {
           email: `deleted+${existing.id}@trakon.invalid`,
           fullName: '退会済みユーザー',
           displayName: '退会済みユーザー',
+          // 個人を特定しうる項目は残さない (#156 / #157)。
+          // Storage 上のアイコン実体の削除は #157 の avatarStorage 側で行う。
+          organizationName: null,
+          jobTitle: null,
+          notificationEmail: null,
+          avatarPath: null,
         },
       }),
       prisma.oAuthIdentity.deleteMany({ where: { userId: existing.id } }),

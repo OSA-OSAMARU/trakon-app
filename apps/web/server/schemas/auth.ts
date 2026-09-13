@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { withdrawalReasonSchema } from '@trakon/shared';
+import { JOB_TITLES, withdrawalReasonSchema } from '@trakon/shared';
 
 export const completeSignupBodySchema = z.object({
   fullName: z.string().trim().min(1).max(100),
@@ -15,11 +15,34 @@ export const completeSignupBodySchema = z.object({
 
 export type CompleteSignupBody = z.infer<typeof completeSignupBodySchema>;
 
-/** プロフィール / 認証情報の更新 (氏名・表示名・パスワード、いずれも任意) */
+/**
+ * プロフィール / 認証情報の更新 (すべて任意、1 つ以上必須)。
+ *
+ * 所属名・職種・通知先メールは空文字を「未設定に戻す」= null として受ける (#156)。
+ * フォームは未入力を '' で送ってくるため。
+ */
+const clearableText = (max: number) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+    z.string().trim().max(max).nullable().optional(),
+  );
+
 export const updateProfileBodySchema = z
   .object({
     fullName: z.string().trim().min(1).max(100).optional(),
     displayName: z.string().trim().min(1).max(50).optional(),
+    /** 所属名 (#156)。null / '' で未設定に戻す */
+    organizationName: clearableText(255),
+    /** 職種 (#156)。null / '' で未設定に戻す */
+    jobTitle: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+      z.enum(JOB_TITLES).nullable().optional(),
+    ),
+    /** 通知先メール (#156)。null / '' でログイン用メールへ戻す */
+    notificationEmail: z.preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+      z.string().trim().toLowerCase().email().max(320).nullable().optional(),
+    ),
     newPassword: z
       .string()
       .min(8, 'Password must be at least 8 characters.')
@@ -29,7 +52,7 @@ export const updateProfileBodySchema = z
       })
       .optional(),
   })
-  .refine((v) => v.fullName !== undefined || v.displayName !== undefined || v.newPassword !== undefined, {
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
     message: 'At least one field must be provided.',
   });
 

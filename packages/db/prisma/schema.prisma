@@ -33,6 +33,15 @@ model User {
   email             String    @unique(map: "uq_users_email")
   fullName          String    @map("full_name")
   displayName       String    @map("display_name")
+  /// 所属名 (#156)。自由記述。組織 (Organization) は課金の契約主体で別概念なのでリレーションにしない
+  organizationName  String?   @map("organization_name")
+  /// 職種 (#156)。JOB_TITLES 18 値 (CHECK 制約)
+  jobTitle          String?   @map("job_title")
+  /// 通知先メール (#156)。NULL はログイン用 email を使う。
+  /// email は Supabase 側の変更に追随して再同期されるため、コピーを持たせない
+  notificationEmail String?   @map("notification_email")
+  /// プロフィール画像 (#157)。Supabase Storage のオブジェクトキー (URL ではない)
+  avatarPath        String?   @map("avatar_path")
   /// 'password' | 'google' | 'microsoft' (CHECK 制約)
   primaryAuthMethod String    @default("password") @map("primary_auth_method")
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
