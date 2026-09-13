@@ -645,7 +645,7 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
           itemId: string,
           itemName: string,    // 制作物名
           title: string,
-          category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',
+          category: 'proposal' | 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',
           startDate: string,
           endDate: string,
           isOverdue: boolean,
@@ -1043,7 +1043,7 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
     id: string,
     planType: 'toss',                // Phase 0
     title: string,
-    category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',  // v1.1
+    category: 'proposal' | 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',  // v1.1
     scheduledDate: string,
     dueDate: string | null,
     // 役割（#131）。MemberRef | null（任意項目のため null 可）
@@ -1086,7 +1086,7 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 {
   planType: 'toss',                 // Phase 0 は固定
   title: string,
-  category: 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',  // v1.1 必須（FR-SCH-18）
+  category: 'proposal' | 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other',  // v1.1 必須（FR-SCH-18）
   scheduledDate: string,            // YYYY-MM-DD
   dueDate?: string,
   // 役割（#131）。いずれも任意。1 人が複数役割を兼任可。FROM/TO は作成時に指定しない

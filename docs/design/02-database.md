@@ -198,7 +198,7 @@ erDiagram
         uuid item_id FK
         text plan_type "toss(P0) / shared/solo(P1) (CHECK)"
         text title
-        text category "v1.1 wireframe/design/coding/review/meeting/other (CHECK, NOT NULL)"
+        text category "proposal/wireframe/design/coding/review/meeting/other (CHECK, NOT NULL)"
         text color_theme "カラーテーマ 10 値 (CHECK, #149)"
         date scheduled_date
         date due_date
@@ -495,7 +495,7 @@ UPDATE project_members SET role_type = 'editor' WHERE role_type IS NULL;
 | item_id | uuid | × | — | FK → project_items.id |
 | plan_type | text | × | 'toss' | 'toss'（P0）／+'shared','solo'（P1）（CHECK） |
 | title | text | × | — | 予定名 |
-| **category** | text | × | — | **'wireframe' / 'design' / 'coding' / 'review' / 'meeting' / 'other'**（CHECK、NOT NULL、v1.1 追加、FR-SCH-18） |
+| **category** | text | × | — | **'proposal' / 'wireframe' / 'design' / 'coding' / 'review' / 'meeting' / 'other'**（CHECK、NOT NULL、v1.1 追加、`proposal` は #154 で追加、FR-SCH-18） |
 | **color_theme** | text | ○ | NULL | **カラーテーマ（#149 追加）。10 値の CHECK。NULL はカテゴリ由来の既定色にフォールバック。色は状態ではなくユーザーの視覚整理用（§4.9.2）** |
 | scheduled_date | date | × | — | 予定日（TOSS／共同）／開始予定日（単独） |
 | due_date | date | ○ | NULL | 期日（TOSS 用、任意） |
@@ -519,7 +519,7 @@ UPDATE project_members SET role_type = 'editor' WHERE role_type IS NULL;
 **制約**：
 - `ck_plans_plan_type` CHECK (plan_type IN ('toss'))  ← **Phase 0 のチェック式。Phase 1 で `('toss','shared','solo')` に ALTER**
 - `ck_plans_status` CHECK (status IN ('active','completed','canceled'))
-- `ck_plans_category` CHECK (category IN ('wireframe','design','coding','review','meeting','other')) ← **v1.1、enum 拡張は ALTER で対応**
+- `ck_plans_category` CHECK (category IN ('proposal','wireframe','design','coding','review','meeting','other')) ← **v1.1、enum 拡張は ALTER で対応（#154 で `proposal` を追加）**
 - `ck_plans_color_theme` CHECK (color_theme IS NULL OR color_theme IN (10 値)) ← **#149。値の定義は `packages/shared/src/constants` の `SCHEDULE_THEMES`**
 - ~~`ck_plans_toss_members`~~ **（#131 で撤去）**。旧制約は from/to を「実施者/確認者」とみなし `from <> to` を強制していたが、#131 で from/to は TOSS 履歴スナップショット（進行責任者→後続実施者）へ意味が変わり、かつ **1 人が複数役割を兼任できる**（from = to もありうる）ため、役割相違制約は課さない。
 - `uq_plans_successor_plan_id` UNIQUE (successor_plan_id) — **後続は1つの先行からのみ指される（v1.1）**

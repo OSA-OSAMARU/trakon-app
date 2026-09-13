@@ -104,7 +104,7 @@
 | **制作物** | プロジェクトに紐づく成果物単位（Webページ／ドキュメント／バナー 等） |
 | **プロジェクト** | 参加者・制作物・ボール・予定を束ねる親単位 |
 | **タスク** | UI 上で「予定」を指す通称。設計書／DB上は「予定（plan）」に統一する（v1.3 追加） |
-| **カテゴリ** | 予定の作業種別。`wireframe / design / coding / review / meeting / other` の6値（v1.3 追加、FR-SCH-18） |
+| **カテゴリ** | 予定の作業種別。`proposal / wireframe / design / coding / review / meeting / other` の7値（v1.3 追加、`proposal` は #154 で追加、FR-SCH-18） |
 | **後続紐付け** | 1つの予定（先行）に対し1つの後続予定を紐付ける関係。先行が完了したとき後続を **system actor による自動 TOSS** で受領状態に遷移させる（v1.3 追加、FR-SCH-17／FR-BALL-13） |
 | **メンバーかんばん** | プロジェクト参加メンバーごとに「準備中／TOSS済／完了」状態で予定を並べたかんばんビュー（SC-17）。DnD によるメンバー間移動は TOSS、状態間移動は完了などのドメイン操作にマッピングされる（v1.3 追加） |
 | **Magic-link サインアップ** | メールアドレス入力 → 認証メールリンク押下 → 詳細入力（full_name／display_name／password）→ 自動ログインの2段階フロー（v1.3 追加、UC-01） |
@@ -343,7 +343,7 @@ Phase 0 では、まず ③ 各制作物画面 で「ボールの受け渡しが
 | FR-SCH-10 | 同一日に複数の予定は3件まで表示し、4件目以降は「+N」で集約 | 1 | カレンダー表示仕様 v1.0 §10 |
 | FR-SCH-11 | 月の切り替わりに区切り線を表示する | **0** | カレンダー表示仕様 v1.0 §4 |
 | FR-SCH-17 | 予定は **1つの後続予定（successor_plan_id）** を持てる。先行予定の完了で、後続予定への自動 TOSS が走る（FR-BALL-13）。Phase 0 では同一プロジェクト内に限定 | **0** | 新規定義（SC-07／FR-BALL-13 連携） |
-| FR-SCH-18 | 予定は **カテゴリ**を必須項目として持つ。値は `wireframe / design / coding / review / meeting / other` の6種（DB側は CHECK 制約で可変）。カレンダー・カンバン・ダッシュボードの色分けに用いる | **0** | 新規定義（SC-06／SC-07／SC-09／SC-17 連携） |
+| FR-SCH-18 | 予定は **カテゴリ**を必須項目として持つ。値は `proposal / wireframe / design / coding / review / meeting / other` の7種（DB側は CHECK 制約で可変）。カレンダー・カンバン・ダッシュボードの色分けに用いる | **0** | 新規定義（SC-06／SC-07／SC-09／SC-17 連携）／#154 で `proposal` を追加 |
 
 #### 4.1.5. ボール状態遷移系（FR-BALL）
 
@@ -1348,7 +1348,7 @@ sequenceDiagram
 | TOSS予定 | TO（同上） | ○ |
 | TOSS予定 | 予定日 | ○ |
 | TOSS予定 | 期日 | 任 |
-| TOSS予定 | **カテゴリ**（wireframe/design/coding/review/meeting/other） | ○（FR-SCH-18） |
+| TOSS予定 | **カテゴリ**（proposal/wireframe/design/coding/review/meeting/other） | ○（FR-SCH-18） |
 | TOSS予定 | **次の予定（successor_plan_id）** | 任（FR-SCH-17、選択肢は同制作物の他予定） |
 | TOSS予定 | メモ | 任 |
 | 共同予定 | 予定名 | ○ |
@@ -1809,7 +1809,7 @@ erDiagram
 | participants | 参加者リスト（共同・将来用、JSON または別テーブル） |
 | location_or_url | 場所／URL（共同予定用） |
 | status | active / completed / canceled |
-| **category** | wireframe / design / coding / review / meeting / other（CHECK、NOT NULL、v1.3 追加、FR-SCH-18） |
+| **category** | proposal / wireframe / design / coding / review / meeting / other（CHECK、NOT NULL、v1.3 追加、`proposal` は #154、FR-SCH-18） |
 | **successor_plan_id** | 後続予定の FK（self、NULL 可、UNIQUE、v1.3 追加、FR-SCH-17）。Phase 0 では同一プロジェクト内に限定 |
 | memo / started_at / completed_at | 補助 |
 | deleted_at | 論理削除（Phase 1 以降。Phase 0 MVP は物理削除：FR-BALL-12） |

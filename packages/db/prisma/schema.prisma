@@ -224,7 +224,8 @@ model Plan {
   /// 'toss' (Phase 0 / CHECK 制約)
   planType                String    @default("toss") @map("plan_type")
   title                   String
-  /// 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other' (CHECK 制約)
+  /// PLAN_CATEGORIES 7 値 (CHECK 制約):
+  /// 'proposal' | 'wireframe' | 'design' | 'coding' | 'review' | 'meeting' | 'other'
   category                String
   /// カラーテーマ (#149)。SCHEDULE_THEMES の 10 値 (CHECK 制約)。
   /// NULL はカテゴリ由来の既定色にフォールバックする。色は状態ではなくユーザーの視覚整理用

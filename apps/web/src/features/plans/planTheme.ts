@@ -1,20 +1,22 @@
+import { PLAN_CATEGORY_SHORT_LABEL, type PlanCategory } from '@trakon/shared';
+
 import {
   SCHEDULE_THEME_MAP,
   type ScheduleTheme,
   type ScheduleThemeKey,
 } from '@/components/trakon/scheduleTheme';
 
-import type { PlanCategory } from './api';
-
 /**
- * カテゴリ 6 値 → スケジュールカラーテーマの既定マッピング。
+ * カテゴリ 7 値 → スケジュールカラーテーマの既定マッピング。
  *
  * Figma のカラーポリシー (node 54:2) では、色は状態ではなくユーザーが視覚整理の
  * ために選ぶもの。予定ごとの色選択が入るまでの間の既定値としてカテゴリから導出する。
  * 旧 categoryColor.ts の色相（violet / sky / emerald / amber / yellow / slate）を
  * 10 テーマの中で最も近いものに寄せている。
+ * proposal (#154) は既存 6 値が使っていない色相から blue を割り当てた。
  */
 export const CATEGORY_THEME: Record<PlanCategory, ScheduleThemeKey> = {
+  proposal: 'blue',
   wireframe: 'violet',
   design: 'cyan',
   coding: 'green',
@@ -23,14 +25,11 @@ export const CATEGORY_THEME: Record<PlanCategory, ScheduleThemeKey> = {
   other: 'warm-gray',
 };
 
-export const CATEGORY_LABEL: Record<PlanCategory, string> = {
-  wireframe: 'ワイヤー',
-  design: 'デザイン',
-  coding: 'コーディング',
-  review: 'レビュー',
-  meeting: '打ち合わせ',
-  other: 'その他',
-};
+/**
+ * カード表示用の短縮ラベル。正は @trakon/shared の PLAN_CATEGORY_SHORT_LABEL。
+ * 選択肢に出す正式名称は PLAN_CATEGORY_LABEL 側にある。
+ */
+export const CATEGORY_LABEL = PLAN_CATEGORY_SHORT_LABEL;
 
 export function planTheme(category: PlanCategory): ScheduleTheme {
   return SCHEDULE_THEME_MAP[CATEGORY_THEME[category]];
