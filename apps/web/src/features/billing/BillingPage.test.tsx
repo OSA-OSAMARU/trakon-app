@@ -91,8 +91,8 @@ describe('BillingPage (integration)', () => {
           ...defaultBillingResponse.entitlement,
           planCode: 'team',
           effectivePlanCode: 'team',
-          limits: { seatLimit: 5, projectLimit: null },
-          usage: { seatCount: 3, projectCount: 8 },
+          limits: { seatLimit: 5, viewerLimit: 0, projectLimit: null },
+          usage: { seatCount: 3, viewerCount: 0, projectCount: 8 },
           message: 'Team プランを利用中です。',
         },
       });
@@ -151,7 +151,7 @@ describe('BillingPage (integration)', () => {
         ...defaultBillingResponse.entitlement,
         planCode: 'personal' as const,
         effectivePlanCode: 'personal' as const,
-        limits: { seatLimit: 1, projectLimit: 10 },
+        limits: { seatLimit: 1, viewerLimit: 0, projectLimit: 10 },
         message: 'Personal プランを利用中です。',
       },
     };
@@ -315,7 +315,7 @@ describe('BillingPage (integration)', () => {
                     reason: 'trialing',
                     planCode: 'personal',
                     effectivePlanCode: 'personal',
-                    limits: { seatLimit: 1, projectLimit: 10 },
+                    limits: { seatLimit: 1, viewerLimit: 0, projectLimit: 10 },
                     message: 'Personal プランの無料トライアル中です。',
                   },
                 }
@@ -501,8 +501,8 @@ describe('BillingPage (integration)', () => {
       stubBilling({
         entitlement: {
           ...defaultBillingResponse.entitlement,
-          usage: { seatCount: 1, projectCount: 3 },
-          over: { seats: 0, projects: 1 },
+          usage: { seatCount: 1, viewerCount: 0, projectCount: 3 },
+          over: { seats: 0, viewers: 0, projects: 1 },
           canCreateProject: false,
           message: 'Free プランの上限を超えているため、1 件のプロジェクトが閲覧のみになっています。',
         },
