@@ -66,7 +66,11 @@ describe('BillingPage (integration)', () => {
 
       expect(await screen.findByText('現在のプラン')).toBeInTheDocument();
       expect(screen.getByText('Free プランを利用中です。')).toBeInTheDocument();
-      expect(screen.getByText('0 / 2')).toBeInTheDocument();
+      // 利用状況タイル (Figma node 263:18)
+      expect(screen.getByText('会員アカウント枠')).toBeInTheDocument();
+      expect(screen.getByText('1 / 1 アカウント')).toBeInTheDocument();
+      expect(screen.getByText('所有プロジェクト')).toBeInTheDocument();
+      expect(screen.getByText('0 / 2 件')).toBeInTheDocument();
     });
 
     it('プラン比較に Free / Personal / Team を出す', async () => {
@@ -78,6 +82,30 @@ describe('BillingPage (integration)', () => {
       expect(screen.getByTestId('plan-personal')).toBeInTheDocument();
       expect(screen.getByTestId('plan-team')).toBeInTheDocument();
       expect(screen.getByText('9,800')).toBeInTheDocument();
+    });
+
+    it('契約中はプラン一覧を畳み、「プランを変更」で開く (#156)', async () => {
+      stubBilling({
+        subscription: { ...defaultBillingResponse.subscription, planCode: 'team', status: 'active' },
+        entitlement: {
+          ...defaultBillingResponse.entitlement,
+          planCode: 'team',
+          effectivePlanCode: 'team',
+          limits: { seatLimit: 5, projectLimit: null },
+          usage: { seatCount: 3, projectCount: 8 },
+          message: 'Team プランを利用中です。',
+        },
+      });
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await screen.findByText('現在のプラン');
+      // 無制限は件数を出さずそのまま「無制限」と出す
+      expect(screen.getByText('無制限')).toBeInTheDocument();
+      expect(screen.getByText('3 / 5 アカウント')).toBeInTheDocument();
+      expect(screen.queryByTestId('plan-team')).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: 'プランを変更' }));
+      expect(await screen.findByTestId('plan-team')).toBeInTheDocument();
     });
 
     it('組織メンバー (非管理者) には変更操作を無効化し理由を出す', async () => {
@@ -139,6 +167,8 @@ describe('BillingPage (integration)', () => {
       );
       renderWithToaster();
 
+      // 契約中はプラン一覧が畳まれている (Figma node 263:18)
+      await userEvent.click(await screen.findByRole('button', { name: 'プランを変更' }));
       const teamCard = await screen.findByTestId('plan-team');
       await userEvent.click(within(teamCard).getByRole('button', { name: 'このプランに変更' }));
 
@@ -189,6 +219,8 @@ describe('BillingPage (integration)', () => {
       );
       renderWithToaster();
 
+      // 契約中はプラン一覧が畳まれている (Figma node 263:18)
+      await userEvent.click(await screen.findByRole('button', { name: 'プランを変更' }));
       const teamCard = await screen.findByTestId('plan-team');
       await userEvent.click(within(teamCard).getByRole('button', { name: 'このプランに変更' }));
 
@@ -216,7 +248,7 @@ describe('BillingPage (integration)', () => {
     });
   });
 
-  describe('お支払い方法・請求書', () => {
+  describe('決済情報を管理', () => {
     it('Customer Portal の URL へ遷移する', async () => {
       stubBilling({
         subscription: {
@@ -234,7 +266,7 @@ describe('BillingPage (integration)', () => {
       renderWithProviders(<BillingPage />, { route: '/settings/billing' });
 
       await userEvent.click(
-        await screen.findByRole('button', { name: 'お支払い方法・請求書' }),
+        await screen.findByRole('button', { name: '決済情報を管理' }),
       );
 
       await waitFor(() =>
@@ -248,7 +280,7 @@ describe('BillingPage (integration)', () => {
 
       await screen.findByText('現在のプラン');
       expect(
-        screen.queryByRole('button', { name: 'お支払い方法・請求書' }),
+        screen.queryByRole('button', { name: '決済情報を管理' }),
       ).not.toBeInTheDocument();
     });
   });
@@ -341,7 +373,7 @@ describe('BillingPage (integration)', () => {
       expect(
         await screen.findByText(/までにお支払い方法を更新してください/),
       ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'お支払い方法・請求書' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: '決済情報を管理' })).toBeEnabled();
     });
   });
 
@@ -370,7 +402,8 @@ describe('BillingPage (integration)', () => {
       renderWithProviders(<BillingPage />, { route: '/settings/billing' });
 
       await screen.findByText('現在のプラン');
-      expect(screen.getByText('0 円 (税込)')).toBeInTheDocument();
+      // Free は月額 0 円なので価格は出さず、上限だけを出す
+      expect(screen.getByText(/会員アカウント 1人 \/ アクティブプロジェクト 2/)).toBeInTheDocument();
       expect(screen.queryByText('9,800 円 (税込)')).not.toBeInTheDocument();
     });
 
@@ -393,7 +426,7 @@ describe('BillingPage (integration)', () => {
       expect(screen.queryByRole('button', { name: '解約する' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: '解約を取り消す' })).not.toBeInTheDocument();
       // 過去の請求書は見られるので支払い管理の導線は残す
-      expect(screen.getByRole('button', { name: 'お支払い方法・請求書' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '決済情報を管理' })).toBeInTheDocument();
     });
 
     it('終了した契約の日付を出さない', async () => {
