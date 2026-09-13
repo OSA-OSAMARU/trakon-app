@@ -178,6 +178,14 @@ const prismaMock = {
   // このテストでは予定を持たない前提なので常に空配列。
   plan: {
     findMany: vi.fn(async () => []),
+    // 期間外予定の判定 (#155)。既定は「予定なし」= 期間変更を妨げない。
+    // 期間ガード自体の検証は実 DB を使う統合テストへ寄せる。
+    aggregate: vi.fn(async () => ({
+      _min: { scheduledDate: null },
+      _max: { scheduledDate: null, dueDate: null },
+      _count: { _all: 0 },
+    })),
+    count: vi.fn(async () => 0),
   },
   // 作成者の既定の所属組織を解決する (projects.organization_id は NOT NULL)。
   organizationMember: {

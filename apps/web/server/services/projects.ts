@@ -3,6 +3,7 @@ import { pickLatestBallEvent, type BallEventType, type ProjectRole } from '@trak
 
 import { ApiException } from '../lib/errors.js';
 import { resolvePrimaryOrganization } from './organizations.js';
+import { assertPeriodCoversPlans, getPlanDateRange, type PlanDateRange } from './projectPeriod.js';
 import { getEntitlement } from './billing/entitlement.js';
 import type { CreateProjectBody, UpdateProjectBody } from '../schemas/projects.js';
 
@@ -35,6 +36,11 @@ export type ProjectDetailDTO = ProjectSummaryDTO & {
     memberCount: number;
     itemCount: number;
   };
+  /**
+   * 登録済み予定が占める日付範囲 (#155)。予定が 1 件も無ければ null。
+   * 編集画面で開始日 / 終了日の選択可能範囲を示すのに使う。
+   */
+  plansDateRange: PlanDateRange | null;
 };
 
 function toDateString(d: Date): string {
@@ -198,10 +204,14 @@ export async function getProjectDetail(
   if (!p) {
     throw new ApiException('NOT_FOUND', 404, 'Project not found.');
   }
-  const overdue = await countOverdueBalls([p.id]);
+  const [overdue, plansDateRange] = await Promise.all([
+    countOverdueBalls([p.id]),
+    getPlanDateRange(p.id),
+  ]);
   return {
     ...toSummary(p, currentUserId, overdue.get(p.id) ?? 0),
     counts: { memberCount: p._count.members, itemCount: p._count.items },
+    plansDateRange,
   };
 }
 
@@ -330,13 +340,35 @@ export async function updateProject(input: {
     data.endDate = new Date(`${input.body.endDate}T00:00:00Z`);
   if (input.body.status !== undefined) data.status = input.body.status;
 
+  // 期間を触るときだけ検証する (#155)。
+  // Zod は片方だけの PATCH で保存済みの他方と比較できないため、ここで突き合わせる。
+  if (input.body.startDate !== undefined || input.body.endDate !== undefined) {
+    const current = await prisma.project.findFirst({
+      where: { id: input.projectId, deletedAt: null },
+      select: { startDate: true, endDate: true },
+    });
+    if (!current) throw new ApiException('NOT_FOUND', 404, 'Project not found.');
+
+    const startDate = input.body.startDate ?? toDateString(current.startDate);
+    const endDate = input.body.endDate ?? toDateString(current.endDate);
+    if (endDate < startDate) {
+      throw new ApiException(
+        'INVALID_PROJECT_PERIOD',
+        422,
+        '終了日は開始日以降にしてください。',
+        { startDate, endDate },
+      );
+    }
+    await assertPeriodCoversPlans({ projectId: input.projectId, startDate, endDate });
+  }
+
   const updated = await prisma.project.update({
     where: { id: input.projectId },
     data,
   });
 
-  // 期間外予定 (plans) チェックは Sub-Phase 0.3 で plans テーブル追加後に実装
-  // ここでは空 warnings を返す
+  // 期間外予定は警告ではなく 409 で拒否する方針に変えたため (#155)、ここでは常に空。
+  // routes 側のレスポンス形 { data, warnings } は他の呼び出しと揃えるため維持する。
   const warnings: Array<{ code: string; message: string }> = [];
 
   return {

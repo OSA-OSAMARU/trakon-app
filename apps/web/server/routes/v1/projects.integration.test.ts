@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { api } from '../../test/request.js';
 import {
+  createItem,
   createMember,
   createOutsider,
+  createPlan,
   createProject,
   createUser,
   setupProjectWithDirector,
@@ -150,6 +152,135 @@ describe('projects routes (integration)', () => {
         },
       });
       expect(res.status).toBe(422);
+    });
+  });
+  // ---------------------------------------------------------------------------
+  // プロジェクト期間の変更ガード (#155)
+  //
+  // 縦型スケジュールは行軸をプロジェクト期間から作るため、期間の外に出た予定は
+  // 描画先の行が無く、FE 側で端の行へクランプされて壊れて見える。期間の変更で
+  // 既存予定がはみ出す場合は 409 で拒否する。
+  // ---------------------------------------------------------------------------
+  describe('期間変更ガード (#155)', () => {
+    async function setupWithPlan(planDates: { scheduledDate: Date; dueDate?: Date | null }) {
+      const user = await createUser();
+      const project = await createProject({
+        createdBy: user.id,
+        startDate: new Date('2026-06-01'),
+        endDate: new Date('2026-06-30'),
+      });
+      await createMember({
+        projectId: project.id,
+        userId: user.id,
+        name: user.fullName,
+        email: user.email,
+        memberType: 'production',
+        roleType: 'admin',
+      });
+      const item = await createItem({ projectId: project.id });
+      await createPlan({ itemId: item.id, ...planDates });
+      const token = await signTestJwt({ authUserId: user.authUserId, email: user.email });
+      return { project, token };
+    }
+
+    it('既存予定を含む範囲への変更は成功する', async () => {
+      const { project, token } = await setupWithPlan({
+        scheduledDate: new Date('2026-06-10'),
+        dueDate: new Date('2026-06-15'),
+      });
+      const res = await api<{ data: { startDate: string; endDate: string } }>(
+        `/api/v1/projects/${project.id}`,
+        { method: 'PATCH', token, body: { startDate: '2026-06-05', endDate: '2026-07-31' } },
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.startDate).toBe('2026-06-05');
+      expect(res.body.data.endDate).toBe('2026-07-31');
+    });
+
+    it('開始日を予定より後ろへ動かすと 409 PLANS_OUT_OF_RANGE', async () => {
+      const { project, token } = await setupWithPlan({ scheduledDate: new Date('2026-06-10') });
+      const res = await api<{ error: { code: string; details: { outOfRangeCount: number } } }>(
+        `/api/v1/projects/${project.id}`,
+        { method: 'PATCH', token, body: { startDate: '2026-06-20' } },
+      );
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('PLANS_OUT_OF_RANGE');
+      expect(res.body.error.details.outOfRangeCount).toBe(1);
+    });
+
+    it('終了日を予定の終了日より手前へ動かすと 409 (dueDate も見る)', async () => {
+      const { project, token } = await setupWithPlan({
+        scheduledDate: new Date('2026-06-10'),
+        dueDate: new Date('2026-06-25'),
+      });
+      const res = await api<{ error: { code: string } }>(`/api/v1/projects/${project.id}`, {
+        method: 'PATCH',
+        token,
+        body: { endDate: '2026-06-20' },
+      });
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('PLANS_OUT_OF_RANGE');
+    });
+
+    it('境界ちょうど (予定の端 = 期間の端) は成功する', async () => {
+      const { project, token } = await setupWithPlan({
+        scheduledDate: new Date('2026-06-10'),
+        dueDate: new Date('2026-06-20'),
+      });
+      const res = await api(`/api/v1/projects/${project.id}`, {
+        method: 'PATCH',
+        token,
+        body: { startDate: '2026-06-10', endDate: '2026-06-20' },
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('予定が 1 件も無ければ任意の期間へ変更できる', async () => {
+      const { project, token } = await setupProjectWithDirector();
+      const res = await api(`/api/v1/projects/${project.id}`, {
+        method: 'PATCH',
+        token,
+        body: { startDate: '2027-01-01', endDate: '2027-01-31' },
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('終了日だけの PATCH でも保存済みの開始日と突き合わせる (422)', async () => {
+      const { project, token } = await setupProjectWithDirector();
+      // 保存済みは 2026-01-01 〜 2026-12-31。endDate だけを開始日より前に送る。
+      const res = await api<{ error: { code: string } }>(`/api/v1/projects/${project.id}`, {
+        method: 'PATCH',
+        token,
+        body: { endDate: '2025-12-31' },
+      });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('INVALID_PROJECT_PERIOD');
+    });
+
+    it('期間を触らない更新は予定がはみ出していても成功する', async () => {
+      const { project, token } = await setupWithPlan({ scheduledDate: new Date('2026-06-10') });
+      const res = await api(`/api/v1/projects/${project.id}`, {
+        method: 'PATCH',
+        token,
+        body: { name: '名前だけ変更' },
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it('GET /projects/:id は予定の日付範囲 (plansDateRange) を返す', async () => {
+      const { project, token } = await setupWithPlan({
+        scheduledDate: new Date('2026-06-10'),
+        dueDate: new Date('2026-06-15'),
+      });
+      const res = await api<{
+        data: { plansDateRange: { min: string; max: string; count: number } | null };
+      }>(`/api/v1/projects/${project.id}`, { token });
+      expect(res.status).toBe(200);
+      expect(res.body.data.plansDateRange).toEqual({
+        min: '2026-06-10',
+        max: '2026-06-15',
+        count: 1,
+      });
     });
   });
 });

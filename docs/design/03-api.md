@@ -133,7 +133,7 @@ Phase 0 で必要な REST API（Hono on Vercel Functions）の設計を行う。
 {
   "data": { ... },
   "warnings": [
-    { "code": "PLANS_OUT_OF_RANGE", "message": "...", "details": { "planIds": [...] } }
+    { "code": "SOME_WARNING", "message": "..." }
   ]
 }
 
@@ -852,18 +852,36 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 ```
 
 **処理**：
-- 期間変更で範囲外に予定がある場合、警告のみ（PRD FR-PRJ-04／本設計章2 §2.10-6）
-- **レスポンスボディの `warnings` 配列**で件数・該当 plan ID を返す（FE 側でモーダル表示）
+- **期間変更で範囲外になる予定がある場合は 409 で拒否する**（#155 で警告から変更）。
+  縦型スケジュール（SC-06）は行軸をプロジェクト期間から組み立てるため、期間外の予定は
+  描画先の行が無く、FE 側の `dayIndex()` が端の行へクランプして**間違った日付の位置に
+  潰れて描画される**。警告を出して保存を通すと、この壊れた状態を作れてしまう。
+- `startDate` / `endDate` の**片方だけ**を送った場合も、保存済みのもう一方と突き合わせて
+  `endDate >= startDate` を検証する（422 `INVALID_PROJECT_PERIOD`）。Zod は他方の
+  保存値を知らないためサービス層で行う。
+- 逆方向（予定の日付をプロジェクト期間の外へ動かす）は
+  `POST/PATCH /plans` 側で 422 `PLAN_OUT_OF_PROJECT_PERIOD` として塞ぐ。
 
 **レスポンス（200）**：
 ```typescript
 {
-  data: { /* 更新後の project */ },
-  warnings?: Array<{
-    code: 'PLANS_OUT_OF_RANGE' | string,
+  data: { /* 更新後の project。plansDateRange を含む */ },
+  warnings?: Array<{ code: string, message: string }>,  // 現状は常に空
+}
+```
+
+**エラー（409 `PLANS_OUT_OF_RANGE`）**：
+```typescript
+{
+  error: {
+    code: 'PLANS_OUT_OF_RANGE',
     message: string,
-    details: { planIds: string[] },
-  }>,
+    details: {
+      planRange: { min: string, max: string, count: number },
+      requestedPeriod: { startDate: string, endDate: string },
+      outOfRangeCount: number,
+    },
+  },
 }
 ```
 
