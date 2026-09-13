@@ -468,6 +468,9 @@ export async function removeAvatar(authUserId: string): Promise<CurrentUserDTO> 
   }
   if (!existing.avatarPath) return toDTOSigned(existing);
 
+  // 更新前に控える (更新後の行から読むと、既に NULL になっている)
+  const previous = existing.avatarPath;
+
   const updated = await prisma.$transaction(async (tx) => {
     const u = await tx.user.update({ where: { id: existing.id }, data: { avatarPath: null } });
     await tx.auditLog.create({
@@ -482,7 +485,7 @@ export async function removeAvatar(authUserId: string): Promise<CurrentUserDTO> 
     });
     return u;
   });
-  await removeAvatarObject(existing.avatarPath);
+  await removeAvatarObject(previous);
 
   return toDTOSigned(updated);
 }
