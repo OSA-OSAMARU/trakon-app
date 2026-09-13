@@ -26,6 +26,33 @@ describe('apiRequest', () => {
     expect(res).toEqual({ ok: true });
   });
 
+  it('JSON ボディには Content-Type: application/json を付ける', async () => {
+    let contentType: string | null = null;
+    server.use(
+      http.post('*/api/v1/things', ({ request }) => {
+        contentType = request.headers.get('content-type');
+        return HttpResponse.json({ data: null });
+      }),
+    );
+    await apiRequest('/things', { method: 'POST', body: { a: 1 } });
+    expect(contentType).toBe('application/json');
+  });
+
+  it('FormData には Content-Type を付けない (boundary はプラットフォームが付ける)', async () => {
+    let contentType: string | null = null;
+    server.use(
+      http.post('*/api/v1/upload', ({ request }) => {
+        contentType = request.headers.get('content-type');
+        return HttpResponse.json({ data: null });
+      }),
+    );
+    const form = new FormData();
+    form.append('file', new Blob(['x'], { type: 'image/webp' }), 'a.webp');
+    await apiRequest('/upload', { method: 'POST', body: form });
+    // application/json を付けてしまうとサーバー側の formData() が失敗する (#157)
+    expect(contentType).not.toMatch(/application\/json/);
+  });
+
   it('204 No Content は undefined を返す', async () => {
     server.use(
       http.delete('*/api/v1/things/1', () => new HttpResponse(null, { status: 204 })),
