@@ -7,7 +7,10 @@ import type {
   getCurrentUser as GetCurrentUserType,
   recordLogin as RecordLoginType,
   deleteAccount as DeleteAccountType,
+  replaceAvatar as ReplaceAvatarType,
+  removeAvatar as RemoveAvatarType,
 } from './auth.js';
+import type * as AvatarStorage from '../lib/avatarStorage.js';
 
 // =============================================================================
 // Mocks
@@ -24,6 +27,8 @@ type MockUser = {
   fullName: string;
   displayName: string;
   primaryAuthMethod: string;
+  /** プロフィール画像の Storage キー (#157) */
+  avatarPath?: string | null;
   createdAt: Date;
   deletedAt: Date | null;
 };
@@ -183,6 +188,21 @@ const deleteUserMock = vi.fn(
     error: null,
   }),
 );
+// Storage 本体は avatarStorage.test.ts で検証済み。ここでは呼ばれ方だけ見る。
+const uploadAvatarObjectMock = vi.fn(async () => undefined);
+const removeAvatarObjectMock = vi.fn(async () => undefined);
+vi.mock('../lib/avatarStorage.js', async (orig) => {
+  const actual = await orig<typeof AvatarStorage>();
+  return {
+    ...actual,
+    uploadAvatarObject: (...a: unknown[]) => uploadAvatarObjectMock(...(a as [])),
+    removeAvatarObject: (...a: unknown[]) => removeAvatarObjectMock(...(a as [])),
+    // 署名は Storage 依存なので固定値にする
+    signAvatarUrl: async (path: string | null) => (path ? `https://signed.test/${path}` : null),
+    signAvatarUrls: async () => new Map<string, string>(),
+  };
+});
+
 vi.mock('../lib/supabaseAdmin.js', () => ({
   getSupabaseAdmin: () => ({
     auth: {
@@ -205,10 +225,20 @@ let updateProfile: typeof UpdateProfileType;
 let getCurrentUser: typeof GetCurrentUserType;
 let recordLogin: typeof RecordLoginType;
 let deleteAccount: typeof DeleteAccountType;
+let replaceAvatar: typeof ReplaceAvatarType;
+let removeAvatar: typeof RemoveAvatarType;
 
 beforeAll(async () => {
-  ({ syncUser, completeSignup, updateProfile, getCurrentUser, recordLogin, deleteAccount } =
-    await import('./auth.js'));
+  ({
+    syncUser,
+    completeSignup,
+    updateProfile,
+    getCurrentUser,
+    recordLogin,
+    deleteAccount,
+    replaceAvatar,
+    removeAvatar,
+  } = await import('./auth.js'));
 });
 
 afterEach(() => {
@@ -722,5 +752,114 @@ describe('recordLogin', () => {
     // 例外を投げずに解決すること
     await expect(recordLogin({ userId: 'u-3' })).resolves.toBeUndefined();
     expect(auditStore).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// プロフィール画像 (#157)
+// =============================================================================
+
+describe('replaceAvatar / removeAvatar', () => {
+  const PNG = new Uint8Array(64);
+  PNG.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  const seedUser = (overrides: Partial<MockUser> = {}) => {
+    userStore['auth-av'] = {
+      id: 'u-av',
+      authUserId: 'auth-av',
+      email: 'av@example.com',
+      fullName: '画像 太郎',
+      displayName: 'あば',
+      primaryAuthMethod: 'password',
+      avatarPath: null,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      deletedAt: null,
+      ...overrides,
+    };
+  };
+
+  it('アップロードすると avatar_path が入り、署名付き URL が返る', async () => {
+    seedUser();
+    const res = await replaceAvatar({
+      authUserId: 'auth-av',
+      bytes: PNG,
+      size: PNG.byteLength,
+      declaredType: 'image/png',
+    });
+
+    expect(uploadAvatarObjectMock).toHaveBeenCalledTimes(1);
+    expect(userStore['auth-av']!.avatarPath).toMatch(/^u-av\/[0-9a-f-]{36}\.png$/);
+    expect(res.avatarUrl).toBe(`https://signed.test/${userStore['auth-av']!.avatarPath}`);
+    expect(auditStore.at(-1)).toMatchObject({ action: 'update_profile' });
+  });
+
+  it('差し替え時は「アップロード成功後に」旧オブジェクトを消す', async () => {
+    seedUser({ avatarPath: 'u-av/old.png' });
+    await replaceAvatar({
+      authUserId: 'auth-av',
+      bytes: PNG,
+      size: PNG.byteLength,
+      declaredType: 'image/png',
+    });
+    expect(removeAvatarObjectMock).toHaveBeenCalledWith('u-av/old.png');
+  });
+
+  it('アップロードに失敗したら DB は書き換えず、旧画像も消さない', async () => {
+    seedUser({ avatarPath: 'u-av/old.png' });
+    uploadAvatarObjectMock.mockRejectedValueOnce(new Error('storage down'));
+
+    await expect(
+      replaceAvatar({
+        authUserId: 'auth-av',
+        bytes: PNG,
+        size: PNG.byteLength,
+        declaredType: 'image/png',
+      }),
+    ).rejects.toThrow();
+
+    expect(userStore['auth-av']!.avatarPath).toBe('u-av/old.png');
+    expect(removeAvatarObjectMock).not.toHaveBeenCalled();
+  });
+
+  it('画像でないファイルは 422 で、Storage を呼ばない', async () => {
+    seedUser();
+    const elf = new Uint8Array([0x7f, 0x45, 0x4c, 0x46, 0, 0, 0, 0]);
+    await expect(
+      replaceAvatar({
+        authUserId: 'auth-av',
+        bytes: elf,
+        size: elf.byteLength,
+        declaredType: 'image/png',
+      }),
+    ).rejects.toMatchObject({ code: 'AVATAR_UNSUPPORTED_TYPE', status: 422 });
+    expect(uploadAvatarObjectMock).not.toHaveBeenCalled();
+  });
+
+  it('退会済みユーザーは 404 PROFILE_NOT_COMPLETED', async () => {
+    seedUser({ deletedAt: new Date() });
+    await expect(
+      replaceAvatar({
+        authUserId: 'auth-av',
+        bytes: PNG,
+        size: PNG.byteLength,
+        declaredType: 'image/png',
+      }),
+    ).rejects.toMatchObject({ code: 'PROFILE_NOT_COMPLETED', status: 404 });
+  });
+
+  it('削除すると avatar_path が NULL になり、実体も消える', async () => {
+    seedUser({ avatarPath: 'u-av/x.png' });
+    const res = await removeAvatar('auth-av');
+
+    expect(userStore['auth-av']!.avatarPath).toBeNull();
+    expect(removeAvatarObjectMock).toHaveBeenCalledWith('u-av/x.png');
+    expect(res.avatarUrl).toBeNull();
+  });
+
+  it('未設定でも削除は冪等に成功する (Storage は呼ばない)', async () => {
+    seedUser({ avatarPath: null });
+    const res = await removeAvatar('auth-av');
+    expect(res.avatarUrl).toBeNull();
+    expect(removeAvatarObjectMock).not.toHaveBeenCalled();
   });
 });

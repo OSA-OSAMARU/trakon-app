@@ -11,9 +11,12 @@ import {
   deleteAccount,
   getCurrentUser,
   recordLogin,
+  removeAvatar,
+  replaceAvatar,
   syncUser,
   updateProfile,
 } from '../../services/auth.js';
+import { AVATAR_MAX_BYTES } from '../../lib/avatarStorage.js';
 import { ApiException } from '../../lib/errors.js';
 
 export const authRoute = new Hono()
@@ -72,6 +75,48 @@ export const authRoute = new Hono()
       notificationEmail: body.notificationEmail,
       newPassword: body.newPassword,
     });
+    return c.json({ data: user });
+  })
+
+  /**
+   * プロフィール画像のアップロード (#157)。multipart/form-data の `file` を受ける。
+   *
+   * 画像の切り抜き・リサイズはクライアント側で済ませて送ってもらう。サーバーで
+   * 画像処理 (sharp 等) を行うと Vercel のバンドルにネイティブ依存が乗るため、
+   * ここでは検証 (サイズ / MIME / マジックバイト) と保存だけを担う。
+   */
+  .post('/me/avatar', async (c) => {
+    const authUser = c.get('authUser');
+
+    // Content-Length で早期に弾く (本文を読み切る前に打ち切る)
+    const declaredLength = Number(c.req.header('content-length') ?? 0);
+    if (declaredLength > AVATAR_MAX_BYTES * 1.1) {
+      throw new ApiException(
+        'AVATAR_TOO_LARGE',
+        413,
+        `画像は ${AVATAR_MAX_BYTES / 1024 / 1024}MB 以下にしてください。`,
+      );
+    }
+
+    const form = await c.req.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) {
+      throw new ApiException('AVATAR_MISSING', 422, '画像ファイルを選んでください。');
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const user = await replaceAvatar({
+      authUserId: authUser.authUserId,
+      bytes,
+      size: bytes.byteLength,
+      declaredType: file.type,
+    });
+    return c.json({ data: user });
+  })
+
+  /** プロフィール画像を外す (#157) */
+  .delete('/me/avatar', async (c) => {
+    const authUser = c.get('authUser');
+    const user = await removeAvatar(authUser.authUserId);
     return c.json({ data: user });
   })
 

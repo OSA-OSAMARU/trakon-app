@@ -11,8 +11,8 @@ export type ProjectMember = {
   memberType: MemberType;
   /** 職種 (#147)。アカウント紐付け済みなら users 側が正 (#156)。権限には影響しない */
   jobTitle: JobTitle | null;
-  /** プロフィール画像の Storage キー (#157)。アカウント未紐付けは null */
-  avatarPath: string | null;
+  /** プロフィール画像の表示 URL (#157)。署名付き・1 時間有効。未設定は null */
+  avatarUrl: string | null;
   /** 権限ロール (FR-ROLE-01)。操作権限の唯一の根拠 */
   roleType: ProjectRole;
   sortOrder: number;

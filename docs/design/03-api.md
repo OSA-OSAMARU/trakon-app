@@ -296,7 +296,10 @@ flowchart TB
 | `GET /invitations/:token` | ✅ | ✅ | — | — | — | トークンが認可代わり |
 | `POST /invitations/:token/accept` | ✅ | ✅ | — | — | — | 同上＋JWT で users 紐付け |
 | `POST /auth/me/sync`（初回ユーザー作成） | ❌ | ✅ | — | — | — | JWT は要、users 行は未存在。**v1.1 で OAuth プロバイダの初回登録も同 EP 経由** |
-| `GET /auth/me` | ❌ | ✅ | — | — | — | |
+| `GET /auth/me` | ❌ | ✅ | — | — | — | 所属名 / 職種 / 通知先メール / アイコン URL を含む (#156, #157) |
+| `PATCH /auth/me` | ❌ | ✅ | — | — | — | 氏名 / 表示名 / 所属名 / 職種 / 通知先メール / パスワード。空文字は「未設定に戻す」(#156) |
+| `POST /auth/me/avatar` **(#157)** | ❌ | ✅ | — | — | — | multipart。10MB 以下 / PNG・JPEG・WebP。**マジックバイトで実体を検証**する |
+| `DELETE /auth/me/avatar` **(#157)** | ❌ | ✅ | — | — | — | 画像を外す。未設定でも冪等に成功する |
 | `GET /users/me/dashboard` **(v1.1)** | ❌ | ✅ | — | — | — | 自分が見える全プロジェクトの「今日のタスク」階層ビュー |
 | `GET /projects` | ❌ | ✅ | — | — | — | 自分が参加するもののみ |
 | `POST /projects` | ❌ | ✅※limit | — | — | — | プロジェクト横断のため役割列は対象外。**v1.2：組織の会員なら作成可。プラン上限に達している場合は 409 `PROJECT_LIMIT_REACHED`**。作成者はそのプロジェクトの管理者になる（FR-ROLE-04） |
@@ -374,6 +377,9 @@ flowchart TB
 | Auth | POST | `/auth/me/sync` | UC-01, 24 | SC-01 |
 | Auth | POST | `/auth/me/complete-signup` **(v1.1)** | UC-01 | SC-01 |
 | Auth | GET | `/auth/me` | UC-01 | SC-01, 全画面ヘッダ |
+| Auth | PATCH | `/auth/me` | — | SC-15 マイページ |
+| Auth | POST | `/auth/me/avatar` **(#157)** | — | SC-15 マイページ |
+| Auth | DELETE | `/auth/me/avatar` **(#157)** | — | SC-15 マイページ |
 | Dashboard | GET | `/users/me/dashboard` **(v1.1)** | UC-13 相当 | SC-09 |
 | Invitations | GET | `/invitations/:token` | UC-03 | SC-02 |
 | Invitations | POST | `/invitations/:token/accept` | UC-03 | SC-02 |

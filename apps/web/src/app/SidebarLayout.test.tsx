@@ -45,7 +45,7 @@ const SYNC_OK: SyncResponse = {
     jobTitle: null,
     notificationEmail: null,
     effectiveNotificationEmail: 'taro@example.com',
-    avatarPath: null,
+    avatarUrl: null,
     primaryAuthMethod: 'password',
     createdAt: '2026-06-01T00:00:00.000Z',
   },

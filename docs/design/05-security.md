@@ -457,7 +457,23 @@ async function syncUser(jwt: SupabaseJWT): Promise<UserSyncResult> {
 | OAuth Client Secret 漏洩対策 | Vercel Env + Supabase Vault、SR-OPS-03 と同じ。漏洩時の再生成手順を Runbook 化（章6 §6.7） |
 | Authorize URL のドメイン検証 | Supabase Auth が標準で正規プロバイダドメインのみ許可 |
 | open redirect 対策 | `redirectTo` パラメータは同一オリジン以外を 400 で拒否（章3 §3.6.2） |
-| プロバイダから取得する PII | メール・名前のみ。プロフィール画像（picture）は Phase 0 では取得しても表示せず、`users.avatar_url` への保存も Phase 1+ で検討（PRD SR-PRIVACY-01 最小収集） |
+| プロバイダから取得する PII | メール・名前のみ。**OAuth プロバイダの `picture` は取得しても保存・表示しない**（PRD SR-PRIVACY-01 最小収集）。プロフィール画像はユーザーが自分でアップロードしたものだけを扱う（#157、下記 §5.5.x） |
+
+#### 5.3.9.7 プロフィール画像の取り扱い（#157）
+
+`users.avatar_path` は **Phase 1+ へ延期していたが #157 で前倒しした**。延期の理由（顔写真という
+強い PII を最小収集の方針に反して抱えること）は、以下で緩和する。
+
+| 項目 | 方針 |
+|---|---|
+| 収集元 | **ユーザーが自分でアップロードした画像のみ**。OAuth の `picture` は引き続き取得も表示もしない |
+| 保存先 | Supabase Storage の**非公開バケット** `avatars`。キーは `{userId}/{uuidv7}.{ext}` |
+| 公開範囲 | **公開 URL を持たせない**。表示はバックエンドが発行する有効期限 1 時間の署名付き URL を通す（PRD §8 の attachments 方針「署名付きURL + 短時間有効期限、直リンク禁止」と同じ）|
+| アクセス制御 | Storage の RLS ポリシーは書かない。バケットへ触れるのは service role キーを持つバックエンドのみで、認可はミドルウェアチェーンに一本化する（§5.4） |
+| 非会員共有ページ | `/share/:token` には**アイコンもメールアドレスも出さない**（`toPublicPlanDTO` で削る） |
+| 検証 | 10MB 以下 / `image/png`・`image/jpeg`・`image/webp` / **マジックバイトで実体を確認**。宣言 Content-Type は信用しない |
+| 画像処理 | サーバーでは行わない。切り抜き・リサイズはクライアントで済ませ、バックエンドは検証と保存のみ（ネイティブ依存をサーバーレスのバンドルに持ち込まない）|
+| 退会時 | `users.avatar_path` を NULL にし、**Storage 上の実体も削除する**（§5.5 の削除方針） |
 
 ---
 

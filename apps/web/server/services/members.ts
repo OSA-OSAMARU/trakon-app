@@ -1,5 +1,7 @@
 import { prisma } from '@trakon/db';
 import { resolveMemberProfile } from '@trakon/shared';
+
+import { signAvatarUrls } from '../lib/avatarStorage.js';
 import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
@@ -20,8 +22,11 @@ export type MemberDTO = {
   memberType: MemberType;
   /** 職種 (#147)。アカウント紐付け済みなら users 側が正 (#156)。権限には影響しない */
   jobTitle: JobTitle | null;
-  /** プロフィール画像の Storage キー (#157)。アカウント未紐付けは null */
-  avatarPath: string | null;
+  /**
+   * プロフィール画像の表示 URL (#157)。非公開バケットの署名付き URL (1 時間有効)。
+   * アカウント未紐付け・未設定・署名失敗は null。
+   */
+  avatarUrl: string | null;
   /** 権限ロール (FR-ROLE-01)。操作権限の唯一の根拠 */
   roleType: ProjectRole;
   sortOrder: number;
@@ -84,12 +89,30 @@ function toDTO(m: {
     organizationName: profile.organizationName,
     memberType: m.memberType as MemberType,
     jobTitle: (profile.jobTitle as JobTitle | null) ?? null,
-    avatarPath: profile.avatarPath,
+    // 署名は一覧全体でまとめて行う (attachSignedAvatars)。ここでは未署名の null にしておく
+    avatarUrl: null,
     roleType: m.roleType as ProjectRole,
     sortOrder: m.sortOrder,
     createdAt: m.createdAt.toISOString(),
     updatedAt: m.updatedAt.toISOString(),
   };
+}
+
+/**
+ * 一覧のアイコン URL をまとめて署名する (#157)。
+ * N 人分を 1 回の呼び出しで済ませるため、DTO 変換とは分けている。
+ */
+async function attachSignedAvatars<T extends { id: string; avatarUrl: string | null }>(
+  dtos: T[],
+  pathById: Map<string, string | null>,
+): Promise<T[]> {
+  const paths = [...pathById.values()].filter((p): p is string => !!p);
+  if (paths.length === 0) return dtos;
+  const signed = await signAvatarUrls(paths);
+  return dtos.map((d) => {
+    const path = pathById.get(d.id);
+    return path ? { ...d, avatarUrl: signed.get(path) ?? null } : d;
+  });
 }
 
 export async function listMembers(projectId: string): Promise<MemberDTO[]> {
@@ -98,7 +121,10 @@ export async function listMembers(projectId: string): Promise<MemberDTO[]> {
     orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     include: { user: MEMBER_USER_SELECT },
   });
-  return rows.map((m) => toDTO(m));
+  return attachSignedAvatars(
+    rows.map((m) => toDTO(m)),
+    new Map(rows.map((m) => [m.id, m.user?.avatarPath ?? null])),
+  );
 }
 
 /**
@@ -210,7 +236,12 @@ export async function updateMember(input: {
     },
     include: { user: MEMBER_USER_SELECT },
   });
-  return toDTO(updated);
+  const dto = toDTO(updated);
+  const [withAvatar] = await attachSignedAvatars(
+    [dto],
+    new Map([[dto.id, updated.user?.avatarPath ?? null]]),
+  );
+  return withAvatar ?? dto;
 }
 
 /**

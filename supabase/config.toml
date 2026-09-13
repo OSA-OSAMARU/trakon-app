@@ -31,6 +31,16 @@ port = 54324
 enabled = true
 file_size_limit = "50MiB"
 
+# プロフィール画像 (#157)。
+# public = false: 顔写真を URL を知る誰にでも恒久的に読める状態にしないため、
+# 表示はバックエンドが発行する短命の署名付き URL を通す (server/lib/avatarStorage.ts)。
+# 認可はすべてバックエンド側で行う方針なので Storage の RLS ポリシーは書かない
+# (アクセスは service role キーを持つ BE からのみ)。
+[storage.buckets.avatars]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
+
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
