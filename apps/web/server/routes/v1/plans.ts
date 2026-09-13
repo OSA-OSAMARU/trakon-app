@@ -228,8 +228,11 @@ export const plansRoute = new Hono()
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
       role: project.role,
+      // 通知メールのリンクに使う (#79)
+      origin: new URL(c.req.url).origin,
     });
-    return c.json({ data: result });
+    const { warnings, ...data } = result;
+    return c.json({ data, ...(warnings ? { warnings } : {}) });
   })
 
   .post('/:planId/toss-undo', requireProjectWritable(), async (c) => {
