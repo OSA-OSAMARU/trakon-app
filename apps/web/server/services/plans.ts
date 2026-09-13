@@ -5,6 +5,7 @@ import {
   deriveBallHolder,
   pickLatestBallEvent,
   type BallEventType,
+  type MemberType,
   type PlanState,
 } from '@trakon/shared';
 
@@ -22,7 +23,7 @@ export type MemberRef = {
   id: string;
   name: string;
   organizationName: string;
-  memberType: 'client' | 'production';
+  memberType: MemberType;
 };
 
 export type BallEventDTO = {
@@ -71,6 +72,13 @@ function toDateString(d: Date | null | undefined): string | null {
   return d ? d.toISOString().slice(0, 10) : null;
 }
 
+/**
+ * 予定に載せる担当者の最小情報。
+ *
+ * **メールアドレスや職種はここに載せない。** この DTO は共有リンク (非会員) の
+ * 画面にもそのまま流れる (services/shareAccess.ts が toPlanDTO を再利用している)。
+ * 認証済み画面のホバーカード (#159) は参加者一覧 API 側の値を使う。
+ */
 function toMemberRef(m: {
   id: string;
   name: string;
@@ -82,7 +90,8 @@ function toMemberRef(m: {
     id: m.id,
     name: m.name,
     organizationName: m.organizationName,
-    memberType: m.memberType as 'client' | 'production',
+    // 'partner' が抜けていて外部パートナーが client として型付けされていた (#147 の取りこぼし)
+    memberType: m.memberType as MemberType,
   };
 }
 

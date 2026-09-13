@@ -85,6 +85,28 @@ describe('share routes (integration, #131)', () => {
       expect(res.body.data.plans[0]!.ballState).toBe('in_progress');
     });
 
+    it('非会員に個人情報を渡さない: メール / 職種 / アイコンを含まない (#159)', async () => {
+      await createPlan({
+        itemId,
+        executorMemberId: execId,
+        scheduledDate: new Date('2026-06-01'),
+      });
+      const token = await issueProjectShareToken();
+
+      const res = await api<ShareViewBody>(`/api/v1/share/${token}`);
+      expect(res.status).toBe(200);
+
+      // 予定 DTO (toPlanDTO) は共有ページでもそのまま使われる。
+      // ここに項目を足すと非会員へ筒抜けになるので、レスポンス全体を走査して見張る。
+      const raw = JSON.stringify(res.body);
+      expect(raw).not.toMatch(/"email"/);
+      expect(raw).not.toMatch(/"jobTitle"/);
+      expect(raw).not.toMatch(/"avatarUrl"/);
+      expect(raw).not.toMatch(/"avatarPath"/);
+      // 実際のメールアドレス文字列も出ていないこと
+      expect(raw).not.toContain('@example.test');
+    });
+
     it('承認者あり: 確認依頼→承認 で承認済みへ (クライアント操作)', async () => {
       const successor = await createPlan({
         itemId,

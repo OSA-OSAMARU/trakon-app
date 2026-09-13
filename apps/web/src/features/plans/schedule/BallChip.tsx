@@ -3,6 +3,8 @@ import { CalendarDays, Copy, Loader2 } from 'lucide-react';
 
 import { cn } from '@/components/ui/utils';
 import { RoleRow } from '@/components/trakon/RoleRow';
+import { MemberProfileHover } from '@/features/projects/MemberProfileCard';
+import type { ProjectMember } from '@/features/projects/membersApi';
 import { StatusPill } from '@/components/trakon/StatusPill';
 
 import type { Plan } from '../api';
@@ -43,6 +45,7 @@ export function BallChip({
   hasPredecessor = false,
   inChain = false,
   copying = false,
+  memberById,
   onActivate,
   onCopy,
   onHoverChange,
@@ -56,6 +59,12 @@ export function BallChip({
   lane: number;
   today: Date;
   mode?: 'edit' | 'view';
+  /**
+   * 担当者のプロフィール (#159)。渡されたときだけホバーカードを出す。
+   * 共有リンク画面 (非会員) は参加者一覧を取れないので渡らず、
+   * メールアドレスが漏れない形になっている。
+   */
+  memberById?: Map<string, ProjectMember>;
   drag?: DragState | null;
   linkTarget?: boolean;
   hasSuccessor?: boolean;
@@ -219,10 +228,18 @@ export function BallChip({
       {/* 3 役割はカード下端に寄せる (Figma node 25:2) */}
       {tier === 'normal' && (
         <div className="mt-auto flex flex-col gap-1 pt-2">
-          <RoleRow role="executor" name={plan.executor?.name ?? '—'} />
-          {plan.approver && <RoleRow role="approver" name={plan.approver.name} />}
+          <MemberProfileHover member={memberById?.get(plan.executor?.id ?? '')}>
+            <RoleRow role="executor" name={plan.executor?.name ?? '—'} />
+          </MemberProfileHover>
+          {plan.approver && (
+            <MemberProfileHover member={memberById?.get(plan.approver.id)}>
+              <RoleRow role="approver" name={plan.approver.name} />
+            </MemberProfileHover>
+          )}
           {plan.progressManager && (
-            <RoleRow role="manager" name={plan.progressManager.name} />
+            <MemberProfileHover member={memberById?.get(plan.progressManager.id)}>
+              <RoleRow role="manager" name={plan.progressManager.name} />
+            </MemberProfileHover>
           )}
         </div>
       )}

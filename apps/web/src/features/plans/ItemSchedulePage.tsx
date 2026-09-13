@@ -118,6 +118,9 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
   );
   const plans = useMemo(() => plansQuery.data ?? [], [plansQuery.data]);
 
+  // 担当者のホバーカード用の索引 (#159)。参加者一覧は既にこの画面で取得している。
+  const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+
   const days = useMemo(() => {
     if (!project) return [];
     const start = parseISO(project.startDate);
@@ -332,6 +335,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
           items={visibleItems}
           plansByItem={plansByItem}
           rowHeight={rowHeight}
+          memberById={memberById}
           sheetOpen={planSheetOpen}
           editing={{
             onOpenCreate: openCreateModal,
