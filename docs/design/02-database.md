@@ -1095,7 +1095,7 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 | 3 | 論理削除フィルタ | **Prisma middleware で自動付与** | 漏れリスクゼロ、履歴参照は raw SQL/明示 hook で例外的に外す |
 | 4 | append-only 強制 | **REVOKE + Trigger 両方併用** | 多層防御。スーパーユーザー接続時のミスも防ぐ |
 | 5 | Ball Holder 導出 | **アプリ層（Repository）で計算** | テスト容易・状態遷移をコードで追える。Phase 1 末で必要なら デノーマライズに移行 |
-| 6 | プロジェクト期間外の予定 | **アプリ層の警告のみ（DB CHECK なし）** | PRD FR-PRJ-04 と整合、終了日変更時の柔軟性確保 |
+| 6 | プロジェクト期間外の予定 | **アプリ層で拒否（DB CHECK なし）** | 期間外は縦型スケジュールに描画先の行が無く必ず壊れるため、#155 で「警告のみ」から「409 / 422 で拒否」に変更。DB CHECK にしないのは plans と projects をまたぐ制約で、期間の一括シフトなど正当な中間状態を作れなくなるため |
 | 7 | invitations テーブル | **§2.4.8 の定義で確定** | プロジェクト固有メタ・ハッシュ保存・ワンタイム消費を自前管理。Supabase Auth の招待機能は使わない |
 | 8 | タイムゾーン | **DB は UTC、アプリで JST 変換** | サーバ・クライアント双方で JST 表示、サーバ側「本日」「3日以内」も JST 暦日で判定 |
 | 9 | users.email 同期 | **Supabase Auth → アプリの片方向（Supabase が真）** | Supabase の email 変更を webhook/定期ジョブで反映、双方向同期は採用しない |

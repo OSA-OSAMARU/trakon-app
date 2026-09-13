@@ -9,6 +9,7 @@ import {
 } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
+import { assertPlanWithinProjectPeriod, toDateOnly } from './projectPeriod.js';
 import type {
   CreatePlanBody,
   ListPlansQuery,
@@ -333,6 +334,13 @@ export async function createPlan(input: {
   projectId: string;
   body: CreatePlanBody;
 }): Promise<PlanDTO> {
+  // 予定はプロジェクト期間の中に収める (#155)。期間外だとスケジュールに描画先の行が無い。
+  await assertPlanWithinProjectPeriod({
+    projectId: input.projectId,
+    scheduledDate: input.body.scheduledDate,
+    dueDate: input.body.dueDate ?? null,
+  });
+
   const progressManagerMemberId = await resolveProgressManagerId({
     projectId: input.projectId,
     bodyValue: input.body.progressManagerMemberId,
@@ -451,6 +459,30 @@ export async function updatePlan(input: {
   if (input.body.dueDate !== undefined)
     data.dueDate = input.body.dueDate ? new Date(`${input.body.dueDate}T00:00:00Z`) : null;
   if (input.body.memo !== undefined) data.memo = input.body.memo;
+
+  // 日付を触るときだけプロジェクト期間を検証する (#155)。
+  // 既存データに期間外の予定が残っている場合に、予定名など無関係な項目の編集まで
+  // 塞いでしまわないようにするため、日付未変更の更新では検証しない。
+  if (input.body.scheduledDate !== undefined || input.body.dueDate !== undefined) {
+    const scheduledDate = input.body.scheduledDate ?? toDateOnly(existing.scheduledDate);
+    const dueDate =
+      input.body.dueDate !== undefined
+        ? input.body.dueDate
+        : existing.dueDate
+          ? toDateOnly(existing.dueDate)
+          : null;
+    if (dueDate && dueDate < scheduledDate) {
+      throw new ApiException('INVALID_PLAN_PERIOD', 422, '終了日は開始日以降にしてください。', {
+        scheduledDate,
+        dueDate,
+      });
+    }
+    await assertPlanWithinProjectPeriod({
+      projectId: input.projectId,
+      scheduledDate,
+      dueDate,
+    });
+  }
 
   // 役割の編集可否 (#131)。ball の進み具合で制限する。
   //   実施者/承認者: 実施中・差し戻し のうちのみ変更可 (確認依頼/承認後はロック)。

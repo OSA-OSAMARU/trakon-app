@@ -595,7 +595,8 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 - 制作物削除：`DELETE /api/v1/projects/:projectId/items/:itemId`（409 時は `?force=true` で再送）
 
 **警告表示**：
-- 期間変更で warnings に `PLANS_OUT_OF_RANGE` が含まれる場合、保存後にダイアログ表示「○件の予定が期間外になりました。確認してください。」+ 該当 plan へのリンク
+- 期間変更で既存予定がはみ出す場合は **409 `PLANS_OUT_OF_RANGE` で保存が拒否される**（#155）。日付フィールド直下に「予定が期間外になるため変更できません」+ 登録済み予定の日付範囲・はみ出す件数を表示する
+- 開始日 / 終了日の入力には、プロジェクト詳細の `plansDateRange` から算出した `min` / `max` を設定し、そもそも選べないようにする
 
 ---
 

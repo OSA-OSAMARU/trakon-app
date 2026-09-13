@@ -32,6 +32,9 @@ type MockItem = {
 type MockProject = {
   id: string;
   progressManagerMemberId: string | null;
+  /** プロジェクト期間 (#155)。既定は十分に広くして日付ガードが他のテストに干渉しないようにする */
+  startDate: Date;
+  endDate: Date;
 };
 type MockBallEvent = {
   id: string;
@@ -74,6 +77,10 @@ const ballEventStore: MockBallEvent[] = [];
 
 let nextId = 1;
 const newId = (prefix: string) => `${prefix}-${nextId++}`;
+
+/** 既定のプロジェクト期間 (#155)。日付ガードを意識しないテスト用に十分広く取る。 */
+const DEFAULT_PERIOD_START = new Date('2026-01-01T00:00:00Z');
+const DEFAULT_PERIOD_END = new Date('2026-12-31T00:00:00Z');
 
 const findMember = (id: string | null) =>
   id ? (memberStore.find((m) => m.id === id) ?? null) : null;
@@ -264,6 +271,13 @@ const prismaMock = {
     findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
       return projectStore.find((p) => p.id === where.id) ?? null;
     }),
+    // プロジェクト期間ガード (#155) で使う。未 seed のときは既定の広い期間を返し、
+    // 日付を検証しないテストが期間ガードで落ちないようにする。
+    findFirst: vi.fn(async ({ where }: { where: { id: string } }) => {
+      const found = projectStore.find((p) => p.id === where.id);
+      if (found) return { startDate: found.startDate, endDate: found.endDate };
+      return { startDate: DEFAULT_PERIOD_START, endDate: DEFAULT_PERIOD_END };
+    }),
   },
 };
 
@@ -340,6 +354,8 @@ function seedProject(overrides: Partial<MockProject> = {}): MockProject {
   const p: MockProject = {
     id: PROJECT_ID,
     progressManagerMemberId: null,
+    startDate: DEFAULT_PERIOD_START,
+    endDate: DEFAULT_PERIOD_END,
     ...overrides,
   };
   projectStore.push(p);
@@ -661,6 +677,62 @@ describe('createPlan', () => {
       >[0]['body'],
     });
     expect(dto.progressManager).toBeNull();
+  });
+
+  // --- プロジェクト期間ガード (#155) ---------------------------------------
+
+  it('プロジェクト期間の外の予定は作成できない (#155)', async () => {
+    seedProject({
+      startDate: new Date('2026-06-01T00:00:00Z'),
+      endDate: new Date('2026-06-30T00:00:00Z'),
+    });
+    await expect(
+      createPlan({
+        itemId: ITEM_ID,
+        projectId: PROJECT_ID,
+        body: { title: '期間外', category: 'design', scheduledDate: '2026-07-01' } satisfies Parameters<
+          typeof CreatePlanType
+        >[0]['body'],
+      }),
+    ).rejects.toMatchObject({ code: 'PLAN_OUT_OF_PROJECT_PERIOD', status: 422 });
+  });
+
+  it('終了日 (dueDate) だけがプロジェクト期間を超える場合も作成できない (#155)', async () => {
+    seedProject({
+      startDate: new Date('2026-06-01T00:00:00Z'),
+      endDate: new Date('2026-06-30T00:00:00Z'),
+    });
+    await expect(
+      createPlan({
+        itemId: ITEM_ID,
+        projectId: PROJECT_ID,
+        body: {
+          title: 'はみ出す',
+          category: 'design',
+          scheduledDate: '2026-06-28',
+          dueDate: '2026-07-05',
+        } satisfies Parameters<typeof CreatePlanType>[0]['body'],
+      }),
+    ).rejects.toMatchObject({ code: 'PLAN_OUT_OF_PROJECT_PERIOD', status: 422 });
+  });
+
+  it('プロジェクト期間の境界ちょうどは作成できる (#155)', async () => {
+    seedProject({
+      startDate: new Date('2026-06-01T00:00:00Z'),
+      endDate: new Date('2026-06-30T00:00:00Z'),
+    });
+    const dto = await createPlan({
+      itemId: ITEM_ID,
+      projectId: PROJECT_ID,
+      body: {
+        title: '境界',
+        category: 'design',
+        scheduledDate: '2026-06-01',
+        dueDate: '2026-06-30',
+      } satisfies Parameters<typeof CreatePlanType>[0]['body'],
+    });
+    expect(dto.scheduledDate).toBe('2026-06-01');
+    expect(dto.dueDate).toBe('2026-06-30');
   });
 
   it('役割/dueDate/memo/successor を指定して作成できる', async () => {
