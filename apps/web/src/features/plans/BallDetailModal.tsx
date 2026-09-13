@@ -1,7 +1,7 @@
 import { canProjectRole } from '@trakon/shared';
 import type { ScheduleThemeKey } from '@trakon/shared';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -54,6 +54,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { RoleRow } from '@/components/trakon/RoleRow';
+import { MemberProfileHover } from '@/features/projects/MemberProfileCard';
 import { StatusPill } from '@/components/trakon/StatusPill';
 import { ScheduleThemePicker } from '@/components/trakon/ScheduleThemePicker';
 import { WorkflowButton } from '@/components/trakon/WorkflowButton';
@@ -115,6 +116,8 @@ export function BallDetailModal({
   const { data: currentUser } = useCurrentUser();
   const myUserId = currentUser && !currentUser.requiresProfileCompletion ? currentUser.user.id : null;
   const myMember = members.find((m) => m.userId === myUserId);
+  // 担当者のホバーカード用の索引 (#159)
+  const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 
   const detailQuery = useQuery({
     queryKey: plansQueryKey.detail(projectId, itemId, planId),
@@ -451,28 +454,44 @@ export function BallDetailModal({
                     <Section title="担当">
                       <DetailCard>
                         <DetailRow>
-                          <RoleRow
-                            variant="detail"
-                            role="executor"
-                            name={plan.executor?.name ?? '未設定'}
-                            caption={plan.executor?.organizationName ?? undefined}
-                          />
+                          {/* 密なボードと違い、ここは 3 件だけなのでタブ順にも入れる (#159) */}
+                          <MemberProfileHover
+                            member={memberById.get(plan.executor?.id ?? '')}
+                            focusable
+                          >
+                            <RoleRow
+                              variant="detail"
+                              role="executor"
+                              name={plan.executor?.name ?? '未設定'}
+                              caption={plan.executor?.organizationName ?? undefined}
+                            />
+                          </MemberProfileHover>
                         </DetailRow>
                         <DetailRow>
-                          <RoleRow
-                            variant="detail"
-                            role="approver"
-                            name={plan.approver?.name ?? '未設定（実施者が承認）'}
-                            caption={plan.approver?.organizationName ?? undefined}
-                          />
+                          <MemberProfileHover
+                            member={memberById.get(plan.approver?.id ?? '')}
+                            focusable
+                          >
+                            <RoleRow
+                              variant="detail"
+                              role="approver"
+                              name={plan.approver?.name ?? '未設定（実施者が承認）'}
+                              caption={plan.approver?.organizationName ?? undefined}
+                            />
+                          </MemberProfileHover>
                         </DetailRow>
                         <DetailRow>
-                          <RoleRow
-                            variant="detail"
-                            role="manager"
-                            name={plan.progressManager?.name ?? '未設定'}
-                            caption={plan.progressManager?.organizationName ?? undefined}
-                          />
+                          <MemberProfileHover
+                            member={memberById.get(plan.progressManager?.id ?? '')}
+                            focusable
+                          >
+                            <RoleRow
+                              variant="detail"
+                              role="manager"
+                              name={plan.progressManager?.name ?? '未設定'}
+                              caption={plan.progressManager?.organizationName ?? undefined}
+                            />
+                          </MemberProfileHover>
                         </DetailRow>
                       </DetailCard>
                     </Section>

@@ -6,6 +6,7 @@ import { cn } from '@/components/ui/utils';
 import type { Plan } from '../api';
 import { assignLanes, scaledLaneWidth, scaledMinColumnWidth } from '../scheduleLayout';
 import { BallChip } from './BallChip';
+import type { ProjectMember } from '@/features/projects/membersApi';
 import { computeChain, isValidLinkTarget, resolveHolders } from './chain';
 import { ColumnHeader } from './ColumnHeader';
 import { DateAxis } from './DateAxis';
@@ -26,6 +27,7 @@ export function ScheduleBoard({
   plansByItem,
   rowHeight,
   editing,
+  memberById,
   onSelectPlan,
   sheetOpen = false,
   className,
@@ -34,6 +36,11 @@ export function ScheduleBoard({
   items: ScheduleItemRef[];
   plansByItem: Map<string, Plan[]>;
   rowHeight: number;
+  /**
+   * 担当者のプロフィール (#159)。渡すとカード上の担当者にホバーカードが付く。
+   * 共有リンク画面 (非会員) からは渡さない (メールアドレスを出さないため)。
+   */
+  memberById?: Map<string, ProjectMember>;
   /** 省略すると閲覧専用になる */
   editing?: ScheduleEditing;
   /** 閲覧専用時のカードクリック */
@@ -317,6 +324,7 @@ export function ScheduleBoard({
                       lane={laneOf.get(plan.id) ?? 0}
                       today={today}
                       mode={editing ? 'edit' : 'view'}
+                      memberById={memberById}
                       drag={drag?.plan.id === plan.id ? drag : null}
                       linkTarget={linkDrag?.targetId === plan.id}
                       hasSuccessor={plan.successorPlanId !== null}
