@@ -26,7 +26,7 @@ vi.mock('@/lib/supabase', () => ({
 
 import { SidebarLayout } from './SidebarLayout';
 
-// Radix Dialog (ProfileModal) は jsdom に無い API を使うためシムを入れる。
+// Radix DropdownMenu は jsdom に無い API を使うためシムを入れる。
 beforeAll(() => {
   const p = window.HTMLElement.prototype;
   p.scrollIntoView = vi.fn();
@@ -135,7 +135,7 @@ describe('SidebarLayout', () => {
     expect(screen.getByRole('menuitem', { name: '共有リンク' })).toBeInTheDocument();
   });
 
-  it('プロフィール完了済みならユーザー情報ボタンを表示し、開くとサインアウトできる', async () => {
+  it('フッターのアカウントメニューからマイページ・プラン・ログアウトへ辿れる (#156)', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stubEndpoints();
     renderLayout();
@@ -145,10 +145,22 @@ describe('SidebarLayout', () => {
     expect(profileBtn).toBeInTheDocument();
 
     await user.click(profileBtn);
-    // ProfileModal が開き、サインアウトボタンが表示される
-    const signOutBtn = await screen.findByRole('button', { name: /サインアウト/ });
-    await user.click(signOutBtn);
 
+    expect(await screen.findByRole('menuitem', { name: 'マイページ' })).toHaveAttribute(
+      'href',
+      '/settings/profile',
+    );
+    expect(screen.getByRole('menuitem', { name: 'プラン・お支払い' })).toHaveAttribute(
+      'href',
+      '/settings/billing',
+    );
+    // 組織のメンバー管理は #160 で実装するまで非活性
+    expect(screen.getByRole('menuitem', { name: 'メンバー管理' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+
+    await user.click(screen.getByRole('menuitem', { name: 'ログアウト' }));
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
   });
 

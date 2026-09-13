@@ -171,10 +171,9 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 | **`/projects/:projectId/members`** **(v1.1 役割変更)** | **SC-17 メンバーかんばん（既定）／SC-11 参加者管理（タブで切替）** | ✅ | **`MemberKanbanPage`**（タブで `ProjectMembersManagePage` に切替） |
 | `/projects/:projectId/members?tab=manage` **(v1.1)** | SC-11 参加者管理 | ✅ | `ProjectMembersManagePage` |
 | `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（**v1.2：プロジェクト管理者のみ**） |
-| `/account` | アカウント基本情報 | ✅ | `AccountPage`（最小） |
-| **`/settings`** **(v1.2)** | **SC-15 アカウント／組織設定（タブ：プロフィール／プランと請求／組織メンバー）** | ✅ | **`SettingsLayout`** |
-| **`/settings/billing`** **(v1.2)** | **SC-18 プランと請求** | ✅ | **`BillingPage`** |
-| **`/settings/organization`** **(v1.2)** | **組織の会員アカウント管理（座席の内訳・組織ロール）** | ✅ | **`OrganizationMembersPage`** |
+| **`/settings/profile`** **(#156)** | **SC-15 マイページ（プロフィール／ログイン情報／退会）** | ✅ | **`MyPage`**（`features/account/MyPage.tsx`） |
+| **`/settings/billing`** **(v1.2)** | **SC-18 プラン・お支払い** | ✅ | **`BillingPage`** |
+| **`/settings/members`** **(#160、未実装)** | **組織のメンバー管理（座席の内訳・権限・参加PJ）** | ✅ | **`OrgMembersPage`** |
 | `*` | 404 | — | `NotFoundPage` |
 
 > Phase 1 で予約：ダッシュボードの「進行判定フィルター」タブ（FR-DASH-08）。
@@ -183,7 +182,7 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 >
 > **v1.1 ルーティング方針変更点（非会員URL前倒し）**：④ `/share/:token` を Phase 0 公開ルートに追加／⑤ `/projects/:projectId/share-links` を Phase 0 ディレクター画面として追加。
 >
-> **v1.2 ルーティング方針変更点（課金・組織・ロール）**：⑥ `/settings` 配下に SC-15／SC-18／組織メンバー管理を追加。既存の `ProfileModal`（モーダル形式のアカウント設定）は当面残し、モーダル内から `/settings/billing` への導線を設ける／⑦ **ロールによるルートガードは設けない**。画面自体は開けるが、操作 UI をロールで出し分ける（§4.5.x）／⑧ Checkout からの復帰は `/settings/billing?checkout=success` を「反映待ち」表示 + 契約状態のポーリングとして扱い、**この遷移だけを根拠に有料機能を有効化しない**（PRD SR-BILL-03）。
+> **v1.2 ルーティング方針変更点（課金・組織・ロール）**：⑥ `/settings` 配下に SC-15／SC-18／組織メンバー管理を追加。**#156 で `ProfileModal`（モーダル形式のアカウント設定）は廃止し、`/settings/profile`（マイページ）へ移した**（Figma node 254:2）。タブ形式の `SettingsLayout` は作らず、サイドバー左下のアカウントメニュー（マイページ／メンバー管理／プラン・お支払い／ログアウト）から各ページへ直接遷移する。`/account` は `/settings/profile` に統合／⑦ **ロールによるルートガードは設けない**。画面自体は開けるが、操作 UI をロールで出し分ける（§4.5.x）／⑧ Checkout からの復帰は `/settings/billing?checkout=success` を「反映待ち」表示 + 契約状態のポーリングとして扱い、**この遷移だけを根拠に有料機能を有効化しない**（PRD SR-BILL-03）。
 
 ### 4.3.2. ルートツリー（v1.1 更新）
 
