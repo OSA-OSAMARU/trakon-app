@@ -525,12 +525,12 @@ describe('ItemSchedulePage (integration)', () => {
   // ---------------------------------------------------------------------------
   // ヘッダのナビゲーションリンク
   // ---------------------------------------------------------------------------
-  it('ヘッダにメンバーかんばん / プロジェクト情報リンクを描画する', async () => {
+  it('ヘッダにメンバー / プロジェクト情報リンクを描画する', async () => {
     setupReads();
     renderPage();
 
     await screen.findByText('トップページ');
-    expect(screen.getByRole('link', { name: /メンバーかんばん/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^メンバー$/ })).toHaveAttribute(
       'href',
       `/projects/${PROJECT_ID}/members`,
     );
