@@ -17,6 +17,8 @@ export function SidebarLayout() {
   const navigate = useNavigate();
   const { data } = useCurrentUser();
   const user = data && !data.requiresProfileCompletion ? data.user : null;
+  // 運営管理の導線 (#204)。判定の実体はサーバー側で、ここは表示の出し分けだけ
+  const isOperator = (data && !data.requiresProfileCompletion && data.isOperator) ?? false;
 
   const projectsQuery = useQuery({
     queryKey: projectsQueryKey.all,
@@ -47,6 +49,7 @@ export function SidebarLayout() {
         user={user}
         onSignOut={signOut}
         planBadge={planBadge}
+        isOperator={isOperator}
       />
 
       <main className="h-full flex-1 overflow-auto bg-content">

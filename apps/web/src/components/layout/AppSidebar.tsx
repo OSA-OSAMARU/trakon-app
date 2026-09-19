@@ -6,6 +6,7 @@ import {
   MoreHorizontal,
   Plus,
   CreditCard,
+  Gauge,
   LogOut,
   Settings2,
   Share2,
@@ -48,6 +49,7 @@ export function AppSidebar({
   user,
   onSignOut,
   planBadge,
+  isOperator = false,
 }: {
   projects: SidebarProject[];
   /** 読込中・未ログインは null（フッターを Skeleton にする） */
@@ -58,6 +60,8 @@ export function AppSidebar({
    * Free を含め常に出し、まだ引けていない間だけ null (Skeleton) にする。
    */
   planBadge?: { label: string; variant: 'brand' | 'secondary' } | null;
+  /** 運営管理 (#204) の導線を出すか。判定の実体はサーバー側にある */
+  isOperator?: boolean;
 }) {
   return (
     <aside className="border-sidebar-border bg-sidebar text-sidebar-foreground flex h-full w-56 shrink-0 flex-col border-r">
@@ -156,6 +160,19 @@ export function AppSidebar({
                   プラン・お支払い
                 </Link>
               </DropdownMenuItem>
+              {/* 運営管理 (#204)。運営アカウントにだけ出す。
+                  出し分けは表示の都合で、実際の遮断は API 側の 404。 */}
+              {isOperator && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/admin">
+                      <Gauge className="size-4" />
+                      運営管理
+                    </Link>
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={onSignOut}>
                 <LogOut className="size-4" />

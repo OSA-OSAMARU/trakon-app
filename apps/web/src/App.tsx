@@ -12,6 +12,7 @@ import { SC01LoginPage } from './features/auth/SC01LoginPage';
 import { InvitationAcceptPage } from './features/invitations/InvitationAcceptPage';
 import { MyPage } from '@/features/account/MyPage';
 import { OrgMembersPage } from '@/features/organization/OrgMembersPage';
+import { AdminPage } from './features/admin/AdminPage';
 import { BillingPage } from './features/billing/BillingPage';
 import { ItemSchedulePage } from './features/plans/ItemSchedulePage';
 import { MembersPage } from './features/projects/MembersPage';
@@ -67,6 +68,8 @@ export function App() {
           <Route path="/settings/profile" element={<MyPage />} />
           <Route path="/settings/members" element={<OrgMembersPage />} />
           <Route path="/settings/billing" element={<BillingPage />} />
+          {/* 運営管理 (#204)。権限が無ければ API が 404 を返し、画面は取得失敗を出す */}
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/projects" element={<ProjectListPage />} />
           <Route path="/projects/new" element={<ProjectCreatePage />} />
           <Route path="/projects/:projectId/edit" element={<ProjectEditPage />} />

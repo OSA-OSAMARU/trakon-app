@@ -23,7 +23,15 @@ export type CurrentUser = {
 };
 
 export type SyncResponse =
-  | { user: CurrentUser; requiresProfileCompletion: false }
+  | {
+      user: CurrentUser;
+      requiresProfileCompletion: false;
+      /**
+       * 運営管理画面 (#204) の導線を出すか。判定の実体はサーバー側にあり、
+       * これは**表示の出し分けにしか使わない**。偽装されても API 側で 404 になる。
+       */
+      isOperator?: boolean;
+    }
   | { user: null; requiresProfileCompletion: true; email: string };
 
 export type CompleteSignupInput = {

@@ -18,6 +18,7 @@ import {
 } from '../../services/auth.js';
 import { AVATAR_MAX_BYTES } from '../../lib/avatarStorage.js';
 import { ApiException } from '../../lib/errors.js';
+import { isOperatorEmail } from '../../middleware/operatorAuth.js';
 
 export const authRoute = new Hono()
   .use('*', requireAuth())
@@ -50,6 +51,9 @@ export const authRoute = new Hono()
         data: {
           user: result.user,
           requiresProfileCompletion: false,
+          // 運営管理画面 (#204) の導線をサイドバーに出すかどうか。
+          // 判定そのものはサーバー側にあり、この値は表示の出し分けにしか使わない
+          isOperator: isOperatorEmail(authUser.email),
         },
       });
     }
