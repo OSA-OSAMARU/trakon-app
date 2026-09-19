@@ -14,7 +14,7 @@ import { cn } from './utils';
  *   - 完全な pill (列ヘッダーの件数 / FIX、カード内の状態表示) → shape="pill"
  */
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap border font-medium [&>svg]:pointer-events-none [&>svg]:size-3.5 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 aria-invalid:border-destructive transition-[color,box-shadow]",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap border font-medium [&>svg]:pointer-events-none [&>svg]:size-3.5 focus-visible:border-ring focus-visible:ring-ring focus-visible:ring-2 aria-invalid:ring-destructive/20 aria-invalid:border-destructive transition-[color,box-shadow]",
   {
     variants: {
       variant: {
@@ -38,10 +38,14 @@ const badgeVariants = cva(
         rounded: 'rounded-md',
         pill: 'rounded-full',
       },
+      /**
+       * 文字サイズはガイド 233:40 の下限である 12px (App/Label) で統一し、
+       * 高さと左右余白だけで密度を調整する。
+       */
       size: {
-        sm: 'h-5 px-2 text-micro',
-        default: 'h-6 px-2.5 text-mini',
-        lg: 'h-[26px] px-3 text-mini',
+        sm: 'h-[22px] px-2 text-label',
+        default: 'h-6 px-2.5 text-label',
+        lg: 'h-7 px-3 text-label',
       },
     },
     defaultVariants: {

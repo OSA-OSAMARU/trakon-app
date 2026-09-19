@@ -1,13 +1,20 @@
-import * as React from "react";
+import * as React from 'react';
 
-import { cn } from "./utils";
+import { cn } from './utils';
 
-function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
+/**
+ * 複数行入力 (Figma node 342:90 / Form/Text Field に準じる)。
+ * 高さ以外の余白・角丸・状態表現は Input と揃える。
+ */
+function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
   return (
     <textarea
       data-slot="textarea"
       className={cn(
-        "resize-none border-input placeholder:text-text-tertiary focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 aria-invalid:border-destructive flex field-sizing-content min-h-16 w-full rounded-md border bg-input-background px-3.5 py-2.5 text-base md:text-body transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50",
+        'border-input bg-input-background placeholder:text-text-tertiary flex field-sizing-content min-h-16 w-full resize-none rounded-md border px-4 py-2.5 text-base transition-[color,box-shadow,border-color] outline-none md:text-body',
+        'focus-visible:border-brand focus-visible:ring-brand focus-visible:ring-1',
+        'aria-invalid:border-destructive aria-invalid:focus-visible:border-destructive aria-invalid:focus-visible:ring-destructive',
+        'disabled:bg-surface-subtle disabled:text-text-tertiary disabled:border-border disabled:cursor-not-allowed',
         className,
       )}
       {...props}

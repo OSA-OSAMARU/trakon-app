@@ -143,7 +143,7 @@ export function BillingPage() {
       />
       <PageContainer width="md">
         {query.isLoading && <Skeleton className="h-64 w-full rounded-md" />}
-        {query.error && <p className="text-sm text-destructive">契約情報の取得に失敗しました</p>}
+        {query.error && <p className="text-body text-destructive">契約情報の取得に失敗しました</p>}
 
         {query.data && (
           <div className="grid gap-6">
@@ -204,7 +204,7 @@ function errorMessage(e: unknown, fallback: string): string {
 
 function Notice({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-4 py-3 text-sm">
+    <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-4 py-3 text-body">
       {icon ?? <AlertTriangle className="size-4" />}
       <span>{children}</span>
     </div>
@@ -241,8 +241,8 @@ function CurrentPlanCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">現在のプラン</CardTitle>
-        <p className="text-text-secondary mt-0.5 text-mini">
+        <CardTitle className="text-heading-section">現在のプラン</CardTitle>
+        <p className="text-text-secondary mt-0.5 text-label">
           このアカウントの契約内容と利用上限を確認できます
         </p>
       </CardHeader>
@@ -250,11 +250,11 @@ function CurrentPlanCard({
         {/* 契約中のプランを 1 か所で言い切る (Figma node 263:18) */}
         <div className="bg-brand-subtle flex items-center justify-between gap-4 rounded-lg px-5 py-4">
           <div className="min-w-0">
-            <p className="text-text-tertiary text-tiny font-medium tracking-wider uppercase">
+            <p className="text-text-tertiary text-label font-medium tracking-wider uppercase">
               Current Plan
             </p>
-            <p className="mt-0.5 text-2xl font-semibold">{spec.label}</p>
-            <p className="text-text-secondary mt-1 text-mini">
+            <p className="mt-0.5 text-heading-page font-semibold">{spec.label}</p>
+            <p className="text-text-secondary mt-1 text-label">
               会員アカウント {limitLabel(spec.seatLimit)}人 / アクティブプロジェクト{' '}
               {limitLabel(spec.projectLimit)}
               {spec.monthlyPriceJpyIncTax
@@ -283,15 +283,15 @@ function CurrentPlanCard({
               }
             />
           </div>
-          <p className="text-text-tertiary mt-2 text-mini">
+          <p className="text-text-tertiary mt-2 text-label">
             招待されて参加しているプロジェクトは、所有プロジェクト数に含まれません。
           </p>
         </div>
 
-        <p className="text-muted-foreground text-sm">{entitlement.message}</p>
+        <p className="text-muted-foreground text-body">{entitlement.message}</p>
 
         {/* 契約の細目。Figma には無いが、無いと解約予定や変更予定に気づけない */}
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
+        <dl className="grid gap-2 text-body sm:grid-cols-2">
           {/* 終了した契約の日付は残っているだけなので出さない (解約後に
               「次回更新」が出ると更新されるように読めてしまう) */}
           {live && subscription.trialEnd && (
@@ -348,7 +348,7 @@ function CurrentPlanCard({
               </Button>
             ))}
           {subscription.hasStripeCustomer && (
-            <Button variant="outline" onClick={onOpenPortal} disabled={disabled || !canManage}>
+            <Button variant="secondary" onClick={onOpenPortal} disabled={disabled || !canManage}>
               決済情報を管理
             </Button>
           )}
@@ -358,7 +358,7 @@ function CurrentPlanCard({
         </div>
 
         {!canManage && (
-          <p className="text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-label">
             プランの変更・解約は組織のオーナーまたは管理者のみが行えます。
           </p>
         )}
@@ -370,8 +370,8 @@ function CurrentPlanCard({
 function UsageTile({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-accent rounded-lg px-4 py-3">
-      <p className="text-text-secondary text-mini">{label}</p>
-      <p className="mt-1 text-lg font-semibold">{value}</p>
+      <p className="text-text-secondary text-label">{label}</p>
+      <p className="mt-1 text-heading-section font-semibold">{value}</p>
     </div>
   );
 }
@@ -392,7 +392,7 @@ function PlanComparison({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">プランを選ぶ</CardTitle>
+        <CardTitle className="text-heading-section">プランを選ぶ</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4 sm:grid-cols-3">
         {SELECTABLE_BILLING_PLAN_CODES.map((code) => {
@@ -413,13 +413,13 @@ function PlanComparison({
                   </Badge>
                 )}
               </div>
-              <p className="text-2xl font-semibold">
+              <p className="text-heading-page font-semibold">
                 {spec.monthlyPriceJpyIncTax?.toLocaleString() ?? '—'}
-                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                <span className="ml-1 text-label font-normal text-muted-foreground">
                   円 / 月(税込)
                 </span>
               </p>
-              <ul className="grid gap-1 text-xs text-muted-foreground">
+              <ul className="grid gap-1 text-label text-muted-foreground">
                 <li>会員アカウント {spec.seatLimit ?? '無制限'} 名</li>
                 <li>プロジェクト {spec.projectLimit ?? '無制限'} 件</li>
                 <li>
@@ -489,10 +489,10 @@ function RetainedProjectsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">維持するプロジェクトを選ぶ</CardTitle>
+        <CardTitle className="text-heading-section">維持するプロジェクトを選ぶ</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           プランの上限を超えているため、{frozenProjectIds.length} 件のプロジェクトが閲覧のみに
           なっています。データは削除されていません。
           {projectLimit !== null && ` 維持できるのは ${projectLimit} 件までです。`}
@@ -502,7 +502,7 @@ function RetainedProjectsCard({
           {active.map((p) => {
             const checked = current.includes(p.id);
             return (
-              <li key={p.id} className="flex items-center gap-2 text-sm">
+              <li key={p.id} className="flex items-center gap-2 text-body">
                 <input
                   type="checkbox"
                   id={`retain-${p.id}`}
@@ -533,7 +533,7 @@ function RetainedProjectsCard({
             この構成で維持する
           </Button>
           {projectLimit !== null && current.length > projectLimit && (
-            <p className="mt-1 text-xs text-destructive">
+            <p className="mt-1 text-label text-destructive">
               選べるのは {projectLimit} 件までです（現在 {current.length} 件）。
             </p>
           )}

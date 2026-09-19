@@ -28,7 +28,7 @@ export const Default: Story = {
             </SheetHeader>
             <SheetFooter>
               <SheetClose asChild>
-                <Button variant="outline">閉じる</Button>
+                <Button variant="secondary">閉じる</Button>
               </SheetClose>
               <Button>保存</Button>
             </SheetFooter>

@@ -54,8 +54,8 @@ export function MemberKanbanTab({
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <CardTitle className="text-base">担当者ボード</CardTitle>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <CardTitle className="text-heading-section">担当者ボード</CardTitle>
+            <p className="mt-0.5 text-label text-muted-foreground">
               ボール保持者ごとに担当中の予定を表示。トスは次の担当者へのボタンで行います。
             </p>
           </div>
@@ -168,13 +168,13 @@ function MemberBoard({
 
   if (plansQuery.isLoading) return <Skeleton className="h-64 w-full rounded-md" />;
   if (plansQuery.error)
-    return <p className="text-sm text-destructive">予定の取得に失敗しました</p>;
+    return <p className="text-body text-destructive">予定の取得に失敗しました</p>;
 
   const renderLane = (title: string, laneMembers: ProjectMember[]) => {
     if (laneMembers.length === 0) return null;
     return (
       <div className="space-y-2">
-        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+        <h3 className="text-label font-medium text-muted-foreground">{title}</h3>
         <div className="flex gap-3 overflow-x-auto pb-2">
           {laneMembers.map((m) => (
             <MemberColumn
@@ -225,17 +225,17 @@ function MemberColumn({
   return (
     <div className="flex min-w-[260px] max-w-[280px] flex-col rounded-md border border-border bg-muted/30 p-2">
       <div className="mb-2 sticky top-0 z-10 rounded-md bg-card px-2 py-1.5">
-        <p className="text-sm font-medium leading-tight">{member.name}</p>
-        <p className="text-[10px] text-muted-foreground">{member.organizationName || '—'}</p>
-        <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-          <Badge variant="secondary" className="px-1 py-0 text-[10px]">
+        <p className="text-body font-medium leading-tight">{member.name}</p>
+        <p className="text-label text-muted-foreground">{member.organizationName || '—'}</p>
+        <div className="mt-1 flex items-center gap-1 text-label text-muted-foreground">
+          <Badge variant="secondary" className="px-1 py-0 text-label">
             担当 {plans.length} 件
           </Badge>
         </div>
       </div>
       <div className="flex flex-col gap-2">
         {plans.length === 0 ? (
-          <div className="rounded-md border border-dashed border-border bg-background p-3 text-center text-[11px] text-muted-foreground">
+          <div className="rounded-md border border-dashed border-border bg-background p-3 text-center text-label text-muted-foreground">
             担当中の予定はありません
           </div>
         ) : (
@@ -279,7 +279,7 @@ function CompletedHistory({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1 rounded px-1 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent/30"
+        className="flex w-full items-center gap-1 rounded px-1 py-1 text-label font-medium text-muted-foreground hover:bg-accent/30"
       >
         {open ? (
           <ChevronDown className="size-3" />
@@ -318,11 +318,11 @@ function CompletedPlanCard({
   const completedOn = plan.completedAt ?? plan.updatedAt;
   return (
     <div className="rounded-md border border-slate-200 bg-muted/40 opacity-80">
-      <div className="flex items-center gap-1 rounded-t-md bg-slate-100 px-2 py-1 text-[10px] text-slate-600">
+      <div className="flex items-center gap-1 rounded-t-md bg-slate-100 px-2 py-1 text-label text-slate-600">
         <span>{cat.label}</span>
         <Badge
           variant="secondary"
-          className="ml-auto gap-0.5 px-1 py-0 text-[10px] text-slate-600"
+          className="ml-auto gap-0.5 px-1 py-0 text-label text-slate-600"
         >
           <CheckCircle2 className="size-2.5" />
           完了
@@ -331,17 +331,17 @@ function CompletedPlanCard({
       <button
         type="button"
         onClick={() => onOpenDetail(plan.id)}
-        className="block w-full px-2 py-1.5 text-left text-xs hover:bg-accent/30"
+        className="block w-full px-2 py-1.5 text-left text-label hover:bg-accent/30"
       >
         <p className="line-clamp-2 font-medium text-slate-600">{plan.title}</p>
         {itemName && (
-          <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{itemName}</p>
+          <p className="mt-0.5 line-clamp-1 text-label text-muted-foreground">{itemName}</p>
         )}
-        <p className="mt-0.5 text-[10px] text-muted-foreground">
+        <p className="mt-0.5 text-label text-muted-foreground">
           完了 {format(new Date(completedOn), 'M/d')}
         </p>
         {(plan.fromMember || plan.toMember) && (
-          <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <p className="mt-0.5 flex items-center gap-1 text-label text-muted-foreground">
             <span className="truncate">{plan.fromMember?.name ?? '—'}</span>
             <ArrowRight className="size-2.5 shrink-0 opacity-60" />
             <span className="truncate">{plan.toMember?.name ?? '—'}</span>
@@ -388,28 +388,28 @@ function PlanCard({
       {/* カテゴリ + 状態 */}
       <div
         className={cn(
-          'flex items-center gap-1 rounded-t-md px-2 py-1 text-[10px]',
+          'flex items-center gap-1 rounded-t-md px-2 py-1 text-label',
           tossed ? 'bg-slate-100 text-slate-600' : cn(cat.bg, cat.text),
         )}
       >
         <span>{cat.label}</span>
-        <Badge variant="secondary" className="ml-auto px-1 py-0 text-[10px]">
+        <Badge variant="secondary" className="ml-auto px-1 py-0 text-label">
           {KANBAN_STATE_LABEL[plan.ballState]}
         </Badge>
       </div>
       {/* 本体 */}
-      <div className="px-2 py-1.5 text-xs">
+      <div className="px-2 py-1.5 text-label">
         <p className={cn('line-clamp-2 font-medium', overdue && 'text-red-700')}>{plan.title}</p>
         {itemName && (
-          <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{itemName}</p>
+          <p className="mt-0.5 line-clamp-1 text-label text-muted-foreground">{itemName}</p>
         )}
-        <p className="mt-0.5 text-[10px] text-muted-foreground">
+        <p className="mt-0.5 text-label text-muted-foreground">
           {format(new Date(plan.scheduledDate), 'M/d')}
           {plan.dueDate ? ` 〜 期日 ${format(new Date(plan.dueDate), 'M/d')}` : ''}
         </p>
         {/* 実施者 → 承認者 の流れ */}
         {(plan.executor || plan.approver) && (
-          <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+          <p className="mt-0.5 flex items-center gap-1 text-label text-muted-foreground">
             <span className="truncate">{plan.executor?.name ?? '—'}</span>
             {plan.approver && (
               <>

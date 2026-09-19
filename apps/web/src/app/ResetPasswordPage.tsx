@@ -87,7 +87,7 @@ function NewPasswordForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">新しいパスワードの設定</CardTitle>
+        <CardTitle className="text-heading-section">新しいパスワードの設定</CardTitle>
         <CardDescription>
           新しいパスワードを入力してください。
         </CardDescription>
@@ -120,7 +120,7 @@ function NewPasswordForm() {
               {...form.register('confirm')}
             />
           </Field>
-          {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+          {serverError && <p className="text-body text-destructive">{serverError}</p>}
           <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
             パスワードを変更する
@@ -139,7 +139,7 @@ function InvalidLink() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">リンクが無効です</CardTitle>
+        <CardTitle className="text-heading-section">リンクが無効です</CardTitle>
         <CardDescription>
           パスワード再設定リンクの有効期限が切れているか、既に使用済みです。
           お手数ですが、もう一度リセットメールを送信してください。
@@ -187,8 +187,8 @@ function Field({
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
       {children}
-      {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {hint && !error && <p className="text-label text-muted-foreground">{hint}</p>}
+      {error && <p className="text-label text-destructive">{error}</p>}
     </div>
   );
 }
@@ -220,14 +220,14 @@ function PasswordStrength({ value }: { value: string }) {
           />
         ))}
       </div>
-      <p className="text-[11px] text-muted-foreground">強度：{meta.label}</p>
+      <p className="text-label text-muted-foreground">強度：{meta.label}</p>
     </div>
   );
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center gap-2 text-sm text-muted-foreground">
+    <div className="flex min-h-screen items-center justify-center gap-2 text-body text-muted-foreground">
       {children}
     </div>
   );

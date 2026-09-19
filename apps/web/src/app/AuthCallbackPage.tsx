@@ -73,11 +73,11 @@ export function AuthCallbackPage() {
   if (providerError) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-4 text-center">
-        <p className="text-sm text-destructive">{friendlyProviderError(providerErrorDescription)}</p>
+        <p className="text-body text-destructive">{friendlyProviderError(providerErrorDescription)}</p>
         {providerErrorDescription && (
-          <p className="text-xs text-muted-foreground">詳細: {providerErrorDescription}</p>
+          <p className="text-label text-muted-foreground">詳細: {providerErrorDescription}</p>
         )}
-        <Link to="/login" replace className="text-sm text-foreground underline underline-offset-2">
+        <Link to="/login" replace className="text-body text-foreground underline underline-offset-2">
           ログイン画面に戻る
         </Link>
       </div>
@@ -85,7 +85,7 @@ export function AuthCallbackPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center gap-2 text-sm text-muted-foreground">
+    <div className="flex min-h-screen items-center justify-center gap-2 text-body text-muted-foreground">
       <Loader2 className="size-4 animate-spin" />
       認証情報を確認しています…
     </div>

@@ -35,7 +35,7 @@ export function LegalPageLayout({
           <Link to="/login">
             <Wordmark size="sm" />
           </Link>
-          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-1 text-body">
             {LEGAL_NAV.map((item) => (
               <NavLink
                 key={item.to}
@@ -52,7 +52,7 @@ export function LegalPageLayout({
           </nav>
           <Link
             to="/login"
-            className="ml-auto text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            className="ml-auto text-body text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             <span aria-hidden>←</span> ログインに戻る
           </Link>
@@ -60,8 +60,8 @@ export function LegalPageLayout({
       </header>
 
       <main className="mx-auto max-w-3xl px-6 py-10">
-        <h1 className="text-2xl font-bold text-foreground">{title}</h1>
-        {meta && <p className="mt-2 text-sm text-muted-foreground">{meta}</p>}
+        <h1 className="text-heading-page font-bold text-foreground">{title}</h1>
+        {meta && <p className="mt-2 text-body text-muted-foreground">{meta}</p>}
         <div className="mt-8">{children}</div>
         <LegalFooter />
       </main>
@@ -72,7 +72,7 @@ export function LegalPageLayout({
 function LegalFooter() {
   return (
     <footer className="mt-12 border-t border-border pt-6">
-      <nav className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
+      <nav className="flex flex-wrap gap-x-5 gap-y-2 text-body text-muted-foreground">
         {LEGAL_NAV.map((item) => (
           <Link
             key={item.to}
@@ -83,7 +83,7 @@ function LegalFooter() {
           </Link>
         ))}
       </nav>
-      <p className="mt-4 text-xs text-muted-foreground">© 2026 株式会社おさまるカンパニー</p>
+      <p className="mt-4 text-label text-muted-foreground">© 2026 株式会社おさまるカンパニー</p>
     </footer>
   );
 }
@@ -96,7 +96,7 @@ function LegalFooter() {
 export function LegalArticle({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-8 first:mt-0">
-      <h2 className="mb-3 text-base font-semibold text-foreground">{title}</h2>
+      <h2 className="mb-3 text-heading-section font-semibold text-foreground">{title}</h2>
       <div className="space-y-2.5">{children}</div>
     </section>
   );
@@ -104,13 +104,13 @@ export function LegalArticle({ title, children }: { title: string; children: Rea
 
 /** 段落 / 番号付き条項 (テキスト側に「1．」等の番号を含める)。 */
 export function LegalP({ children }: { children: ReactNode }) {
-  return <p className="text-sm leading-relaxed text-foreground/85">{children}</p>;
+  return <p className="text-body leading-relaxed text-foreground/85">{children}</p>;
 }
 
 /** 中黒箇条書き。 */
 export function LegalList({ items }: { items: string[] }) {
   return (
-    <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground/85">
+    <ul className="list-disc space-y-1.5 pl-5 text-body leading-relaxed text-foreground/85">
       {items.map((t) => (
         <li key={t}>{t}</li>
       ))}
@@ -127,8 +127,8 @@ export function LegalDefList({ rows }: { rows: { label: string; value: ReactNode
           key={r.label}
           className="grid grid-cols-1 gap-1 px-4 py-3 sm:grid-cols-[11rem_1fr] sm:gap-4"
         >
-          <dt className="text-sm font-medium text-foreground">{r.label}</dt>
-          <dd className="text-sm leading-relaxed text-foreground/85">{r.value}</dd>
+          <dt className="text-body font-medium text-foreground">{r.label}</dt>
+          <dd className="text-body leading-relaxed text-foreground/85">{r.value}</dd>
         </div>
       ))}
     </dl>

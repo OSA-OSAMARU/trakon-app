@@ -22,7 +22,7 @@ import type { DragState } from './types';
 /**
  * スケジュール上の 1 予定 (ボール) — Figma node 11:2。
  *
- * 左の 4px ストライプ + 淡色の面でテーマ色を示し、文字色は全テーマ共通。
+ * 左の 6px ストライプ + 淡色の面でテーマ色を示し、文字色は全テーマ共通。
  * 高さ (= 期間 × 行高) に応じて表示量を 3 段階に落とす。
  *   mini    … タイトルのみ
  *   compact … ＋カテゴリ・期間・状態
@@ -153,7 +153,7 @@ export function BallChip({
       onPointerEnter={editing ? () => onHoverChange?.(plan.id) : undefined}
       onPointerLeave={editing ? () => onHoverChange?.(null) : undefined}
       className={cn(
-        'shadow-card group absolute flex flex-col overflow-hidden rounded-lg border px-[15px]',
+        'shadow-card group absolute flex flex-col overflow-hidden rounded-lg border pr-[15px] pl-4',
         tight ? 'justify-center pb-[0.11em]' : 'pt-[11px] pb-[12px]',
         surfaceClass,
         borderClass,
@@ -169,8 +169,8 @@ export function BallChip({
         width: laneWidth - 12,
       }}
     >
-      {/* テーマ色の左ストライプ (Figma node 11:3) */}
-      <span className={cn('absolute inset-y-0 left-0 w-1 rounded-sm', stripeClass)} aria-hidden />
+      {/* テーマ色の左ストライプ (Figma「07 Calendar」node 355:132 / Category stripe 6px) */}
+      <span className={cn('absolute inset-y-0 left-0 w-1.5 rounded-sm', stripeClass)} aria-hidden />
 
       {/* リサイズハンドル (上)。単日/短期の予定 (mini) でも掴んで期間変更できるよう
           tier に依らず表示する (#113)。 */}
@@ -191,7 +191,7 @@ export function BallChip({
       )}
 
       <div className="flex items-start gap-1">
-        <span className="line-clamp-1 flex-1 text-sm font-bold">{plan.title}</span>
+        <span className="line-clamp-1 flex-1 text-body font-bold">{plan.title}</span>
         {/* 閲覧専用では操作が無いため、Figma の「⋯」位置には何も置かない */}
         {editing && (
           <button

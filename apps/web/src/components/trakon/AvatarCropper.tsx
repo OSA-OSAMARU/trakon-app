@@ -136,7 +136,7 @@ export function AvatarCropper({
           />
         </div>
 
-        {error && <p className="text-destructive text-xs">{error}</p>}
+        {error && <p className="text-destructive text-label">{error}</p>}
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>

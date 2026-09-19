@@ -36,7 +36,7 @@ export function ScheduleThemePicker({
         disabled={disabled}
         aria-label="カラーテーマを選ぶ"
         className={cn(
-          'focus-visible:ring-ring/50 flex size-7 items-center justify-center rounded-full outline-none focus-visible:ring-[3px] disabled:opacity-50',
+          'focus-visible:ring-ring flex size-7 items-center justify-center rounded-full outline-none focus-visible:ring-2 disabled:opacity-50',
           !disabled && 'hover:bg-accent',
         )}
       >
@@ -44,7 +44,7 @@ export function ScheduleThemePicker({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto">
         <div className="flex flex-col gap-3">
-          <p className="text-text-secondary text-xs">
+          <p className="text-text-secondary text-label">
             スケジュールを見分けるための色です。状態は色では表しません。
           </p>
           <div className="grid grid-cols-5 gap-3">
@@ -58,7 +58,7 @@ export function ScheduleThemePicker({
                   onChange(t.key);
                   setOpen(false);
                 }}
-                className="focus-visible:ring-ring/50 flex size-7 items-center justify-center rounded-full outline-none focus-visible:ring-[3px]"
+                className="focus-visible:ring-ring flex size-7 items-center justify-center rounded-full outline-none focus-visible:ring-2"
               >
                 <ScheduleThemeSwatch theme={t.key} selected={value === t.key} />
               </button>

@@ -277,7 +277,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
         actions={
           <>
             <Select value={viewItemId} onValueChange={setViewItemId}>
-              <SelectTrigger className="h-9 w-44 text-xs">
+              <SelectTrigger className="h-9 w-44 text-label">
                 <SelectValue placeholder="制作物" />
               </SelectTrigger>
               <SelectContent>
@@ -312,7 +312,7 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
       {outOfRangeCount > 0 && (
         <div
           role="status"
-          className="border-border bg-accent text-text-secondary mx-8 mt-4 flex items-start gap-2 rounded-lg border px-3 py-2 text-mini"
+          className="border-border bg-accent text-text-secondary mx-8 mt-4 flex items-start gap-2 rounded-lg border px-3 py-2 text-label"
         >
           <TriangleAlert className="text-brand mt-px size-4 shrink-0" aria-hidden />
           <span>
@@ -326,9 +326,9 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
       {members.length === 0 ? (
         <EmptyHint projectId={projectId} />
       ) : days.length === 0 ? (
-        <p className="m-8 text-sm text-muted-foreground">プロジェクト期間が設定されていません。</p>
+        <p className="m-8 text-body text-muted-foreground">プロジェクト期間が設定されていません。</p>
       ) : visibleItems.length === 0 ? (
-        <p className="m-8 text-sm text-muted-foreground">制作物がありません。</p>
+        <p className="m-8 text-body text-muted-foreground">制作物がありません。</p>
       ) : (
         <ScheduleBoard
           days={days}
@@ -389,10 +389,10 @@ function shiftPatch(plan: Plan, dayDelta: number): ReschedulePatch {
 
 function EmptyHint({ projectId }: { projectId: string }) {
   return (
-    <div className="m-8 rounded-md border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
+    <div className="m-8 rounded-md border border-dashed border-border p-12 text-center text-body text-muted-foreground">
       まずは参加者を追加してください。
       <div className="mt-3">
-        <Button size="sm" variant="outline" asChild>
+        <Button size="sm" variant="secondary" asChild>
           <Link to={`/projects/${projectId}/members?tab=manage`}>参加者管理を開く</Link>
         </Button>
       </div>
@@ -411,10 +411,10 @@ function PageSkeleton() {
 
 function NotFound() {
   return (
-    <div className="mx-auto max-w-3xl px-8 py-20 text-center text-sm text-muted-foreground">
+    <div className="mx-auto max-w-3xl px-8 py-20 text-center text-body text-muted-foreground">
       ページが見つかりませんでした。
       <div className="mt-3">
-        <Button asChild variant="outline" size="sm">
+        <Button asChild variant="secondary" size="sm">
           <Link to="/projects">プロジェクト一覧へ</Link>
         </Button>
       </div>

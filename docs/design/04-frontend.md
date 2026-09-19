@@ -888,11 +888,11 @@ Figma のデザイン言語のうち、shadcn の汎用プリミティブでは�
 
 | コンポーネント | 定義ファイル | 責務 | Figma |
 |---|---|---|---|
-| `WorkflowButton` | `workflow.ts` | ボール操作 4 種（ボールを渡す／戻す／承認／次の工程へトス）。「次の工程へトス」だけがブランドオレンジで、工程を前へ進める唯一の操作であることを色で示す | node 42:4 |
+| `WorkflowButton` | `workflow.ts` | ボール操作 4 種（ボールを渡す／戻す／承認／次の工程へトス）。「次の工程へトス」だけがブランドオレンジ（Role=Brand）で、工程を前へ進める唯一の操作であることを色で示す。渡す・承認は Role=Primary、戻すは Role=Secondary | node 206:380 |
 | `StatusPill` | `planStatus.ts` | ボール状態機械 6 値の表示（ラベル・配色・アイコン） | node 11:19 ほか |
 | `RoleRow` | `planRole.ts` | 3 役割（実施者／承認者／進行責任者）の行表示。アバター色は人ではなく**役割**に紐づく | node 25:2 |
 | `MemberProfileHover` / `MemberProfileCard` | — | 担当者のプロフィール（名前／所属名／メールアドレス／職種）をホバーで出す（#159）。`features/projects/` に置く | — |
-| `ScheduleThemeSwatch` | `scheduleTheme.ts` | スケジュールカラーテーマの色見本。予定ごとの色選択 UI の下地 | node 54:2 |
+| `ScheduleThemeSwatch` | `scheduleTheme.ts` | スケジュールカラーテーマの色見本。予定ごとの色選択 UI の下地 | node 206:259 |
 | `Wordmark` | — | TRAKON ロゴタイプ。Sora のライブテキストで描画する | node 33:19 / 9:3 |
 
 `scheduleTheme.ts` は 10 テーマのカタログ（§4.9.2）を保持する純粋なデザインデータで、予定ドメインには依存しない。カテゴリ → 既定テーマの対応は `features/plans/planTheme.ts` 側に置く。
@@ -1124,36 +1124,66 @@ PRD §4.4 UXR-04「派手さ・色数・動きで強さを演出しない」、N
 
 基調は **暖色ニュートラル + ブランドオレンジ**。v1.1 までの無彩色グレー基調（Figma Make プロトタイプ由来）は廃止した。
 
+> **v1.3：Figma「TRAKON / APP DESIGN GUIDE / v1.0 / 実装基準」へ全面準拠。** 同じ fileKey の
+> ガイド群（01 Typography `233:40` / 02 COLOR `234:40` / 03 Button `237:40` / 04 ICON `286:90` /
+> 06 Form Controls `342:90` / 07 Calendar `355:132` / 08 Header `419:132`）を唯一の実装基準とする。
+> 主な変更は ① 文字スタイルを登録済み 6 種へ限定（本文 13→14px、独自の 11/22px を廃止）
+> ② ブランドオレンジ `#E7672C → #C44B17`（白文字・4.81:1）③ Button を Role（Brand/Primary/Secondary）
+> × State（Default/Hover/Pressed/Disabled/Loading）へ再定義 ④ フォームを高さ 44px・角丸 8px・
+> 左右余白 16px に統一。
+>
+> **採用していないもの**：`05 Schedule Card`（node 308:90）は Figma 上で「レビュー用 / 実装参照禁止」
+> バッジ付きのため参照しない。`07 Calendar` の**日付行 96px 固定**も採用せず、行高 20〜80px の
+> ズーム可変を維持する（採用したのは日付列 72px・カード左ストライプ 6px などの寸法のみ）。
+> Figma Code Connect は Dev/Full シート（Organization / Enterprise）が必要なため未着手。
+
 ### 4.9.1. カラー
 
 shadcn の標準トークン名（`--background` / `--foreground` / `--primary` …）は据え置き、値のみ TRAKON 配色に差し替える。加えて、それまでコード中に生の Tailwind パレット（`sky-500` / `rose-50` 等）で散在していたドメイン意味づけをセマンティックトークンとして定義する。
 
-**基本（Figma node 8:3）**
+色は HEX の手入力ではなく、用途別のトークンから選ぶ（ガイド node 234:40）。Figma 側の変数名は
+`--trakon-color-*` 名前空間だが、アプリ側は既存のセマンティック名を維持して値だけを合わせている。
 
-| トークン | 値 | 用途 |
-|---|---|---|
-| `--content` | `#F7F6F2` | アプリ本体の背景 |
-| `--sidebar` | `#FCFBF8` | サイドバー |
-| `--background` / `--card` | `#FFFFFF` | カード・ヘッダー帯 |
-| `--surface-muted` | `#F7F5F1` | 週末行など控えめな面 |
-| `--surface-subtle` | `#F9F8F5` | 見出し帯 |
-| `--border` | `#E6E2DB` | 標準の罫線 |
-| `--grid-border` | `#E8E5DF` | カレンダー罫線（一段淡い） |
-| `--input` | `#DED8CE` | 入力・ボタン輪郭 |
-| `--foreground` / `--primary` | `#23231F` | 本文・主要ボタン背景 |
-| `--text-secondary` | `#676862` | 補助テキスト |
-| `--text-tertiary` | `#908F87` | プレースホルダ・ラベル |
+**基本（Figma node 234:40）**
 
-**ブランド（accent 確定）**
+| トークン | 値 | Figma 変数 | 用途 |
+|---|---|---|---|
+| `--content` / `--sidebar` | `#FAF8F4` | `color/bg/page` | 画面全体の土台 |
+| `--background` / `--card` | `#FFFFFF` | `color/bg/surface` | カード・パネルなど通常の面 |
+| `--surface-muted` / `--surface-subtle` / `--accent` | `#F3EFE8` | `color/bg/subtle` | グループ・補助領域・ホバー面 |
+| `--border` | `#DED8CE` | `color/border/default` | カード・パネルの装飾的な区切り |
+| `--border-subtle` / `--grid-border` | `#E7E1D8` | `color/border/subtle` | 領域内の控えめな区切り・カレンダー罫線 |
+| `--input` | `#8D8988` | `color/border/control` | **操作可能な要素**（入力欄・白ボタン）の輪郭 |
+| `--foreground` / `--primary` | `#20201E` | `color/text/primary` / `color/bg/strong` | 本文・見出し・操作名・黒い主操作の面 |
+| `--text-secondary` | `#4F4E49` | `color/text/secondary` | 説明文や、読ませる補助情報 |
+| `--text-tertiary` | `#6F6B63` | `color/text/muted` | 日付・注記 |
+| `--ring` | `#20201E` | `action/focus/ring` | Button のフォーカスリング（2px） |
 
-| トークン | 値 | 用途 |
-|---|---|---|
-| `--brand` | **`#E7672C`** | ブランドカラー。今日マーカー、「次の工程へトス」 |
-| `--brand-strong` | `#E05224` | ブランド文字色 |
-| `--brand-subtle` | `#F8EFE8` | 選択中のナビ項目 |
-| `--brand-badge` | `#FCE8DB` | プランバッジ背景 |
+> 罫線は**装飾的な区切り（Default / Subtle）と操作可能な要素の輪郭（Control）を明確に分ける**。
+> `--input` が `--border` よりはっきり濃いのはこのため。
 
-> v1.1 まで暫定だったブランドカラー `#1F6FEB` は **`#E7672C` に確定**（§4.10-9 の議論ポイントをクローズ）。
+**ブランド**
+
+| トークン | 値 | Figma 変数 | 用途 |
+|---|---|---|---|
+| `--brand` | **`#C44B17`** | `color/bg/accent` | ブランドカラー。今日マーカー、「次の工程へトス」。白文字とのコントラスト 4.81:1 |
+| `--brand-strong` | `#B34212` | `action/brand/bg-hover` | Hover |
+| `--brand-pressed` | `#9F370E` | `action/brand/bg-pressed` | Pressed |
+| `--brand-subtle` / `--brand-badge` | `#FDF3EE` | `color/bg/accent-soft` | 選択中のナビ項目・プランバッジ |
+
+> v1.1 まで暫定だったブランドカラー `#1F6FEB` は `#E7672C` を経て、ガイド v1.0 で **`#C44B17` に確定**
+> （§4.10-9 の議論ポイントをクローズ）。ブランド色の上の文字は**白**（`color/text/on-accent`）。
+
+**Button の状態色（Figma node 237:40 §02）**
+
+一般の背景色を組み合わせてボタンを自作しない。Disabled は全 Role 共通。
+
+| Role | Default | Hover | Pressed |
+|---|---|---|---|
+| Brand（中心操作） | `#C44B17` | `#B34212` | `#9F370E` |
+| Primary（画面の主操作） | `#20201E` | `#4F4E49` | `#141413` |
+| Secondary（補助操作） | `#FFFFFF` / 枠 `#8D8988` | `#F3EFE8` | `#E7E1D8` |
+| Disabled（共通） | 面 `#F3EFE8` / 文字 `#AAA69C` / 枠 `#DED8CE` | — | — |
 
 **状態・カレンダー**
 
@@ -1161,12 +1191,12 @@ shadcn の標準トークン名（`--background` / `--foreground` / `--primary` 
 |---|---|---|
 | `--success` / `--success-subtle` | `#2E7D4F` / `#E8F6EC` | FIX・承認済み |
 | `--warning` / `--warning-subtle` | `#C88718` / `#FFF5DE` | 進行中 |
-| `--danger` / `--danger-subtle` | `#B14E41` / `#FEF7F5` | 遅延・エラー |
-| `--today-bg` / `--today-marker` | `#FFF8E3` / `#E7672C` | 本日行（FR-SCH-05） |
-| `--weekend-bg` | `#F7F5F1` | 土日背景（FR-SCH-03） |
-| `--holiday-bg` / `--holiday-foreground` | `#FEF7F5` / `#B14E41` | 祝日（FR-SCH-04） |
+| `--danger` / `--destructive` / `--danger-subtle` | `#C73329` / `#FDF0EF` | 遅延・エラー（`color/*/error`） |
+| `--today-bg` / `--today-marker` | `#FFF8E3` / `#C44B17` | 本日行（FR-SCH-05） |
+| `--weekend-bg` | `#F3EFE8` | 土日背景（FR-SCH-03） |
+| `--holiday-bg` / `--holiday-foreground` | `#FDF0EF` / `#C73329` | 祝日（FR-SCH-04） |
 
-### 4.9.2. スケジュールカードのカラーテーマ（Figma node 54:2）
+### 4.9.2. スケジュールカードのカラーテーマ（Figma node 206:259）
 
 10 テーマ。文字色は全テーマ共通 `#22211F`（`--plan-foreground`）で、背景とのコントラストは 13:1 以上を確保する。
 
@@ -1183,7 +1213,7 @@ shadcn の標準トークン名（`--background` / `--foreground` / `--primary` 
 | Blue | `#DDEEFF` | `#1D6FD1` |
 | Violet | `#F3E0F8` | `#9A3EAA` |
 
-**配色ポリシー**：色は「状態」を表すものではなく、**ユーザーがスケジュールを視覚整理するために選ぶもの**（Figma 54:2 の明記事項）。状態は色ではなくステータス pill とボール保持者の表示で伝える。
+**配色ポリシー**：色は「状態」を表すものではなく、**ユーザーがスケジュールを視覚整理するために選ぶもの**（Figma 206:259 の明記事項）。状態は色ではなくステータス pill とボール保持者の表示で伝える。
 
 このポリシーの帰結として、**予定の状態（進行中／確認待ち／承認済み／TOSS 済み／完了）でカードのテーマ色を差し替えない**。状態はステータス pill で伝える。例外は 2 つだけ。
 
@@ -1196,17 +1226,29 @@ shadcn の標準トークン名（`--background` / `--foreground` / `--primary` 
 
 ### 4.9.3. タイポグラフィ
 
-| 用途 | フォント | サイズ | weight |
-|---|---|---|---|
-| ワードマーク | **Sora** | 32px | 600 |
-| 画面タイトル | Noto Sans JP | 22px | 700 |
-| セクション・月見出し | Noto Sans JP | 20px | 700 |
-| カード見出し | Noto Sans JP | 14–16px | 700 |
-| 本文 | Noto Sans JP | 13–14px | 400/500 |
-| 補助テキスト | Noto Sans JP | 12px | 400 |
-| データ密度高（カレンダー） | Noto Sans JP | 9–11px | 400/500 |
+Figma「01 Typography / Guide v1.0」（node 233:40）の**登録済みテキストスタイルがすべて**。
+用途ごとにこの中から選び、画面で独自サイズを作らない。字間はすべて 0。
 
-行間は本文 1.5、高密度領域 1.45。Tailwind 既定の `text-xs`〜`text-base` に加え、Figma に出現する 9 / 10 / 11 / 13 / 22px を `text-micro` / `text-mini` / `text-tiny` / `text-body` / `text-title` として定義する。
+| Figma スタイル | Tailwind | サイズ / 行間 | weight | 用途 |
+|---|---|---|---|---|
+| — | `text-wordmark` (**Sora**) | 32px / 48px | 600 | ワードマーク |
+| `App/Heading/Page` | `text-heading-page` | 24px / 34px | 700 | 画面のタイトル |
+| `App/Heading/Section` | `text-heading-section` | 18px / 28px | 700 | 領域・セクションの見出し |
+| `App/Body/Default` | `text-body` | 14px / 22px | 400 | 本文・説明文 |
+| `App/Button/Default` | `text-button` | 14px / 20px | 500 | ボタンのラベル |
+| `App/Label/Default` | `text-label` | 12px / 18px | 500 | 短い項目名・ラベル |
+| `App/Caption/Default` | `text-label` | 12px / 18px | 400 | 日付・注記・補足情報 |
+
+**使用ルール**（ガイド §02）：本文・操作名は 14px。12px は補助情報に限定し、重要な説明やエラー内容を
+小さくしない。通常の UI で 10px 以下や 16px の独自スタイルを追加しない。サイズが必要になったら
+個別指定せずガイドを更新する。
+
+**例外**：`text-mini`（10px）/ `text-micro`（9px）は**スケジュールの高密度表示専用**として
+`features/plans/schedule/**` にのみ残す。1 日あたり縦 20px まで縮むカレンダーが対象で、
+それ以外の画面では使わない。
+
+**実装と拡大表示**（ガイド §03）：Figma 上の px は設計値。実装では利用者の文字サイズ設定を尊重し、
+`html` の文字サイズを強制固定しない。ブラウザ 200% 拡大で文字切れ・重なり・操作不能が出ないこと。
 
 **フォント配信**：`@fontsource-variable/sora` と `@fontsource-variable/noto-sans-jp` を **セルフホスト**する（CDN 依存なし＝ §5 の CSP を緩めずに済む）。いずれも可変フォント（wght 軸）を採用し、Regular / Medium / Bold を 1 セットの `@font-face` で賄う。Noto Sans JP は `unicode-range` で 124 分割されており、描画に必要なサブセットだけが遅延ダウンロードされる。
 
@@ -1215,8 +1257,19 @@ shadcn の標準トークン名（`--background` / `--foreground` / `--primary` 
 ### 4.9.4. 角丸・影・寸法
 
 - 角丸：`rounded-sm` 6px / `rounded-md` 8px / `rounded-lg` 10px（カード・ナビ・入力の基準） / `rounded-xl` 12px / `rounded-2xl` 14px。pill は `rounded-full`。
-- 影：`shadow-card` = `0 4px 12px rgb(35 35 31 / 0.06)`、`shadow-float` = `0 6px 18px rgb(35 35 31 / 0.10)`。
-- ボタン高さ：36px（副次） / 40px（ヘッダー主要） / 42px（ボール操作） / 44px（フォーム標準）。左右余白は通常 18px 以上、主要操作 24px 以上、アイコンとラベルの間隔 12px（Figma node 78:18 の実装ノート）。
+- 影：`shadow-card` = `0 4px 12px rgb(32 32 30 / 0.06)`、`shadow-float` = `0 6px 18px rgb(32 32 30 / 0.10)`。
+- **ボタン**（Figma node 237:40 / 実体 469:304・470:304）：角丸 6px、左右余白 16px（`sm` は 12px）、
+  内部 gap 8px、遷移 100ms。高さは `sm` 36px（Button / Small）／`default` 40px（ヘッダーの密度、
+  node 419:132 実測）／`lg` 44px（Button / Large、フォーム・主要操作の標準）。
+- **フォーム**（Figma node 342:90）：高さ 44px、角丸 8px、左右余白 16px。ラベルと補足文を含めて
+  一つの Field として扱う。状態は Default / Focus / Filled / Error / Disabled。
+- **フォーカス表現は 2 系統**。Button は黒 2px のリング（`--ring` = `#20201E`、ガイド §04）、
+  入力系はブランドオレンジの枠（`--color-border-accent`、node 342:90 の Focus 状態）。
+- **アイコン**（Figma node 286:90）：単独操作・ナビゲーションは **20px**、カード内・Button 内・
+  Chevron は **16px**。ラベルとの間隔 8px、色は文字と同じ（`inherit`）、表示枠の中央に置く。
+  「保存・確定・キャンセル」は操作名だけで意味が明確なのでアイコンを付けない。
+  TOSS flow は TRAKON 固有の自前 SVG で、汎用アイコンとは分離する。
+- **ページヘッダー**（Figma node 419:132）：本体帯 132px、左右余白 32px、Sub toolbar 帯 64px。
 
 ### 4.9.5. スペーシング
 
@@ -1238,7 +1291,7 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 | 6 | アイコンライブラリ | **Lucide React** | shadcn/ui ドキュメントとサンプルが Lucide 前提、tree-shakable |
 | 7 | 祝日データ取得（FR-SCH-04） | **Phase 0 は FE 直接フェッチ + localStorage キャッシュ** | サーバ口不要・実装シンプル。Phase 1 で BE 経由に移行 |
 | 8 | 楽観更新 | **Phase 0 から実装**（TOSS / 完了、`packages/shared/domain/ball-holder.ts` を共有） | PRD SC-08「TOSS中…→相手にTOSSしました→自動クローズ」体験の確保 |
-| 9 | ブランドカラー（accent） | **確定 #E7672C（オレンジ）**／~~仮確定 #1F6FEB（青系）~~ | Figma「TRAKON｜Landing Page」でブランドが確定。§4.9.1 に反映済み |
+| 9 | ブランドカラー（accent） | **確定 #C44B17（オレンジ）**／~~#E7672C~~／~~仮確定 #1F6FEB（青系）~~ | Figma「APP DESIGN GUIDE v1.0」(node 234:40) で確定。§4.9.1 に反映済み |
 | 10 | 国際化（i18n） | **`packages/shared/i18n/messages.ja.ts` に集約、ライブラリは未導入** | Phase 0 は日本語固定、文字列定数化のみで将来 EN 化への下地 |
 | 11 | カンバン DnD の意味論（v1.1 / **#131 改訂**、SC-17） | **既存 Ball Action API に集約、専用 EP なし** | UC-26 と整合。**#131：状態列移動 = 状態機械の各アクション（request-review / approve / send-back / toss / toss-undo）**。~~メンバー列移動での任意 TOSS~~ は廃止（TOSS 先は後続予定に固定）。認可・監査ログが既存ガードに乗る |
 | 12 | 「次の予定」選択肢の範囲（v1.1） | **同制作物内に限定**（Phase 0、プロトタイプ仕様と一致） | 異なる制作物・プロジェクトを跨ぐ後続は Phase 1+ で検討（議論ポイントとして残置） |
@@ -1306,3 +1359,4 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 | 2026-08-23 | **#148 反映**（Figma デザインシステム 第7段b：プロジェクト系画面） | SC-03 をテーブルへ（遅延アイコン・クライアント名・進行責任者・行全体リンク・「⋯」メニュー）／SC-04 を Figma へ（クライアント名・職種・区分・通知先メール・進行責任者・固定サマリフッター）。作成 API に `progressManagerIndex` を追加／SC-11 参加者管理の表とフォームに職種・区分 3 値を反映。 |
 | 2026-08-23 | **#149 反映**（Figma デザインシステム 第8段：予定カラーのユーザー選択式化） | `plans.color_theme`（10 値 CHECK / NULL 許容）を追加し、NULL はカテゴリ由来の既定色にフォールバック／解決を `resolvePlanTheme()` に集約／`ScheduleThemePicker` をボール詳細ヘッダーと予定フォームに設置／テーマキーを `packages/shared` へ移し FE・BE・DB で共有。§4.9.2 の段階移行を完了として更新。 |
 | 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §4.3.1 / §4.3.2 に `/settings`・`/settings/billing`・`/settings/organization` を追加／§4.5 に `useProjectRole` / `useEntitlement` を追加し、サイドバーのプランバッジを props 化／§4.5.2 にロール・課金状態による UI 出し分け方針を新設（ロール起因は隠す、TOSS ボタンと課金起因は無効化＋理由＋CTA）／§4.11 に SC-15・SC-18 と FR-ROLE / FR-BILL の整合を追加／`Toaster` の未マウント問題を PRD 整合メモに記録。 |
+| 2026-09-19 | **APP DESIGN GUIDE v1.0 反映** | Figma のガイド群（01 Typography 233:40 / 02 COLOR 234:40 / 03 Button 237:40 / 04 ICON 286:90 / 06 Form Controls 342:90 / 07 Calendar 355:132 / 08 Header 419:132）を実装基準として全面適用。文字スタイルを登録済み 6 種へ限定（本文 13→14px、11/22px を廃止。9/10px はスケジュール高密度表示のみ例外）／ブランドオレンジ #E7672C→**#C44B17**（白文字）・本文色 #23231F→#20201E・ページ背景→#FAF8F4／Button を **Role × State** へ再定義し `loading` を追加／フォームを 44px・角丸 8px・左右 16px に統一し `RadioGroup` を新設／アイコンを 20px（ナビ・単独操作）と 16px（カード内・Button 内）に統一／ページヘッダーを 132px + Sub toolbar 64px に／日付軸 96→72px、カード左ストライプ 4→6px。**未採用**：05 Schedule Card (308:90) は「実装参照禁止」バッジのため参照せず、07 Calendar の日付行 96px 固定も見送り（ズーム可変を維持）。Figma Code Connect は Dev/Full シート未取得のため未着手。 |

@@ -10,7 +10,21 @@ import { extendTailwindMerge } from 'tailwind-merge';
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
-      'font-size': [{ text: ['micro', 'mini', 'tiny', 'body', 'title', 'wordmark'] }],
+      'font-size': [
+        {
+          text: [
+            'heading-page',
+            'heading-section',
+            'body',
+            'button',
+            'label',
+            // スケジュール高密度表示専用 (globals.css 参照)
+            'micro',
+            'mini',
+            'wordmark',
+          ],
+        },
+      ],
     },
   },
 });

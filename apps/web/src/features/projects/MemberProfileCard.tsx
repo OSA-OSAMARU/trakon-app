@@ -59,17 +59,17 @@ export function MemberProfileCard({ member }: { member: ProjectMember }) {
         <dd className="truncate text-body font-medium">{member.name}</dd>
 
         <dt className="sr-only">所属名</dt>
-        <dd className="text-text-secondary truncate text-mini">
+        <dd className="text-text-secondary truncate text-label">
           {member.organizationName || '所属未設定'}
         </dd>
 
         <dt className="sr-only">メールアドレス</dt>
-        <dd className="text-text-tertiary truncate text-mini">
+        <dd className="text-text-tertiary truncate text-label">
           {member.email ?? 'メール未登録'}
         </dd>
 
         <dt className="sr-only">職種</dt>
-        <dd className="text-text-tertiary text-mini">
+        <dd className="text-text-tertiary text-label">
           {member.jobTitle ? JOB_TITLE_LABEL[member.jobTitle] : '職種未設定'}
           <span className="text-text-tertiary"> ・ {MEMBER_TYPE_LABEL[member.memberType]}</span>
         </dd>

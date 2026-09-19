@@ -125,8 +125,8 @@ function MyPageInner({ user }: { user: CurrentUser }) {
         <form noValidate onSubmit={form.handleSubmit((v) => mut.mutate(v))}>
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">プロフィール</CardTitle>
-              <p className="text-text-secondary mt-0.5 text-mini">
+              <CardTitle className="text-heading-section">プロフィール</CardTitle>
+              <p className="text-text-secondary mt-0.5 text-label">
                 TRAKON上で表示する情報と通知先を設定します
               </p>
             </CardHeader>
@@ -135,14 +135,14 @@ function MyPageInner({ user }: { user: CurrentUser }) {
                 <Avatar
                   name={user.displayName || user.fullName || user.email}
                   src={user.avatarUrl}
-                  className="size-14 text-lg"
+                  className="size-14 text-heading-section"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-body font-medium">プロフィール画像</p>
-                  <p className="text-text-tertiary text-mini">
+                  <p className="text-text-tertiary text-label">
                     担当者表示やコメントに使用されます（PNG / JPEG、10MB まで）
                   </p>
-                  {avatar.error && <p className="text-destructive mt-1 text-xs">{avatar.error}</p>}
+                  {avatar.error && <p className="text-destructive mt-1 text-label">{avatar.error}</p>}
                 </div>
                 <input
                   ref={avatar.inputRef}
@@ -166,7 +166,7 @@ function MyPageInner({ user }: { user: CurrentUser }) {
                 )}
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => avatar.inputRef.current?.click()}
                   disabled={avatar.isPending}
@@ -235,8 +235,8 @@ function MyPageInner({ user }: { user: CurrentUser }) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ログイン情報</CardTitle>
-            <p className="text-text-secondary mt-0.5 text-mini">
+            <CardTitle className="text-heading-section">ログイン情報</CardTitle>
+            <p className="text-text-secondary mt-0.5 text-label">
               ログインに使用するメールアドレスと認証情報を管理します
             </p>
           </CardHeader>
@@ -245,7 +245,7 @@ function MyPageInner({ user }: { user: CurrentUser }) {
               <Label className="text-text-secondary">ログインメールアドレス</Label>
               <p className="mt-1 truncate text-body">{user.email}</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => setLoginInfoOpen(true)}>
+            <Button variant="secondary" size="sm" onClick={() => setLoginInfoOpen(true)}>
               ログイン情報を変更
             </Button>
           </CardContent>
@@ -253,10 +253,10 @@ function MyPageInner({ user }: { user: CurrentUser }) {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">退会</CardTitle>
+            <CardTitle className="text-heading-section">退会</CardTitle>
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-3">
-            <p className="text-text-secondary text-sm">
+            <p className="text-text-secondary text-body">
               アカウントを削除します。この操作は取り消せません。
             </p>
             <Button
@@ -381,9 +381,9 @@ function Field({
       <Label>{label}</Label>
       {children}
       {error ? (
-        <p className="text-destructive text-xs">{error}</p>
+        <p className="text-destructive text-label">{error}</p>
       ) : hint ? (
-        <p className="text-text-tertiary text-xs">{hint}</p>
+        <p className="text-text-tertiary text-label">{hint}</p>
       ) : null}
     </div>
   );

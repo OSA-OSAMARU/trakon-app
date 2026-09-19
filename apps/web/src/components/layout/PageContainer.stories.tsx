@@ -13,7 +13,7 @@ const meta = {
   },
   args: {
     children: (
-      <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+      <div className="rounded-lg border border-dashed p-6 text-body text-muted-foreground">
         ページ本文がここに入ります。
       </div>
     ),

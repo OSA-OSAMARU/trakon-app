@@ -19,9 +19,9 @@ type Story = StoryObj<typeof meta>;
 export const Horizontal: Story = {
   render: (args) => (
     <div className="w-64">
-      <p className="text-sm">上のコンテンツ</p>
+      <p className="text-body">上のコンテンツ</p>
       <Separator {...args} className="my-4" />
-      <p className="text-sm">下のコンテンツ</p>
+      <p className="text-body">下のコンテンツ</p>
     </div>
   ),
 };
@@ -30,9 +30,9 @@ export const Vertical: Story = {
   args: { orientation: 'vertical' },
   render: (args) => (
     <div className="flex h-12 items-center gap-4">
-      <span className="text-sm">左</span>
+      <span className="text-body">左</span>
       <Separator {...args} />
-      <span className="text-sm">右</span>
+      <span className="text-body">右</span>
     </div>
   ),
 };

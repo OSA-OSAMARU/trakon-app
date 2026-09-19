@@ -127,7 +127,7 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
       <form onSubmit={form.handleSubmit((v) => updateMut.mutate(v))}>
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">基本情報</CardTitle>
+            <CardTitle className="text-heading-section">基本情報</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <Field label="プロジェクト名" error={form.formState.errors.name?.message}>
@@ -158,13 +158,13 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">参加者管理</CardTitle>
+          <CardTitle className="text-heading-section">参加者管理</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             参加者の追加・招待・削除を行います。
           </p>
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="secondary" size="sm" asChild>
             <Link to={`/projects/${projectId}/members?tab=manage`}>
               <Users className="size-4" />
               参加者管理を開く
@@ -175,13 +175,13 @@ function ProjectEditInner({ projectId, onBack }: { projectId: string; onBack: ()
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">共有リンク</CardTitle>
+          <CardTitle className="text-heading-section">共有リンク</CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             非会員クライアント向けに閲覧・操作用 URL を発行します。
           </p>
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="secondary" size="sm" asChild>
             <Link to={`/projects/${projectId}/share-links`}>
               <Link2 className="size-4" />
               共有リンクを管理
@@ -239,16 +239,16 @@ function ArchiveCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">アーカイブ</CardTitle>
+        <CardTitle className="text-heading-section">アーカイブ</CardTitle>
       </CardHeader>
       <CardContent className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           {archived
             ? 'このプロジェクトはアーカイブ済みです。復元すると一覧・サイドバーに再表示されます。'
             : 'アーカイブするとプロジェクト一覧とサイドバーから非表示になります。'}
         </p>
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           onClick={() => setConfirming(true)}
           disabled={mutation.isPending}
@@ -375,10 +375,10 @@ function ItemsSection({
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">制作物</CardTitle>
+          <CardTitle className="text-heading-section">制作物</CardTitle>
           <Button
             type="button"
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={() => setEditing({ id: 'new', name: '' })}
           >
@@ -390,7 +390,7 @@ function ItemsSection({
       <CardContent className="space-y-2">
         {loading && <Skeleton className="h-24 w-full rounded-md" />}
         {!loading && items.length === 0 && (
-          <p className="text-sm text-muted-foreground">まだ制作物がありません。</p>
+          <p className="text-body text-muted-foreground">まだ制作物がありません。</p>
         )}
         <ul className="divide-y divide-border">
           {items.map((it, idx) => (
@@ -412,7 +412,7 @@ function ItemsSection({
                 >
                   <GripVertical className="size-4" />
                 </span>
-                <div className="truncate text-sm">{it.name}</div>
+                <div className="truncate text-body">{it.name}</div>
               </div>
               <div className="flex gap-1">
                 <Button variant="ghost" size="sm" asChild>
@@ -538,7 +538,7 @@ function ItemEditDialog({
 function PlansRangeHint({ range }: { range: PlansDateRange | null }) {
   if (!range) return null;
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="text-label text-muted-foreground">
       登録済みの予定は {formatDate(range.min)} 〜 {formatDate(range.max)}（{range.count} 件）です。
       この範囲を含む期間にしてください。
     </p>
@@ -565,7 +565,7 @@ function Field({
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-label text-destructive">{error}</p>}
     </div>
   );
 }
@@ -584,8 +584,8 @@ function NotFound() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 px-8 py-20">
       <AlertCircle className="size-8 text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">プロジェクトが見つかりませんでした。</p>
-      <Button asChild variant="outline" size="sm">
+      <p className="text-body text-muted-foreground">プロジェクトが見つかりませんでした。</p>
+      <Button asChild variant="secondary" size="sm">
         <Link to="/projects">プロジェクト一覧に戻る</Link>
       </Button>
     </div>

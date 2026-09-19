@@ -69,7 +69,7 @@ export function LoginInfoDialog({
 
         {mode === 'menu' && (
           <>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-body">
               <dt className="text-muted-foreground">ログインメールアドレス</dt>
               <dd className="break-all">{user.email}</dd>
               <dt className="text-muted-foreground">認証方法</dt>
@@ -77,22 +77,22 @@ export function LoginInfoDialog({
             </dl>
             {user.primaryAuthMethod === 'password' ? (
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={() => setMode('email')}>
+                <Button variant="secondary" size="sm" onClick={() => setMode('email')}>
                   メールアドレスを変更
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setMode('password')}>
+                <Button variant="secondary" size="sm" onClick={() => setMode('password')}>
                   パスワードを変更
                 </Button>
               </div>
             ) : (
               // OAuth ユーザーはメール / パスワードを TRAKON 側で持たないため変更できない
-              <p className="text-sm text-muted-foreground">
+              <p className="text-body text-muted-foreground">
                 {AUTH_METHOD_LABEL[user.primaryAuthMethod]} でログインしています。
                 メールアドレスとパスワードは {AUTH_METHOD_LABEL[user.primaryAuthMethod]} 側で変更してください。
               </p>
             )}
             <DialogFooter>
-              <Button variant="outline" size="sm" onClick={close}>
+              <Button variant="secondary" size="sm" onClick={close}>
                 閉じる
               </Button>
             </DialogFooter>
@@ -175,7 +175,7 @@ function EmailForm({ user, onDone }: { user: CurrentUser; onDone: () => void }) 
     <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-3">
       <div className="space-y-1.5">
         <Label>現在のメールアドレス</Label>
-        <p className="text-sm text-muted-foreground">{user.email}</p>
+        <p className="text-body text-muted-foreground">{user.email}</p>
       </div>
       <FormField label="新しいメールアドレス" error={form.formState.errors.newEmail?.message}>
         <Input
@@ -186,7 +186,7 @@ function EmailForm({ user, onDone }: { user: CurrentUser; onDone: () => void }) 
           {...form.register('newEmail')}
         />
       </FormField>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-label text-muted-foreground">
         変更を確定するには、現在のアドレスと新しいアドレスの両方に届く確認メールのリンクを開く必要があります。
       </p>
       <DialogFooter>
@@ -298,10 +298,10 @@ function WithdrawForm({ onCancel }: { onCancel: () => void }) {
   return (
     <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-4">
       <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">退会理由を教えてください</legend>
+        <legend className="text-body font-medium">退会理由を教えてください</legend>
         <div className="space-y-1.5">
           {WITHDRAWAL_REASONS.map((r) => (
-            <label key={r.value} className="flex items-center gap-2 text-sm">
+            <label key={r.value} className="flex items-center gap-2 text-body">
               <input
                 type="radio"
                 value={r.value}
@@ -313,7 +313,7 @@ function WithdrawForm({ onCancel }: { onCancel: () => void }) {
           ))}
         </div>
         {form.formState.errors.reason && (
-          <p className="text-destructive text-xs">{form.formState.errors.reason.message}</p>
+          <p className="text-destructive text-label">{form.formState.errors.reason.message}</p>
         )}
       </fieldset>
 
@@ -354,7 +354,7 @@ function FormField({
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      {error && <p className="text-destructive text-xs">{error}</p>}
+      {error && <p className="text-destructive text-label">{error}</p>}
     </div>
   );
 }

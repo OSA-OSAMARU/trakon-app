@@ -29,7 +29,7 @@ export const Default: Story = {
             </DialogHeader>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline">キャンセル</Button>
+                <Button variant="secondary">キャンセル</Button>
               </DialogClose>
               <Button variant="destructive">削除する</Button>
             </DialogFooter>

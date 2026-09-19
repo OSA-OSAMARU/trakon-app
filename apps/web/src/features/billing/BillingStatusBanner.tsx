@@ -22,7 +22,7 @@ export function BillingStatusBanner() {
   return (
     <div
       role="status"
-      className="flex items-center justify-between gap-3 border-b border-border bg-warning-subtle px-6 py-3 text-sm"
+      className="flex items-center justify-between gap-3 border-b border-border bg-warning-subtle px-6 py-3 text-body"
     >
       <span className="flex items-center gap-2">
         <AlertTriangle className="size-4 shrink-0" aria-hidden />

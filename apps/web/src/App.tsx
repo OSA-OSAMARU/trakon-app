@@ -90,7 +90,7 @@ function ProjectRedirectToSchedule() {
 
   if (!projectId) return <Nav to="/projects" replace />;
   if (itemsQuery.isLoading) {
-    return <div className="p-8 text-sm text-muted-foreground">読み込み中…</div>;
+    return <div className="p-8 text-body text-muted-foreground">読み込み中…</div>;
   }
   const items = (itemsQuery.data ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder);
   const first = items[0];

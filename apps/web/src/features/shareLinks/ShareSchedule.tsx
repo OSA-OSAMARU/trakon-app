@@ -46,11 +46,11 @@ export function ShareSchedule({
 
   if (days.length === 0) {
     return (
-      <p className="m-8 text-sm text-muted-foreground">プロジェクト期間が設定されていません。</p>
+      <p className="m-8 text-body text-muted-foreground">プロジェクト期間が設定されていません。</p>
     );
   }
   if (items.length === 0) {
-    return <p className="m-8 text-sm text-muted-foreground">表示できる制作物がありません。</p>;
+    return <p className="m-8 text-body text-muted-foreground">表示できる制作物がありません。</p>;
   }
 
   return (
