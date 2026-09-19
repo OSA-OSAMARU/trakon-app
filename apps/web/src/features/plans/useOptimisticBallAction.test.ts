@@ -154,7 +154,7 @@ describe('useTossPlan', () => {
     );
 
     act(() => {
-      result.current.mutate(undefined);
+      result.current.mutate('');
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -185,7 +185,7 @@ describe('useTossPlan', () => {
     );
 
     act(() => {
-      result.current.mutate(undefined);
+      result.current.mutate('');
     });
 
     await waitFor(() => expect(result.current.isError).toBe(true));

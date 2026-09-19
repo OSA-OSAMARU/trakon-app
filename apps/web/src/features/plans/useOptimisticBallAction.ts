@@ -104,9 +104,66 @@ function useBallMutation(
   });
 }
 
+/**
+ * メッセージを添えられるボール操作の楽観更新フック (#206)。
+ *
+ * `mutate(note)` で渡した文言は進行履歴 (`ball_events.note`) に残り、
+ * 受け取る相手への通知メールにも載る。`useBallMutation` との違いは
+ * 変数を取るかどうかだけなので、本体は共通の実装を使う。
+ */
+function useBallMutationWithNote(
+  input: { projectId: string; itemId: string; planId: string },
+  opts: {
+    action: (
+      projectId: string,
+      itemId: string,
+      planId: string,
+      note: string,
+    ) => Promise<BallActionResponse>;
+    optimisticEvent?: BallEventType;
+    successMsg: string;
+    errorMsg: string;
+  },
+) {
+  const qc = useQueryClient();
+  const listKey = plansQueryKey.list(input.projectId, input.itemId);
+  const detailKey = plansQueryKey.detail(input.projectId, input.itemId, input.planId);
+
+  return useMutation<BallActionResponse, ApiClientError, string, { previousList?: Plan[] }>({
+    mutationFn: (note) => opts.action(input.projectId, input.itemId, input.planId, note),
+    onMutate: async () => {
+      if (!opts.optimisticEvent) return {};
+      await qc.cancelQueries({ queryKey: listKey });
+      const previousList = qc.getQueryData<Plan[]>(listKey);
+      if (previousList) {
+        qc.setQueryData<Plan[]>(
+          listKey,
+          previousList.map((p) =>
+            p.id === input.planId ? applyOptimistic(p, opts.optimisticEvent!) : p,
+          ),
+        );
+      }
+      return { previousList };
+    },
+    onError: (err, _vars, context) => {
+      if (context?.previousList) qc.setQueryData(listKey, context.previousList);
+      toast.error(err instanceof ApiClientError ? err.message : opts.errorMsg);
+    },
+    onSuccess: () => {
+      toast.success(opts.successMsg);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: listKey });
+      qc.invalidateQueries({ queryKey: detailKey });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(input.projectId) });
+    },
+  });
+}
+
+/** 確認TOSS (#206)。`mutate(note)` の note は任意 (空文字で省略)。 */
 export function useRequestReviewPlan(input: { projectId: string; itemId: string; planId: string }) {
-  return useBallMutation(input, {
-    action: plansApi.requestReview,
+  return useBallMutationWithNote(input, {
+    action: (p, i, pl, note) => plansApi.requestReview(p, i, pl, note || undefined),
     optimisticEvent: 'review_requested',
     successMsg: '確認を依頼しました',
     errorMsg: '確認依頼に失敗しました',
@@ -131,21 +188,23 @@ export function useSendBackPlan(input: { projectId: string; itemId: string; plan
   });
 }
 
+/** 次工程への TOSS (#206)。`mutate(note)` の note は申し送り (任意)。 */
 export function useTossPlan(input: { projectId: string; itemId: string; planId: string }) {
-  return useBallMutation(input, {
-    action: plansApi.toss,
+  return useBallMutationWithNote(input, {
+    action: (p, i, pl, note) => plansApi.toss(p, i, pl, note || undefined),
     optimisticEvent: 'tossed',
     successMsg: 'TOSS しました',
     errorMsg: 'TOSS に失敗しました',
   });
 }
 
+/** コメントRETURN (#206)。`mutate(note)` の note は**必須**。 */
 export function useUndoRequestReviewPlan(input: { projectId: string; itemId: string; planId: string }) {
-  return useBallMutation(input, {
+  return useBallMutationWithNote(input, {
     action: plansApi.undoRequestReview,
     optimisticEvent: 'review_request_undone',
-    successMsg: '確認依頼を取り消しました',
-    errorMsg: '取り消しに失敗しました',
+    successMsg: 'ボールを実施者へ戻しました',
+    errorMsg: '差し戻しに失敗しました',
   });
 }
 

@@ -148,16 +148,23 @@ export const plansApi = {
       method: 'PATCH',
       body: { successorPlanId },
     }),
-  /** 確認依頼 (実施中 → 確認待ち)。承認者が設定されている予定のみ。 */
-  requestReview: (projectId: string, itemId: string, planId: string) =>
+  /**
+   * 確認TOSS = 確認依頼 (実施中 → 確認待ち)。承認者が設定されている予定のみ。
+   * `note` は承認者へのメールと進行履歴に載る (#206)。
+   */
+  requestReview: (projectId: string, itemId: string, planId: string, note?: string) =>
     apiRequest<{ plan: Plan }>(`${basePath(projectId, itemId)}/${planId}/request-review`, {
       method: 'POST',
-      body: {},
+      body: note ? { note } : {},
     }),
-  undoRequestReview: (projectId: string, itemId: string, planId: string) =>
+  /**
+   * コメントRETURN = 確認依頼の取り消し (確認待ち → 実施中)。
+   * **理由は必須** (#206)。実施者が何を直せばよいか分かるようにする。
+   */
+  undoRequestReview: (projectId: string, itemId: string, planId: string, note: string) =>
     apiRequest<{ plan: Plan }>(`${basePath(projectId, itemId)}/${planId}/request-review-undo`, {
       method: 'POST',
-      body: {},
+      body: { note },
     }),
   /** 承認 (→ 承認済み)。承認者、承認者なしなら実施者が実行。後続が無ければ完了。 */
   approve: (projectId: string, itemId: string, planId: string) =>
@@ -182,11 +189,14 @@ export const plansApi = {
       `${basePath(projectId, itemId)}/${planId}/send-back-to-predecessor`,
       { method: 'POST', body: note ? { note } : {} },
     ),
-  /** TOSS (承認済み → TOSS済み)。進行責任者が後続予定へボールを渡す。 */
-  toss: (projectId: string, itemId: string, planId: string) =>
+  /**
+   * TOSS (承認済み → TOSS済み)。進行責任者が後続予定へボールを渡す。
+   * `note` は後続の実施者へのメールと進行履歴に載る (#206)。
+   */
+  toss: (projectId: string, itemId: string, planId: string, note?: string) =>
     apiRequest<BallActionResult>(`${basePath(projectId, itemId)}/${planId}/toss`, {
       method: 'POST',
-      body: {},
+      body: note ? { note } : {},
     }),
   undoToss: (projectId: string, itemId: string, planId: string) =>
     apiRequest<{ plan: Plan }>(`${basePath(projectId, itemId)}/${planId}/toss-undo`, {

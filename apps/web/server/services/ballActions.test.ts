@@ -311,6 +311,7 @@ describe('requestReviewPlan', () => {
     const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
 
     const res = await requestReviewPlan({
+      projectId: 'proj-1',
       itemId: 'item-1',
       planId: plan.id,
       currentUserId: 'user-1',
@@ -331,6 +332,7 @@ describe('requestReviewPlan', () => {
     addEvent(plan.id, 'sent_back');
 
     const res = await requestReviewPlan({
+      projectId: 'proj-1',
       itemId: 'item-1',
       planId: plan.id,
       currentUserId: 'user-1',
@@ -344,6 +346,7 @@ describe('requestReviewPlan', () => {
     const { executor, approver } = makeRoles();
     const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
     const res = await requestReviewPlan({
+      projectId: 'proj-1',
       itemId: 'item-1',
       planId: plan.id,
       currentUserId: 'dir',
@@ -358,6 +361,7 @@ describe('requestReviewPlan', () => {
     const plan = makePlan({ executorMemberId: null, approverMemberId: approver.id });
     await expect(
       requestReviewPlan({
+      projectId: 'proj-1',
         itemId: 'item-1',
         planId: plan.id,
         currentUserId: 'user-1',
@@ -372,6 +376,7 @@ describe('requestReviewPlan', () => {
     const plan = makePlan({ executorMemberId: executor.id, approverMemberId: null });
     await expect(
       requestReviewPlan({
+      projectId: 'proj-1',
         itemId: 'item-1',
         planId: plan.id,
         currentUserId: 'user-1',
@@ -387,6 +392,7 @@ describe('requestReviewPlan', () => {
     addEvent(plan.id, 'review_requested');
     await expect(
       requestReviewPlan({
+      projectId: 'proj-1',
         itemId: 'item-1',
         planId: plan.id,
         currentUserId: 'user-1',
@@ -401,6 +407,7 @@ describe('requestReviewPlan', () => {
     const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
     await expect(
       requestReviewPlan({
+      projectId: 'proj-1',
         itemId: 'item-1',
         planId: plan.id,
         currentUserId: 'user-1',
@@ -415,6 +422,7 @@ describe('requestReviewPlan', () => {
     const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id, status: 'completed' });
     await expect(
       requestReviewPlan({
+      projectId: 'proj-1',
         itemId: 'item-1',
         planId: plan.id,
         currentUserId: 'user-1',
@@ -427,6 +435,7 @@ describe('requestReviewPlan', () => {
   it('存在しない予定は NOT_FOUND 404', async () => {
     await expect(
       requestReviewPlan({
+      projectId: 'proj-1',
         itemId: 'item-1',
         planId: 'missing',
         currentUserId: 'user-1',
@@ -447,6 +456,7 @@ describe('undoRequestReviewPlan', () => {
     addEvent(plan.id, 'review_requested');
 
     const res = await undoRequestReviewPlan({
+      projectId: 'proj-1',
       itemId: 'item-1',
       planId: plan.id,
       currentUserId: 'user-1',
@@ -464,6 +474,7 @@ describe('undoRequestReviewPlan', () => {
     const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
     addEvent(plan.id, 'review_requested');
     const res = await undoRequestReviewPlan({
+      projectId: 'proj-1',
       itemId: 'item-1',
       planId: plan.id,
       currentUserId: 'user-1',
@@ -478,6 +489,7 @@ describe('undoRequestReviewPlan', () => {
     const plan = makePlan({ executorMemberId: executor.id, approverMemberId: approver.id });
     await expect(
       undoRequestReviewPlan({
+      projectId: 'proj-1',
         itemId: 'item-1',
         planId: plan.id,
         currentUserId: 'user-1',
@@ -493,6 +505,7 @@ describe('undoRequestReviewPlan', () => {
     addEvent(plan.id, 'review_requested');
     await expect(
       undoRequestReviewPlan({
+      projectId: 'proj-1',
         itemId: 'item-1',
         planId: plan.id,
         currentUserId: 'user-1',

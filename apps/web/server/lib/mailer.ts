@@ -41,24 +41,64 @@ export type SubscriptionCanceledEmail = {
 };
 
 /**
- * TOSS でボールが渡ったことの通知 (#79)。
+ * ボールが自分に渡ったことの通知 (#79 / #206)。
  *
- * **TOSS の取り消しでは送らない。** 誤 TOSS の取り消しは日常的に起こりうる操作で、
+ * 3 つの受け渡しで共通に使う。**どれも「あなたの番になった」という同じ知らせ**で、
+ * 変わるのは誰から来たかと何を求められているかだけなので、文面の骨格を分けない。
+ *
+ *   - `review_requested` … 確認TOSS。実施者 → 承認者
+ *   - `returned`         … コメントRETURN。承認者 → 実施者
+ *   - `tossed`           … 次工程への TOSS。進行責任者 → 後続予定の実施者
+ *
+ * **取り消し操作では送らない。** 誤操作の取り消しは日常的に起こりうる操作で、
  * そのたびに「あなたへの依頼は取り消されました」が届くと受け手に不要な負担がかかる。
  * 取り消しは ball_events に残るので追跡性は失われない。
  */
-export type BallTossedEmail = {
+export type BallHandoffKind = 'review_requested' | 'returned' | 'tossed';
+
+export type BallHandoffEmail = {
+  kind: BallHandoffKind;
   to: string;
   projectName: string;
   itemName: string;
-  /** 受け取った側が対応する予定 (後続予定) */
+  /** 受け取った側が対応する予定 */
   planTitle: string;
-  /** TOSS した進行責任者の表示名 */
+  /** 渡した人の表示名 */
   fromName: string;
-  /** 後続予定の期限。未設定なら null */
+  /** 予定の期限。未設定なら null */
   dueDate: string | null;
+  /**
+   * 渡す側が添えたメッセージ (#206)。ball_events.note と同じ文言。
+   * 「何をしてほしいか」は本文のここにしか無いので、必ず載せる。
+   */
+  note: string | null;
   /** 予定を開く URL */
   planUrl: string;
+};
+
+/** 種別ごとの件名・見出し・書き出し。 */
+const HANDOFF_COPY: Record<
+  BallHandoffKind,
+  { subject: (planTitle: string) => string; heading: string; lead: (from: string, plan: string) => string; noteLabel: string }
+> = {
+  review_requested: {
+    subject: (t) => `【TRAKON】${t} の確認をお願いします`,
+    heading: '確認のボールがあなたに渡りました',
+    lead: (from, plan) => `${from} さんから「${plan}」の確認依頼が届きました。`,
+    noteLabel: '確認してほしい内容',
+  },
+  returned: {
+    subject: (t) => `【TRAKON】${t} が差し戻されました`,
+    heading: 'ボールがあなたに戻りました',
+    lead: (from, plan) => `${from} さんが「${plan}」を実施者へ戻しました。`,
+    noteLabel: '戻された理由',
+  },
+  tossed: {
+    subject: (t) => `【TRAKON】${t} があなたの番になりました`,
+    heading: 'ボールがあなたに渡りました',
+    lead: (from, plan) => `${from} さんから「${plan}」が渡されました。`,
+    noteLabel: '申し送り',
+  },
 };
 
 export type Mailer = {
@@ -66,7 +106,7 @@ export type Mailer = {
   sendTrialWillEnd(input: TrialWillEndEmail): Promise<void>;
   sendPaymentFailed(input: PaymentFailedEmail): Promise<void>;
   sendSubscriptionCanceled(input: SubscriptionCanceledEmail): Promise<void>;
-  sendBallTossed(input: BallTossedEmail): Promise<void>;
+  sendBallHandoff(input: BallHandoffEmail): Promise<void>;
 };
 
 // -----------------------------------------------------------------------------
@@ -98,10 +138,10 @@ function createDummyMailer(): Mailer {
         `[trakon][mailer/dummy] subscription_canceled -> ${input.to} | org="${input.organizationName}"`,
       );
     },
-    async sendBallTossed(input) {
+    async sendBallHandoff(input) {
       // eslint-disable-next-line no-console
       console.log(
-        `[trakon][mailer/dummy] ball_tossed -> ${input.to} | project="${input.projectName}" plan="${input.planTitle}" from="${input.fromName}" url=${input.planUrl}`,
+        `[trakon][mailer/dummy] ball_handoff(${input.kind}) -> ${input.to} | project="${input.projectName}" plan="${input.planTitle}" from="${input.fromName}" note="${input.note ?? ''}" url=${input.planUrl}`,
       );
     },
   };
@@ -200,15 +240,20 @@ function createResendMailer(apiKey: string, fromEmail: string): Mailer {
     },
 
     // ボールが渡ったことの通知 (#79)。件名だけで「自分の番だ」と分かるようにする。
-    async sendBallTossed(input) {
+    async sendBallHandoff(input) {
+      const copy = HANDOFF_COPY[input.kind];
       await sendSimple(client, fromEmail, {
         to: input.to,
-        subject: `【TRAKON】${input.planTitle} があなたの番になりました`,
-        heading: 'ボールがあなたに渡りました',
+        subject: copy.subject(input.planTitle),
+        heading: copy.heading,
         lines: [
-          `${escapeHtml(input.fromName)} さんから「${escapeHtml(input.planTitle)}」が渡されました。`,
+          copy.lead(escapeHtml(input.fromName), escapeHtml(input.planTitle)),
           `プロジェクト: ${escapeHtml(input.projectName)} / 制作物: ${escapeHtml(input.itemName)}`,
           ...(input.dueDate ? [`期限: ${escapeHtml(input.dueDate)}`] : []),
+          // 添えられたメッセージは「何をしてほしいか」そのもの。引用として目立たせる
+          ...(input.note
+            ? [`${copy.noteLabel}:<br /><em>${escapeHtml(input.note).replace(/\n/g, '<br />')}</em>`]
+            : []),
           `<a href="${escapeHtml(input.planUrl)}">スケジュールを開く</a>`,
         ],
       });

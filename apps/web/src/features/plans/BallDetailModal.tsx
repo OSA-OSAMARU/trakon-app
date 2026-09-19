@@ -1,4 +1,5 @@
 import { canProjectRole, PROJECT_ROLE_LABEL } from '@trakon/shared';
+import { BallHandoffDialog, type BallHandoffKind } from './BallHandoffDialog';
 import type { ScheduleThemeKey } from '@trakon/shared';
 
 import { useMemo, useState } from 'react';
@@ -112,6 +113,8 @@ export function BallDetailModal({
   const qc = useQueryClient();
   const [deleting, setDeleting] = useState(false);
   const [tab, setTab] = useState('overview');
+  /** メッセージを添えて渡すダイアログ (#206)。null は閉じている */
+  const [handoff, setHandoff] = useState<BallHandoffKind | null>(null);
 
   const { data: currentUser } = useCurrentUser();
   const myUserId = currentUser && !currentUser.requiresProfileCompletion ? currentUser.user.id : null;
@@ -288,7 +291,8 @@ export function BallDetailModal({
               primaryActions.push({
                 action: 'comment-return',
                 label: 'ボールを戻す',
-                onClick: () => undoRequestReviewMut.mutate(),
+                // 戻す理由を必ず添えてもらう (#206)
+                onClick: () => setHandoff('comment-return'),
                 pending: undoRequestReviewMut.isPending,
               });
             }
@@ -296,7 +300,8 @@ export function BallDetailModal({
               primaryActions.push({
                 action: 'review-toss',
                 label: 'ボールを渡す',
-                onClick: () => requestReviewMut.mutate(),
+                // 確認してほしい内容を添えられる (#206)
+                onClick: () => setHandoff('review-request'),
                 pending: requestReviewMut.isPending,
               });
             }
@@ -315,7 +320,8 @@ export function BallDetailModal({
               primaryActions.push({
                 action: 'next-toss',
                 label: '次の工程へトス',
-                onClick: () => tossMut.mutate(),
+                // 申し送りを添えられる (#206)
+                onClick: () => setHandoff('toss'),
                 pending: tossMut.isPending,
                 ...(canRoleToss ? {} : { disabledReason: 'TOSS は管理者のみが実行できます' }),
               });
@@ -683,6 +689,34 @@ export function BallDetailModal({
           })()}
       </SheetContent>
 
+      {/* メッセージを添えてボールを渡す (#206 / Figma node 45:26, 45:8) */}
+      {handoff && detailQuery.data && (
+        <BallHandoffDialog
+          kind={handoff}
+          open
+          onClose={() => setHandoff(null)}
+          pending={
+            handoff === 'comment-return'
+              ? undoRequestReviewMut.isPending
+              : handoff === 'review-request'
+                ? requestReviewMut.isPending
+                : tossMut.isPending
+          }
+          planTitle={detailQuery.data.plan.title}
+          contextLabel={projectQuery.data?.name ?? ''}
+          handoffLabel={handoffLabel(handoff, detailQuery.data.plan, plans)}
+          onSubmit={(note) => {
+            const mut =
+              handoff === 'comment-return'
+                ? undoRequestReviewMut
+                : handoff === 'review-request'
+                  ? requestReviewMut
+                  : tossMut;
+            mut.mutate(note, { onSuccess: () => setHandoff(null) });
+          }}
+        />
+      )}
+
       <AlertDialog open={deleting} onOpenChange={(o) => !o && setDeleting(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -714,6 +748,30 @@ export function BallDetailModal({
 
 function memberLabel(m: MemberRef | null): string {
   return m ? `${m.name} (${m.organizationName || '—'})` : '—';
+}
+
+/**
+ * ダイアログに出す「誰から誰へ」(#206 / Figma node 45:26)。
+ *
+ * 受け渡しごとに渡す人・受け取る人が違う。どちらかが未設定なら出さない
+ * (「杉野 遥 → 未設定」と書いても情報にならない)。
+ */
+function handoffLabel(
+  kind: BallHandoffKind,
+  plan: Plan,
+  plans: Plan[],
+): string | null {
+  const pair: [MemberRef | null, MemberRef | null] =
+    kind === 'review-request'
+      ? [plan.executor, plan.approver]
+      : kind === 'comment-return'
+        ? [plan.approver, plan.executor]
+        : [
+            plan.progressManager,
+            plans.find((p) => p.id === plan.successorPlanId)?.executor ?? null,
+          ];
+  const [from, to] = pair;
+  return from && to ? `${from.name} → ${to.name}` : null;
 }
 
 function BallHolderBanner({
