@@ -37,8 +37,32 @@ beforeAll(() => {
   Element.prototype.releasePointerCapture = vi.fn();
 });
 
+/** 参加者の候補になる組織メンバー (#202)。 */
+const ORG_MEMBERS = [
+  {
+    userId: 'u-taro',
+    invitationId: null,
+    status: 'active',
+    name: '山田 太郎',
+    organizationName: 'Acme',
+    email: 'taro@example.com',
+    jobTitle: null,
+    avatarUrl: null,
+    orgRole: 'member',
+    defaultProjectRole: 'editor',
+    projectCount: 0,
+    joinedAt: '2026-06-01T00:00:00.000Z',
+    expiresAt: null,
+  },
+];
+
 beforeEach(() => {
   navigateMock.mockClear();
+  server.use(
+    http.get('*/api/v1/organizations/me/members', () =>
+      HttpResponse.json({ data: ORG_MEMBERS }),
+    ),
+  );
 });
 
 /** ポインタチェックを無効化した userEvent をセットアップする。 */
@@ -87,9 +111,10 @@ describe('ProjectCreatePage (integration)', () => {
     // 参加者: 初期 1 行
     expect(screen.getByText('参加者')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '参加者 1 を削除' })).toBeDisabled();
-    // 職種・区分の選択欄
-    expect(screen.getByLabelText('参加者 1 の職種')).toBeInTheDocument();
+    // メンバー (組織メンバーから選ぶ, #202) / 区分 / 権限の選択欄
+    expect(screen.getByLabelText('参加者 1')).toBeInTheDocument();
     expect(screen.getByLabelText('参加者 1 の区分')).toBeInTheDocument();
+    expect(screen.getByLabelText('参加者 1 の権限')).toBeInTheDocument();
 
     // 送信ボタン
     expect(screen.getByRole('button', { name: 'プロジェクトを作成' })).toBeInTheDocument();
@@ -182,13 +207,11 @@ describe('ProjectCreatePage (integration)', () => {
     // 制作物 1 件入力
     await user.type(getItemInputs()[0]!, 'トップページ');
 
-    // 参加者 1 件入力 (氏名 + メール)。Field ラベルは htmlFor 紐付けがないため name で取得。
-    const nameField = document.querySelector<HTMLInputElement>('input[name="members.0.name"]')!;
-    const emailField = document.querySelector<HTMLInputElement>('input[name="members.0.email"]')!;
-    await user.type(nameField, '山田 太郎');
-    await user.type(emailField, 'taro@example.com');
+    // 参加者は組織メンバーから選ぶ (#202)。氏名やメールは手入力しない
+    await user.click(screen.getByLabelText('参加者 1'));
+    await user.click(await screen.findByRole('option', { name: /山田 太郎/ }));
 
-    // 進行責任者は入力済み参加者から選ぶ (Figma node 78:18 で必須)
+    // 進行責任者は選択済み参加者から選ぶ (Figma node 78:18 で必須)
     await user.click(screen.getByLabelText('進行責任者'));
     await user.click(await screen.findByRole('option', { name: /山田 太郎/ }));
 
@@ -201,14 +224,7 @@ describe('ProjectCreatePage (integration)', () => {
       startDate: '2026-01-01',
       endDate: '2026-12-31',
       items: [{ name: 'トップページ' }],
-      members: [
-        {
-          name: '山田 太郎',
-          email: 'taro@example.com',
-          organizationName: '',
-          memberType: 'production',
-        },
-      ],
+      members: [{ userId: 'u-taro', memberType: 'production', roleType: 'editor' }],
       progressManagerIndex: 0,
     });
 

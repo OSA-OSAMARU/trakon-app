@@ -132,25 +132,69 @@ export async function listMembers(projectId: string): Promise<MemberDTO[]> {
  * メールは任意・自動招待やメール送信は行わない。
  * (メールは将来フェーズで「予定変更時の共有リンク自動送信」に使用予定)
  */
+/**
+ * 組織メンバーをプロジェクトへ追加する (#202)。
+ *
+ * 氏名・メール・所属・職種は `users` 側が正 (#156) なので、入力では受け取らず
+ * アカウントから引く。`organization_name` / `job_title` はアカウント紐付け済みの
+ * 参加者行では空にしておく (残すとプロジェクト別の上書きになり、マイページの
+ * 編集が反映されなくなる — invitations.ts の受諾処理と同じ扱い)。
+ */
 export async function addMembers(input: {
   projectId: string;
+  organizationId: string;
   body: AddMembersBody;
 }): Promise<MemberDTO[]> {
-  // 既存メンバーのメールと重複しないかチェック (メール未登録は対象外)
+  const userIds = input.body.members.map((m) => m.userId);
+  if (new Set(userIds).size !== userIds.length) {
+    throw new ApiException('DUPLICATE_MEMBER', 422, '同じメンバーが複数回指定されています。');
+  }
+
+  // 組織に所属していない相手は追加できない。組織外の人はまず
+  // 「メンバー管理」から組織へ招待してもらう、という一本道にしている。
+  const orgMembers = await prisma.organizationMember.findMany({
+    where: { organizationId: input.organizationId, userId: { in: userIds }, deletedAt: null },
+    select: {
+      userId: true,
+      defaultProjectRole: true,
+      user: { select: { id: true, displayName: true, email: true, deletedAt: true } },
+    },
+  });
+  const byUserId = new Map(
+    orgMembers.filter((om) => om.user.deletedAt === null).map((om) => [om.userId, om]),
+  );
+  for (const id of userIds) {
+    if (!byUserId.has(id)) {
+      throw new ApiException(
+        'NOT_ORGANIZATION_MEMBER',
+        422,
+        'この組織のメンバーではないため追加できません。',
+        { userId: id },
+      );
+    }
+  }
+
+  // 既にこのプロジェクトに居る相手は弾く
   const existing = await prisma.projectMember.findMany({
     where: { projectId: input.projectId, deletedAt: null },
-    select: { email: true },
+    select: { userId: true, email: true },
   });
-  const taken = new Set(
-    existing.flatMap((m) => (m.email ? [m.email.toLowerCase()] : [])),
-  );
-  for (const m of input.body.members) {
-    if (m.email && taken.has(m.email)) {
+  const takenUserIds = new Set(existing.flatMap((m) => (m.userId ? [m.userId] : [])));
+  const takenEmails = new Set(existing.flatMap((m) => (m.email ? [m.email.toLowerCase()] : [])));
+  for (const id of userIds) {
+    const om = byUserId.get(id)!;
+    if (takenUserIds.has(id)) {
+      throw new ApiException('ALREADY_MEMBER', 409, '既にこのプロジェクトの参加者です。', {
+        userId: id,
+      });
+    }
+    // アカウント紐付け前の参加者行がメールで残っている場合も重複になる
+    if (takenEmails.has(om.user.email.toLowerCase())) {
       throw new ApiException(
         'MEMBER_EMAIL_TAKEN',
         409,
-        `Email already exists in this project: ${m.email}`,
-        { email: m.email },
+        `Email already exists in this project: ${om.user.email}`,
+        { email: om.user.email },
       );
     }
   }
@@ -166,16 +210,18 @@ export async function addMembers(input: {
   const created = await prisma.$transaction(async (tx) => {
     const result: MemberDTO[] = [];
     for (const [idx, m] of input.body.members.entries()) {
+      const om = byUserId.get(m.userId)!;
       const member = await tx.projectMember.create({
         data: {
           projectId: input.projectId,
-          userId: null,
-          name: m.name,
-          email: m.email ?? null,
-          organizationName: m.organizationName,
+          userId: om.user.id,
+          name: om.user.displayName,
+          email: om.user.email,
+          // アカウント紐付け済みの行は users 側が正 (#156)
+          organizationName: '',
+          jobTitle: null,
           memberType: m.memberType,
-          jobTitle: m.jobTitle ?? null,
-          roleType: m.roleType,
+          roleType: m.roleType ?? (om.defaultProjectRole as ProjectRole),
           sortOrder: baseOrder + idx,
         },
       });

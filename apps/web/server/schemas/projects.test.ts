@@ -92,6 +92,8 @@ describe('listProjectsQuerySchema', () => {
   });
 });
 
+const USER_A = '018f1a2b-3c4d-7e8f-9012-3456789abcde';
+
 describe('#147 で追加した項目', () => {
   const base = {
     name: 'P',
@@ -111,28 +113,48 @@ describe('#147 で追加した項目', () => {
   it('区分に外部パートナーを受け付ける', () => {
     const parsed = createProjectBodySchema.parse({
       ...base,
-      members: [{ name: '外部 太郎', memberType: 'partner' }],
+      members: [{ userId: USER_A, memberType: 'partner' }],
     });
     expect(parsed.members[0]!.memberType).toBe('partner');
   });
 
-  it('職種はマスタの値のみ受け付け、空文字は未設定に正規化される', () => {
-    const ok = createProjectBodySchema.parse({
+  it('参加者は組織メンバーの userId で指定する (#202)', () => {
+    // 氏名・メール・所属・職種は users 側が正なので、ここでは受け取らない
+    const parsed = createProjectBodySchema.parse({
       ...base,
-      members: [{ name: 'A', memberType: 'production', jobTitle: 'frontend_engineer' }],
+      members: [{ userId: USER_A, memberType: 'production', roleType: 'viewer' }],
     });
-    expect(ok.members[0]!.jobTitle).toBe('frontend_engineer');
-
-    const blank = createProjectBodySchema.parse({
-      ...base,
-      members: [{ name: 'A', memberType: 'production', jobTitle: '' }],
+    expect(parsed.members[0]).toEqual({
+      userId: USER_A,
+      memberType: 'production',
+      roleType: 'viewer',
     });
-    expect(blank.members[0]!.jobTitle).toBeUndefined();
 
+    // 権限は省略できる (組織の既定ロールをサーバーが使う)
     expect(
       createProjectBodySchema.safeParse({
         ...base,
-        members: [{ name: 'A', memberType: 'production', jobTitle: 'unknown_role' }],
+        members: [{ userId: USER_A, memberType: 'production' }],
+      }).success,
+    ).toBe(true);
+
+    // userId が UUID でなければ弾く
+    expect(
+      createProjectBodySchema.safeParse({
+        ...base,
+        members: [{ userId: 'not-a-uuid', memberType: 'production' }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('同じ参加者を 2 回指定できない', () => {
+    expect(
+      createProjectBodySchema.safeParse({
+        ...base,
+        members: [
+          { userId: USER_A, memberType: 'production' },
+          { userId: USER_A, memberType: 'client' },
+        ],
       }).success,
     ).toBe(false);
   });

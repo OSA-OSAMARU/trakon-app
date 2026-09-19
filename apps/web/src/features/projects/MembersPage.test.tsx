@@ -53,18 +53,48 @@ function renderMembers(route: string) {
 
 const MANAGE = '/projects/p1/members?tab=manage';
 
-/** ダイアログ内の input を name 属性で取得 (Label 未関連付けのため)。 */
-function fieldByName(scope: HTMLElement, name: string): HTMLInputElement {
-  const el = scope.querySelector<HTMLInputElement>(`input[name="${name}"]`);
-  if (!el) throw new Error(`input[name="${name}"] が見つかりません`);
-  return el;
-}
+/** 参加者の候補になる組織メンバー (#202)。 */
+const ORG_MEMBERS = [
+  {
+    userId: 'u1',
+    invitationId: null,
+    status: 'active',
+    name: '山田 太郎',
+    organizationName: 'Acme',
+    email: 'taro@example.com',
+    jobTitle: null,
+    avatarUrl: null,
+    orgRole: 'owner',
+    defaultProjectRole: 'admin',
+    projectCount: 1,
+    joinedAt: '2026-06-01T00:00:00.000Z',
+    expiresAt: null,
+  },
+  {
+    userId: 'u9',
+    invitationId: null,
+    status: 'active',
+    name: '新規 太郎',
+    organizationName: 'NewCo',
+    email: 'new@example.com',
+    jobTitle: null,
+    avatarUrl: null,
+    orgRole: 'member',
+    defaultProjectRole: 'editor',
+    projectCount: 0,
+    joinedAt: '2026-06-01T00:00:00.000Z',
+    expiresAt: null,
+  },
+];
 
 /** members 一覧 GET をスタブする。招待一覧は既定で空。 */
 function stubMembers(members: ProjectMember[]) {
   server.use(
     http.get('*/api/v1/projects/p1/members', () => HttpResponse.json({ data: members })),
     http.get('*/api/v1/projects/p1/invitations', () => HttpResponse.json({ data: [] })),
+    http.get('*/api/v1/organizations/me/members', () =>
+      HttpResponse.json({ data: ORG_MEMBERS }),
+    ),
   );
 }
 
@@ -156,6 +186,7 @@ describe('MembersPage 管理タブ (integration)', () => {
     const initial = [member()];
     let postBody: unknown = null;
     let listCallCount = 0;
+    stubMembers(initial);
     server.use(
       http.get('*/api/v1/projects/p1/members', () => {
         listCallCount += 1;
@@ -178,32 +209,24 @@ describe('MembersPage 管理タブ (integration)', () => {
     await screen.findByText('山田 太郎');
     await user.click(screen.getByRole('button', { name: /参加者を追加/ }));
 
+    // 参加者は組織メンバーから選ぶ (#202)。氏名やメールは手入力しない
     const dialog = await screen.findByRole('dialog');
-    // Label と input が関連付けられていないため name 属性で取得する。
-    await user.type(fieldByName(dialog, 'name'), '新規 太郎');
-    await user.type(fieldByName(dialog, 'organizationName'), 'NewCo');
-    await user.type(fieldByName(dialog, 'email'), 'new@example.com');
+    await user.click(within(dialog).getByRole('combobox', { name: 'メンバー' }));
+    await user.click(await screen.findByRole('option', { name: /新規 太郎/ }));
 
     await user.click(within(dialog).getByRole('button', { name: /追加する/ }));
 
     // POST が想定ボディで送られたこと。
     await waitFor(() => expect(postBody).not.toBeNull());
     expect(postBody).toEqual({
-      members: [
-        {
-          name: '新規 太郎',
-          organizationName: 'NewCo',
-          email: 'new@example.com',
-          memberType: 'production',
-        },
-      ],
+      members: [{ userId: 'u9', memberType: 'production', roleType: 'editor' }],
     });
 
     // 再取得で新メンバーが一覧に出ること。
     expect(await screen.findByText('新規 太郎')).toBeInTheDocument();
   });
 
-  it('追加フォームのバリデーション (空欄送信) ではリクエストを送らない', async () => {
+  it('メンバー未選択のままではリクエストを送らない (#202)', async () => {
     stubMembers([member()]);
     let posted = false;
     server.use(
@@ -223,8 +246,25 @@ describe('MembersPage 管理タブ (integration)', () => {
     await user.click(within(dialog).getByRole('button', { name: /追加する/ }));
 
     // クライアント側 zod バリデーションでエラー表示され、POST は飛ばない。
-    expect(await within(dialog).findByText('氏名は必須')).toBeInTheDocument();
+    expect(await within(dialog).findByText('メンバーを選択してください')).toBeInTheDocument();
     expect(posted).toBe(false);
+  });
+
+  it('既に参加している人は候補に出さない (#202)', async () => {
+    // u1 は既に参加者なので、選べるのは u9 だけ
+    stubMembers([member()]);
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderMembers(MANAGE);
+
+    await screen.findByText('山田 太郎');
+    await user.click(screen.getByRole('button', { name: /参加者を追加/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('combobox', { name: 'メンバー' }));
+
+    expect(await screen.findByRole('option', { name: /新規 太郎/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /山田 太郎/ })).not.toBeInTheDocument();
   });
 
   it('追加 API がエラーを返してもダイアログは閉じない', async () => {
@@ -232,8 +272,8 @@ describe('MembersPage 管理タブ (integration)', () => {
     server.use(
       http.post('*/api/v1/projects/p1/members', () =>
         HttpResponse.json(
-          { error: { code: 'MEMBER_EMAIL_TAKEN', message: '重複' } },
-          { status: 422 },
+          { error: { code: 'ALREADY_MEMBER', message: '既に参加者です' } },
+          { status: 409 },
         ),
       ),
     );
@@ -245,8 +285,8 @@ describe('MembersPage 管理タブ (integration)', () => {
     await user.click(screen.getByRole('button', { name: /参加者を追加/ }));
 
     const dialog = await screen.findByRole('dialog');
-    await user.type(fieldByName(dialog, 'name'), 'X');
-    await user.type(fieldByName(dialog, 'email'), 'dup@example.com');
+    await user.click(within(dialog).getByRole('combobox', { name: 'メンバー' }));
+    await user.click(await screen.findByRole('option', { name: /新規 太郎/ }));
     await user.click(within(dialog).getByRole('button', { name: /追加する/ }));
 
     // 失敗時はダイアログが開いたまま (onClose が呼ばれない)。
@@ -394,27 +434,44 @@ describe('MembersPage 権限ロール (integration)', () => {
     await waitFor(() => expect(revoked).toBe(true));
   });
 
-  it('招待ダイアログからロール付きで招待を送れる', async () => {
+  it('追加時に権限を選べ、既定は組織で設定された権限になる (#202)', async () => {
     stubMembers([member({ id: 'm1', roleType: 'admin' })]);
     let posted: unknown = null;
     server.use(
-      http.post('*/api/v1/projects/p1/invitations', async ({ request }) => {
+      http.post('*/api/v1/projects/p1/members', async ({ request }) => {
         posted = await request.json();
-        return HttpResponse.json({ data: {} }, { status: 201 });
+        return HttpResponse.json({ data: [] }, { status: 201 });
       }),
     );
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderMembers(MANAGE);
 
-    await userEvent.click(await screen.findByRole('button', { name: /招待を送る/ }));
+    await user.click(await screen.findByRole('button', { name: /参加者を追加/ }));
     const dialog = await screen.findByRole('dialog');
-    await userEvent.type(fieldByName(dialog, 'email'), 'invitee@example.test');
-    await userEvent.click(within(dialog).getByRole('combobox', { name: '権限' }));
-    await userEvent.click(await screen.findByRole('option', { name: '管理者' }));
-    await userEvent.click(within(dialog).getByRole('button', { name: '招待を送る' }));
+    await user.click(within(dialog).getByRole('combobox', { name: 'メンバー' }));
+    await user.click(await screen.findByRole('option', { name: /新規 太郎/ }));
+
+    // u9 の組織での既定ロールは editor。その場で変更もできる
+    await user.click(within(dialog).getByRole('combobox', { name: '権限' }));
+    await user.click(await screen.findByRole('option', { name: '管理者' }));
+    await user.click(within(dialog).getByRole('button', { name: /追加する/ }));
 
     await waitFor(() =>
-      expect(posted).toMatchObject({ email: 'invitee@example.test', roleType: 'admin' }),
+      expect(posted).toMatchObject({
+        members: [{ userId: 'u9', roleType: 'admin' }],
+      }),
     );
+  });
+
+  it('組織外の人はここでは招待できず、メンバー管理へ送る (#202)', async () => {
+    stubMembers([member({ id: 'm1', roleType: 'admin' })]);
+    renderMembers(MANAGE);
+
+    expect(await screen.findByRole('link', { name: /メンバー管理/ })).toHaveAttribute(
+      'href',
+      '/settings/members',
+    );
+    expect(screen.queryByRole('button', { name: /招待を送る/ })).not.toBeInTheDocument();
   });
 });
 

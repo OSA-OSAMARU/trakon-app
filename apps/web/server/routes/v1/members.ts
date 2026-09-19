@@ -34,7 +34,11 @@ export const membersRoute = new Hono()
   .post('/', requireProjectMember(), requireProjectWritable(), requireProjectAction('member.create'), async (c) => {
     const project = c.get('project');
     const body = addMembersBodySchema.parse(await c.req.json());
-    const created = await addMembers({ projectId: project.projectId, body });
+    const created = await addMembers({
+      projectId: project.projectId,
+      organizationId: project.organizationId,
+      body,
+    });
     return c.json({ data: created }, 201);
   })
 
