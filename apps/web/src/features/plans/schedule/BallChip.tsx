@@ -1,13 +1,13 @@
 import { format, parseISO } from 'date-fns';
-import { CalendarDays, Copy, Loader2 } from 'lucide-react';
+import { Copy, Loader2 } from 'lucide-react';
+import { PROJECT_ROLE_LABEL } from '@trakon/shared';
 
 import { cn } from '@/components/ui/utils';
-import { RoleRow } from '@/components/trakon/RoleRow';
+import { Avatar } from '@/components/ui/avatar';
 import { MemberProfileHover } from '@/features/projects/MemberProfileCard';
 import type { ProjectMember } from '@/features/projects/membersApi';
-import { StatusPill } from '@/components/trakon/StatusPill';
 
-import type { Plan } from '../api';
+import type { MemberRef, Plan } from '../api';
 import { planCardStyle } from '../planTheme';
 import {
   ballTier,
@@ -20,13 +20,19 @@ import {
 import type { DragState } from './types';
 
 /**
- * スケジュール上の 1 予定 (ボール) — Figma node 11:2。
+ * スケジュール上の 1 予定 (ボール) — Figma「05 Schedule Card」node 308:90。
  *
  * 左の 6px ストライプ + 淡色の面でテーマ色を示し、文字色は全テーマ共通。
- * 高さ (= 期間 × 行高) に応じて表示量を 3 段階に落とす。
- *   mini    … タイトルのみ
- *   compact … ＋カテゴリ・期間・状態
- *   normal  … ＋3 役割
+ * **カードの期間ではなく実際に確保できる高さ**で表示量を 3 段階に落とす。
+ *
+ *   要素          Large            Medium        Small
+ *   タイトル      2 行まで         1 行          1 行
+ *   工程・日付    表示             表示          —
+ *   Ball Holder   Avatar+氏名+権限 Avatar+氏名   Avatar+姓
+ *
+ * カードに出すのは**現在の Ball Holder 1 名だけ**で、他の担当者は詳細パネルに送る。
+ * FIX (完了) のときは Holder 表示を「FIX」の文字へ差し替える。
+ * 進行状態のアイコンと pill はカードでは使わない (状態は詳細パネルで伝える)。
  *
  * mode='edit'  … 認証済みのスケジュール画面。移動 / 期間リサイズ / 複製 / 後続紐づけができる。
  * mode='view'  … 共有リンク (非会員) 画面。クリックで操作モーダルを開くだけ。
@@ -124,7 +130,11 @@ export function BallChip({
           ? 'ring-2 ring-ring/40'
           : undefined;
 
-  const statusStatus = completed ? 'completed' : plan.ballState;
+  // Ball Holder は常に 1 名だけ (Figma node 308:90「通常：現在の Ball Holder 1名だけを表示」)。
+  // FIX したカードは保持者が居ないので、同じ場所を「FIX」の文字に差し替える。
+  const holder = plan.ballHolder;
+  const holderMember = holder ? memberById?.get(holder.id) : undefined;
+  const holderRole = holderMember ? PROJECT_ROLE_LABEL[holderMember.roleType] : null;
 
   // 単日のように背の低いカードでは、Figma (node 11:2) の上下パディング 11/12px を
   // 入れるとタイトル 1 行 (14px * 1.5 = 20px) が収まらず、下端へ押し出されて見える。
@@ -191,7 +201,11 @@ export function BallChip({
       )}
 
       <div className="flex items-start gap-1">
-        <span className="line-clamp-1 flex-1 text-body font-bold">{plan.title}</span>
+        <span className={cn('flex-1 text-body font-bold', tier === 'large' ? 'line-clamp-2' : 'line-clamp-1')}>
+          {plan.title}
+        </span>
+        {/* Small はタイトルと同じ行の右端に Ball Holder を置く (Figma node 311:94) */}
+        {tier === 'small' && <BallHolderTag plan={plan} holder={holder} member={holderMember} size="small" />}
         {/* 閲覧専用では操作が無いため、Figma の「⋯」位置には何も置かない */}
         {editing && (
           <button
@@ -211,36 +225,37 @@ export function BallChip({
         )}
       </div>
 
-      {tier !== 'mini' && (
-        <>
-          <span className="mt-[6px] text-mini font-medium opacity-80">{theme.label}</span>
-          <span className="mt-[6px] flex items-center gap-1.5 text-mini">
-            <CalendarDays className="size-3.5 shrink-0 opacity-70" aria-hidden />
+      {/* 工程と日付は 1 行にまとめる (Figma node 321:91 / 322:91 の Meta 行) */}
+      {tier !== 'small' && (
+        <span className="mt-1.5 flex items-center gap-2 text-mini opacity-80">
+          <span className="font-medium">{theme.label}</span>
+          <span>
             {format(parseISO(start), 'M.d')}
             {start !== end && ` – ${format(parseISO(end), 'M.d')}`}
           </span>
-          <div className="mt-[6px] flex justify-end">
-            <StatusPill status={statusStatus} className="bg-background/70" />
-          </div>
-        </>
+        </span>
       )}
 
-      {/* 3 役割はカード下端に寄せる (Figma node 25:2) */}
-      {tier === 'normal' && (
-        <div className="mt-auto flex flex-col gap-1 pt-2">
-          <MemberProfileHover member={memberById?.get(plan.executor?.id ?? '')}>
-            <RoleRow role="executor" name={plan.executor?.name ?? '—'} />
-          </MemberProfileHover>
-          {plan.approver && (
-            <MemberProfileHover member={memberById?.get(plan.approver.id)}>
-              <RoleRow role="approver" name={plan.approver.name} />
-            </MemberProfileHover>
+      {/* Ball Holder はカード下端に寄せる。Large だけ区切り線とラベルを添える */}
+      {tier !== 'small' && (
+        <div className="mt-auto flex flex-col pt-2">
+          {tier === 'large' && (
+            <>
+              <span className="border-plan-foreground/15 border-t" aria-hidden />
+              <span className="text-mini mt-2 font-medium tracking-wider opacity-60">
+                BALL HOLDER
+              </span>
+            </>
           )}
-          {plan.progressManager && (
-            <MemberProfileHover member={memberById?.get(plan.progressManager.id)}>
-              <RoleRow role="manager" name={plan.progressManager.name} />
-            </MemberProfileHover>
-          )}
+          <div className="mt-1.5">
+            <BallHolderTag
+              plan={plan}
+              holder={holder}
+              member={holderMember}
+              role={tier === 'large' ? holderRole : null}
+              size={tier === 'large' ? 'large' : 'medium'}
+            />
+          </div>
         </div>
       )}
 
@@ -260,14 +275,14 @@ export function BallChip({
         <div
           className={cn(
             'bg-toss-line pointer-events-none absolute bottom-0 left-1/2 z-10 size-2.5 -translate-x-1/2 rounded-full border-2 border-background shadow',
-            editable && tier !== 'mini' && 'transition-opacity group-hover:opacity-0',
+            editable && tier !== 'small' && 'transition-opacity group-hover:opacity-0',
           )}
           aria-hidden
         />
       )}
 
       {/* 後続紐づけハンドル (下端中央): ドラッグして別カードに重ねると後続に設定/張り替え */}
-      {editable && tier !== 'mini' && (
+      {editable && tier !== 'small' && (
         <div
           onPointerDown={onPointerDownConnector}
           className="bg-toss-line absolute bottom-0 left-1/2 z-20 size-3 -translate-x-1/2 cursor-crosshair rounded-full border-2 border-background opacity-0 shadow transition-opacity group-hover:opacity-100"
@@ -276,5 +291,71 @@ export function BallChip({
         />
       )}
     </div>
+  );
+}
+
+
+/** 姓だけを取り出す。「石原 美咲」→「石原」。区切りが無ければそのまま返す。 */
+function surnameOf(name: string): string {
+  const head = name.trim().split(/[\s\u3000]+/)[0];
+  return head || name;
+}
+
+/**
+ * カード上の Ball Holder 表示 (Figma node 308:90「Ball Holder / 表示ルール」)。
+ *
+ *   Large  … Avatar 32px + 氏名 + 権限区分
+ *   Medium … Avatar 24px + 氏名
+ *   Small  … Avatar 22px + 姓
+ *
+ * FIX したカードは保持者が居ないため、同じ場所を「FIX」の文字へ差し替える。
+ * アバターはブランド色。カード上で唯一「いま誰の番か」を示す要素なので、
+ * テーマ色 (ユーザーの視覚整理用) とは別系統の色で目を引かせる。
+ */
+function BallHolderTag({
+  plan,
+  holder,
+  member,
+  role = null,
+  size,
+}: {
+  plan: Plan;
+  holder: MemberRef | null;
+  member?: ProjectMember;
+  /** 権限区分のラベル。Large でのみ添える */
+  role?: string | null;
+  size: 'small' | 'medium' | 'large';
+}) {
+  const nameClass = size === 'large' ? 'text-body' : 'text-label';
+
+  if (plan.status === 'completed') {
+    return (
+      <span className={cn('font-bold tracking-wide', nameClass)} title="FIX">
+        FIX
+      </span>
+    );
+  }
+
+  if (!holder) {
+    return <span className={cn('opacity-60', nameClass)}>—</span>;
+  }
+
+  const avatarSize = size === 'large' ? 'size-8' : size === 'medium' ? 'size-6' : 'size-[22px]';
+  const label = size === 'small' ? surnameOf(holder.name) : holder.name;
+
+  return (
+    <MemberProfileHover member={member}>
+      <span className="flex min-w-0 items-center gap-2">
+        <Avatar
+          name={holder.name}
+          src={member?.avatarUrl}
+          className={cn('bg-brand text-brand-foreground text-mini', avatarSize)}
+        />
+        <span className="flex min-w-0 flex-col leading-tight">
+          <span className={cn('truncate font-medium', nameClass)}>{label}</span>
+          {role && <span className="text-label opacity-60">{role}</span>}
+        </span>
+      </span>
+    </MemberProfileHover>
   );
 }

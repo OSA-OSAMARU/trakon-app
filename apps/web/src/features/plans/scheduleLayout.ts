@@ -106,13 +106,21 @@ export function dayIndex(days: Date[], isoDate: string): number {
   return idx;
 }
 
-export type BallTier = 'mini' | 'compact' | 'normal';
+export type BallTier = 'small' | 'medium' | 'large';
 
-/** ボール高さから表示段階を決める (プロトタイプ閾値 80 / 120)。 */
+/**
+ * ボール高さから表示段階を決める (Figma「05 Schedule Card」node 308:90)。
+ *
+ * ガイドの基準は Large 224px 以上 / Medium 112〜168px / Small 56px で、
+ * **カードの期間ではなく実際に確保できる高さ**でサイズを決める。
+ * 実装は行高 20〜80px のズームがあるため境界を 112 / 224 の 2 点で切り、
+ * ガイドが空けている 168〜224px の帯は Medium 側に寄せている
+ * (Large の表示項目が入りきらない高さで Large にしても収まらないため)。
+ */
 export function ballTier(heightPx: number): BallTier {
-  if (heightPx < 80) return 'mini';
-  if (heightPx < 120) return 'compact';
-  return 'normal';
+  if (heightPx < 112) return 'small';
+  if (heightPx < 224) return 'medium';
+  return 'large';
 }
 
 /** ボールが期限超過か (誰かがまだ対応中の active 予定で 終了日 < 今日)。 */
