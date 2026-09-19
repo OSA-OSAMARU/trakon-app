@@ -7,9 +7,11 @@ import { resolveRequestOrigin } from '../../lib/requestOrigin.js';
 import {
   changePlanBodySchema,
   createCheckoutSessionBodySchema,
+  syncSubscriptionBodySchema,
 } from '../../schemas/billing.js';
 import { createCheckoutSession, createPortalSession } from '../../services/billing/checkout.js';
 import { getOrganizationBilling } from '../../services/billing/entitlement.js';
+import { reconcileSubscription } from '../../services/billing/reconcile.js';
 import {
   cancelSubscription,
   changePlan,
@@ -30,6 +32,24 @@ export const billingRoute = new Hono()
     const { organizationId } = c.get('organization');
     const data = await getOrganizationBilling(organizationId);
     return c.json({ data: { ...data, orgRole: c.get('organization').orgRole } });
+  })
+
+  /**
+   * 契約状態を Stripe の現在値へ合わせ直す (#209)。
+   *
+   * Webhook が届かない環境 (Preview デプロイなど) や、配信が遅れている間でも
+   * 「カードを登録したのに Free のまま」で止まらないようにするための経路。
+   * 権限の根拠にするのは遷移ではなく Stripe API から取得した契約の現在値。
+   */
+  .post('/sync', requireOrgBillingRole(), async (c) => {
+    const { organizationId, orgRole } = c.get('organization');
+    const body = syncSubscriptionBodySchema.parse(await c.req.json().catch(() => ({})));
+    const result = await reconcileSubscription({
+      organizationId,
+      checkoutSessionId: body.checkoutSessionId ?? null,
+    });
+    const data = await getOrganizationBilling(organizationId);
+    return c.json({ data: { ...data, orgRole }, meta: { synced: result.synced } });
   })
 
   .post('/checkout-session', requireOrgBillingRole(), async (c) => {
