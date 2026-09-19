@@ -436,7 +436,7 @@ flowchart LR
 | `ScheduleBoard` | 縦型カレンダー本体（§4.6）。ドラッグ移動・期間リサイズ・後続紐づけ・チェーン強調を持つ | days, items, plansByItem, rowHeight, editing?, onSelectPlan? |
 | `DateAxis` | 縦軸（日付・曜日・週末/祝日/本日の色分け） | days, dayTones, rowHeight |
 | `ColumnHeader` | 制作物列のヘッダー（名前・件数・現在のボール保持者） | itemId, name, planCount, holders |
-| `BallChip` | ボールチップ。`mode='edit' \| 'view'` で操作可否を切り替える | plan, days, rowHeight, lane, mode, … |
+| `BallChip` | ボールチップ。`mode='edit' \| 'view'` で操作可否を切り替える。表示項目は §4.4.5.7 のサイズ規則に従う | plan, days, rowHeight, lane, mode, … |
 | `LinkLayer` | 列内の後続コネクトを描く SVG オーバーレイ | plans, laneOf, days, rowHeight |
 | `ZoomControl` | 行高（＝縦横ズーム）を変える浮遊コントロール | rowHeight, onChange |
 | `chain.ts` | 後続チェーンの探索・紐づけ可否判定・保持者解決（純粋関数） | — |
@@ -485,6 +485,34 @@ useQuery(['projects', projectId, 'items', itemId, 'plans'], fetchPlans)
 #### 4.4.5.6 空状態
 
 予定0件時：縦型カレンダー上に「日付セルをクリックして予定を作成」のオーバーレイガイド（PRD SC-06）。
+
+#### 4.4.5.7 スケジュールカードのサイズ規則（Figma node 308:90）
+
+**カードの期間ではなく、実際に確保できる高さ**でサイズを決める（`scheduleLayout.ts` の `ballTier()`）。
+境界は Large 224px 以上 / Medium 112px 以上 / それ未満が Small。ガイドが空けている
+168〜224px の帯は Medium へ寄せている（Large の表示項目が入りきらない高さのため）。
+
+| 表示要素 | Large | Medium | Small |
+|---|---|---|---|
+| タイトル | 2 行まで | 1 行 | 1 行 |
+| 工程（カテゴリ） | 表示 | 表示 | — |
+| 日付 | 表示 | 表示 | — |
+| Ball Holder | Avatar + 氏名 + 権限区分 | Avatar + 氏名 | Avatar + 姓 |
+| その他のメンバー | 詳細パネル | 詳細パネル | 詳細パネル |
+
+**Ball Holder の表示ルール**：
+
+- カードに出すのは**現在の Ball Holder 1 名だけ**。実施者・承認者・進行責任者の一覧は
+  SC-08（ボール詳細ドロワー）へ送る。v1.2 までカード下端に出していた 3 役割（`RoleRow`）は廃止した
+- **FIX（完了）のときは Holder 表示を「FIX」の文字へ差し替える**
+- **進行状態のアイコンは使わない**。状態は詳細パネルで伝える
+- **pill も原則使わない**（現在はプラン表示のみ例外）。`StatusPill` はカードから外し、
+  ボール詳細ドロワー側だけで使う
+- Avatar はブランド色。カード上で唯一「いま誰の番か」を示す要素なので、
+  ユーザーの視覚整理用であるテーマ色（§4.9.2）とは別系統の色で目を引かせる
+
+> このガイドのフレームには Figma 上で「レビュー用 / 実装参照禁止」バッジが付いたままだが、
+> 実装の指示を受けて反映した。Figma 側でバッジが外れるか内容が変わった場合はこの節を更新する。
 
 ---
 
@@ -890,7 +918,7 @@ Figma のデザイン言語のうち、shadcn の汎用プリミティブでは�
 |---|---|---|---|
 | `WorkflowButton` | `workflow.ts` | ボール操作 4 種（ボールを渡す／戻す／承認／次の工程へトス）。「次の工程へトス」だけがブランドオレンジ（Role=Brand）で、工程を前へ進める唯一の操作であることを色で示す。渡す・承認は Role=Primary、戻すは Role=Secondary | node 206:380 |
 | `StatusPill` | `planStatus.ts` | ボール状態機械 6 値の表示（ラベル・配色・アイコン） | node 11:19 ほか |
-| `RoleRow` | `planRole.ts` | 3 役割（実施者／承認者／進行責任者）の行表示。アバター色は人ではなく**役割**に紐づく | node 25:2 |
+| `RoleRow` | `planRole.ts` | 3 役割（実施者／承認者／進行責任者）の行表示。アバター色は人ではなく**役割**に紐づく。スケジュールカードからは外れ（§4.4.5.7）、現在はボール詳細ドロワーで使う | node 25:2 |
 | `MemberProfileHover` / `MemberProfileCard` | — | 担当者のプロフィール（名前／所属名／メールアドレス／職種）をホバーで出す（#159）。`features/projects/` に置く | — |
 | `ScheduleThemeSwatch` | `scheduleTheme.ts` | スケジュールカラーテーマの色見本。予定ごとの色選択 UI の下地 | node 206:259 |
 | `Wordmark` | — | TRAKON ロゴタイプ。Sora のライブテキストで描画する | node 33:19 / 9:3 |
@@ -1360,3 +1388,4 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 | 2026-08-23 | **#149 反映**（Figma デザインシステム 第8段：予定カラーのユーザー選択式化） | `plans.color_theme`（10 値 CHECK / NULL 許容）を追加し、NULL はカテゴリ由来の既定色にフォールバック／解決を `resolvePlanTheme()` に集約／`ScheduleThemePicker` をボール詳細ヘッダーと予定フォームに設置／テーマキーを `packages/shared` へ移し FE・BE・DB で共有。§4.9.2 の段階移行を完了として更新。 |
 | 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §4.3.1 / §4.3.2 に `/settings`・`/settings/billing`・`/settings/organization` を追加／§4.5 に `useProjectRole` / `useEntitlement` を追加し、サイドバーのプランバッジを props 化／§4.5.2 にロール・課金状態による UI 出し分け方針を新設（ロール起因は隠す、TOSS ボタンと課金起因は無効化＋理由＋CTA）／§4.11 に SC-15・SC-18 と FR-ROLE / FR-BILL の整合を追加／`Toaster` の未マウント問題を PRD 整合メモに記録。 |
 | 2026-09-19 | **APP DESIGN GUIDE v1.0 反映** | Figma のガイド群（01 Typography 233:40 / 02 COLOR 234:40 / 03 Button 237:40 / 04 ICON 286:90 / 06 Form Controls 342:90 / 07 Calendar 355:132 / 08 Header 419:132）を実装基準として全面適用。文字スタイルを登録済み 6 種へ限定（本文 13→14px、11/22px を廃止。9/10px はスケジュール高密度表示のみ例外）／ブランドオレンジ #E7672C→**#C44B17**（白文字）・本文色 #23231F→#20201E・ページ背景→#FAF8F4／Button を **Role × State** へ再定義し `loading` を追加／フォームを 44px・角丸 8px・左右 16px に統一し `RadioGroup` を新設／アイコンを 20px（ナビ・単独操作）と 16px（カード内・Button 内）に統一／ページヘッダーを 132px + Sub toolbar 64px に／日付軸 96→72px、カード左ストライプ 4→6px。**未採用**：05 Schedule Card (308:90) は「実装参照禁止」バッジのため参照せず、07 Calendar の日付行 96px 固定も見送り（ズーム可変を維持）。Figma Code Connect は Dev/Full シート未取得のため未着手。 |
+| 2026-09-19 | **05 Schedule Card (308:90) 反映** | スケジュールカードの表示段階を Large/Medium/Small へ作り替え、**カードの期間ではなく確保できる高さ**で決めるようにした (閾値 112 / 224px)。カードに出す担当者を**現在の Ball Holder 1 名だけ**に絞り、3 役割 (`RoleRow`) は詳細ドロワーへ集約。FIX は Holder 表示を「FIX」文字へ差し替え、進行状態アイコンと `StatusPill` をカードから外した。§4.4.5.7 を新設。なお当該フレームは Figma 上で「レビュー用 / 実装参照禁止」バッジが付いたままだが、指示を受けて反映している。 |

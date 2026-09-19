@@ -88,10 +88,13 @@ describe('dayIndex', () => {
 });
 
 describe('ballTier', () => {
-  it('高さに応じて mini/compact/normal を返す', () => {
-    expect(ballTier(40)).toBe('mini');
-    expect(ballTier(100)).toBe('compact');
-    expect(ballTier(160)).toBe('normal');
+  it('高さに応じて small/medium/large を返す (Figma node 308:90)', () => {
+    expect(ballTier(56)).toBe('small');
+    expect(ballTier(111)).toBe('small');
+    expect(ballTier(112)).toBe('medium');
+    expect(ballTier(168)).toBe('medium');
+    expect(ballTier(223)).toBe('medium');
+    expect(ballTier(224)).toBe('large');
   });
 });
 

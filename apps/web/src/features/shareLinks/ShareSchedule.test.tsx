@@ -133,9 +133,10 @@ describe('ShareSchedule (閲覧専用)', () => {
     expect(screen.getByText('田中 一郎')).toBeInTheDocument();
   });
 
-  it('normal tier (長期間) のボールは実施者 / 承認者 / 保持者を表示する', () => {
-    // rowHeight=40, 4日span → height=157 ≥ 120 → normal tier。
-    // #131: FROM/TO は TOSS 履歴のため、カード表示は 実施者 + 承認者(無ければ進行責任者) + 保持者バッジ。
+  it('medium tier (長期間) のボールは工程・日付と Ball Holder 1 名だけを表示する', () => {
+    // rowHeight=40, 4日span → height=157 → medium tier (112〜224)。
+    // Figma node 308:90: カードに出すのは現在の Ball Holder 1 名だけで、
+    // 他の担当者 (実施者・承認者) は詳細パネルへ送る。
     const p = plan({
       id: 'p1',
       title: '長期タスク',
@@ -149,21 +150,22 @@ describe('ShareSchedule (閲覧専用)', () => {
     renderWithProviders(<ShareSchedule project={project} items={[items[0]!]} plans={[p]} />);
 
     expect(screen.getByText('長期タスク')).toBeInTheDocument();
-    expect(screen.getByText('実施者')).toBeInTheDocument();
-    expect(screen.getByText('承認者')).toBeInTheDocument();
-    expect(screen.getByText('実施 太郎')).toBeInTheDocument();
-    expect(screen.getAllByText('確認 花子').length).toBeGreaterThanOrEqual(1);
-    // カテゴリラベル (normal/compact tier で表示)。
+    // Ball Holder だけが出る。役割ラベルと他の担当者はカードに出さない。
+    expect(screen.getByText('確認 花子')).toBeInTheDocument();
+    expect(screen.queryByText('実施 太郎')).not.toBeInTheDocument();
+    expect(screen.queryByText('実施者')).not.toBeInTheDocument();
+    expect(screen.queryByText('承認者')).not.toBeInTheDocument();
+    // 工程 (カテゴリラベル) は medium/large tier で表示。
     expect(screen.getByText('デザイン')).toBeInTheDocument();
   });
 
-  it('mini tier (1日) のボールはタイトルのみでカテゴリ詳細を描画しない', () => {
-    // rowHeight=40, 1日span → height=37 < 80 → mini tier (詳細非表示)。
+  it('small tier (1日) のボールは工程・日付を描画しない', () => {
+    // rowHeight=40, 1日span → height=37 → small tier。表示はタイトル + Ball Holder のみ。
     const p = plan({ id: 'p1', title: '短期タスク', category: 'coding' });
     renderWithProviders(<ShareSchedule project={project} items={[items[0]!]} plans={[p]} />);
 
     expect(screen.getByText('短期タスク')).toBeInTheDocument();
-    // mini ではカテゴリラベルや実施者表記が出ない。
+    // small では工程 (カテゴリラベル) や役割ラベルが出ない。
     expect(screen.queryByText('コーディング')).not.toBeInTheDocument();
     expect(screen.queryByText('実施者')).not.toBeInTheDocument();
   });
@@ -198,10 +200,9 @@ describe('ShareSchedule (閲覧専用)', () => {
     expect(screen.getByText('完了ボール')).toBeInTheDocument();
     expect(screen.getByText('トス済ボール')).toBeInTheDocument();
     expect(screen.getByText('期限切れボール')).toBeInTheDocument();
-    // 完了チェックアイコンが描画される (svg)。
-    const completedTitle = screen.getByText('完了ボール');
-    const card = completedTitle.closest('div')?.parentElement;
-    expect(card?.querySelector('svg')).toBeTruthy();
+    // FIX したカードは Ball Holder 表示が「FIX」の文字に差し替わる (Figma node 308:90)。
+    // 進行状態のアイコンは使わない。
+    expect(screen.getByText('FIX')).toBeInTheDocument();
   });
 
   it('後続リンク (successorPlanId) を SVG パスとして描画する', () => {

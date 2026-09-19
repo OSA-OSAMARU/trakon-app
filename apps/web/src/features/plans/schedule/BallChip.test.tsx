@@ -139,3 +139,67 @@ describe('担当者のホバープロフィール (#159)', () => {
     expect(screen.queryByText('sugino@example.jp')).not.toBeInTheDocument();
   });
 });
+
+// =============================================================================
+// サイズ別の表示項目 (Figma「05 Schedule Card」node 308:90)
+// =============================================================================
+
+function renderChip(p: Plan, withMembers = false) {
+  return render(
+    <BallChip
+      plan={p}
+      days={DAYS}
+      rowHeight={40}
+      laneWidth={240}
+      lane={0}
+      today={TODAY}
+      memberById={withMembers ? new Map([[profile.id, profile]]) : undefined}
+    />,
+  );
+}
+
+describe('サイズ別の表示項目 (node 308:90)', () => {
+  it('small は タイトル + 姓 だけを出す', () => {
+    // 高さ = 1日 * 40 - 8 = 32px → small。
+    renderChip(plan(iso(0), iso(0)));
+
+    expect(screen.getByText('予定')).toBeInTheDocument();
+    expect(screen.getByText('杉野')).toBeInTheDocument(); // 姓のみ
+    expect(screen.queryByText('杉野 遥')).not.toBeInTheDocument();
+    expect(screen.queryByText('デザイン')).not.toBeInTheDocument(); // 工程は出さない
+  });
+
+  it('medium は 工程・日付 と 氏名 を出すが権限区分は出さない', () => {
+    // 高さ = 5日 * 40 - 8 = 192px → medium。
+    renderChip(plan(iso(0), iso(4)), true);
+
+    expect(screen.getByText('デザイン')).toBeInTheDocument();
+    expect(screen.getByText('杉野 遥')).toBeInTheDocument();
+    expect(screen.queryByText('編集者')).not.toBeInTheDocument();
+    expect(screen.queryByText('BALL HOLDER')).not.toBeInTheDocument();
+  });
+
+  it('large は BALL HOLDER ラベルと権限区分まで出す', () => {
+    // 高さ = 6日 * 40 - 8 = 232px → large。
+    renderChip(plan(iso(0), iso(5)), true);
+
+    expect(screen.getByText('BALL HOLDER')).toBeInTheDocument();
+    expect(screen.getByText('杉野 遥')).toBeInTheDocument();
+    expect(screen.getByText('編集者')).toBeInTheDocument();
+  });
+
+  it('FIX は Ball Holder 表示を「FIX」の文字へ差し替える', () => {
+    renderChip({ ...plan(iso(0), iso(4)), status: 'completed', ballState: 'completed' }, true);
+
+    expect(screen.getByText('FIX')).toBeInTheDocument();
+    expect(screen.queryByText('杉野 遥')).not.toBeInTheDocument();
+  });
+
+  it('進行状態のアイコンと pill はカードに出さない', () => {
+    // ガイドの「ICON：進行状態ICONは使用しない」「Pill：原則不使用」。
+    renderChip(plan(iso(0), iso(4)));
+
+    expect(screen.queryByText('実施中')).not.toBeInTheDocument();
+    expect(screen.queryByText('確認待ち')).not.toBeInTheDocument();
+  });
+});
