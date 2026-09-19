@@ -6,6 +6,7 @@ import type {
   createItem as CreateItemType,
   updateItem as UpdateItemType,
   deleteItem as DeleteItemType,
+  duplicateItem as DuplicateItemType,
 } from './items.js';
 
 // =============================================================================
@@ -25,7 +26,26 @@ type MockItem = {
   deletedAt: Date | null;
 };
 
+type MockPlan = {
+  id: string;
+  itemId: string;
+  planType: string;
+  title: string;
+  category: string;
+  colorTheme: string | null;
+  scheduledDate: Date;
+  dueDate: Date | null;
+  executorMemberId: string | null;
+  approverMemberId: string | null;
+  progressManagerMemberId: string | null;
+  successorPlanId: string | null;
+  status: string;
+  memo: string | null;
+  deletedAt: Date | null;
+};
+
 const itemStore: MockItem[] = [];
+const planStore: MockPlan[] = [];
 let nextId = 1;
 const newId = (prefix: string) => `${prefix}-${nextId++}`;
 
@@ -78,14 +98,25 @@ const prismaMock = {
       },
     ),
     create: vi.fn(
-      async ({ data }: { data: { projectId: string; name: string; sortOrder: number } }) => {
+      async ({
+        data,
+      }: {
+        data: {
+          projectId: string;
+          name: string;
+          sortOrder: number;
+          itemType?: string | null;
+          startDate?: Date | null;
+          endDate?: Date | null;
+        };
+      }) => {
         const it: MockItem = {
           id: newId('it'),
           projectId: data.projectId,
           name: data.name,
           sortOrder: data.sortOrder,
-          startDate: null,
-          endDate: null,
+          startDate: data.startDate ?? null,
+          endDate: data.endDate ?? null,
           createdAt: new Date('2026-05-25T00:00:00Z'),
           updatedAt: new Date('2026-05-25T00:00:00Z'),
           deletedAt: null,
@@ -132,6 +163,44 @@ const prismaMock = {
       return removed;
     }),
   },
+  // 制作物の複製 (#200) が配下の予定を読み書きする
+  plan: {
+    findMany: vi.fn(async ({ where }: { where: { itemId: string; deletedAt: null } }) =>
+      planStore
+        .filter((p) => p.itemId === where.itemId && p.deletedAt === null)
+        .sort((a, b) => a.scheduledDate.getTime() - b.scheduledDate.getTime()),
+    ),
+    create: vi.fn(async ({ data }: { data: Partial<MockPlan> }) => {
+      const p: MockPlan = {
+        id: newId('pl'),
+        itemId: data.itemId!,
+        planType: data.planType ?? 'toss',
+        title: data.title ?? '',
+        category: data.category ?? 'design',
+        colorTheme: data.colorTheme ?? null,
+        scheduledDate: data.scheduledDate ?? new Date('2026-06-01T00:00:00Z'),
+        dueDate: data.dueDate ?? null,
+        executorMemberId: data.executorMemberId ?? null,
+        approverMemberId: data.approverMemberId ?? null,
+        progressManagerMemberId: data.progressManagerMemberId ?? null,
+        successorPlanId: null,
+        status: 'active',
+        memo: data.memo ?? null,
+        deletedAt: null,
+      };
+      planStore.push(p);
+      return { id: p.id };
+    }),
+    update: vi.fn(
+      async ({ where, data }: { where: { id: string }; data: { successorPlanId: string } }) => {
+        const p = planStore.find((row) => row.id === where.id);
+        if (!p) throw new Error('not found in mock plan update');
+        p.successorPlanId = data.successorPlanId;
+        return p;
+      },
+    ),
+  },
+  $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock)),
 };
 
 vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
@@ -166,15 +235,42 @@ let getItem: typeof GetItemType;
 let createItem: typeof CreateItemType;
 let updateItem: typeof UpdateItemType;
 let deleteItem: typeof DeleteItemType;
+let duplicateItem: typeof DuplicateItemType;
 
 beforeAll(async () => {
-  ({ listItems, getItem, createItem, updateItem, deleteItem } = await import('./items.js'));
+  ({ listItems, getItem, createItem, updateItem, deleteItem, duplicateItem } = await import(
+    './items.js'
+  ));
 });
 
 afterEach(() => {
   itemStore.length = 0;
+  planStore.length = 0;
   vi.clearAllMocks();
 });
+
+/** 複製テスト用に予定を 1 件投入する。 */
+function seedPlan(partial: Partial<MockPlan> & { itemId: string }): MockPlan {
+  const p: MockPlan = {
+    id: partial.id ?? newId('pl'),
+    itemId: partial.itemId,
+    planType: 'toss',
+    title: partial.title ?? '予定',
+    category: partial.category ?? 'design',
+    colorTheme: partial.colorTheme ?? null,
+    scheduledDate: partial.scheduledDate ?? new Date('2026-06-01T00:00:00Z'),
+    dueDate: partial.dueDate ?? null,
+    executorMemberId: partial.executorMemberId ?? null,
+    approverMemberId: partial.approverMemberId ?? null,
+    progressManagerMemberId: partial.progressManagerMemberId ?? null,
+    successorPlanId: partial.successorPlanId ?? null,
+    status: partial.status ?? 'active',
+    memo: partial.memo ?? null,
+    deletedAt: partial.deletedAt ?? null,
+  };
+  planStore.push(p);
+  return p;
+}
 
 describe('listItems', () => {
   it('returns DTOs sorted by sortOrder then createdAt, scoped to the project, excluding soft-deleted', async () => {
@@ -363,5 +459,106 @@ describe('deleteItem', () => {
     });
     // ガードに掛かるため delete は呼ばれない。
     expect(prismaMock.projectItem.delete).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// duplicateItem (#200)
+// =============================================================================
+
+describe('duplicateItem', () => {
+  it('制作物を「〜 のコピー」として末尾に作り、期間も引き継ぐ', async () => {
+    seed({ id: 'it-other', projectId: 'p-1', sortOrder: 0 });
+    seed({
+      id: 'it-1',
+      projectId: 'p-1',
+      name: '本編',
+      sortOrder: 1,
+      startDate: new Date('2026-06-01T00:00:00Z'),
+      endDate: new Date('2026-06-30T00:00:00Z'),
+    });
+
+    const res = await duplicateItem({ itemId: 'it-1', projectId: 'p-1' });
+
+    expect(res.name).toBe('本編 のコピー');
+    expect(res.sortOrder).toBe(2);
+    expect(res.startDate).toBe('2026-06-01');
+    expect(res.endDate).toBe('2026-06-30');
+  });
+
+  it('配下の予定を丸ごと複製する', async () => {
+    seed({ id: 'it-1', projectId: 'p-1', name: '本編' });
+    seedPlan({
+      itemId: 'it-1',
+      title: '構成案',
+      category: 'proposal',
+      executorMemberId: 'm-1',
+      approverMemberId: 'm-2',
+      progressManagerMemberId: 'm-3',
+      memo: 'メモ',
+    });
+
+    const res = await duplicateItem({ itemId: 'it-1', projectId: 'p-1' });
+
+    const copied = planStore.filter((p) => p.itemId === res.id);
+    expect(copied).toHaveLength(1);
+    expect(copied[0]).toMatchObject({
+      title: '構成案',
+      category: 'proposal',
+      executorMemberId: 'm-1',
+      approverMemberId: 'm-2',
+      progressManagerMemberId: 'm-3',
+      memo: 'メモ',
+      // ボールの履歴は引き継がず、すべて未着手から始まる
+      status: 'active',
+    });
+  });
+
+  it('後続の紐付けはコピー内で閉じるよう張り替える', async () => {
+    // 元: A → B。コピー側も A' → B' になり、元の B を指さない
+    seed({ id: 'it-1', projectId: 'p-1' });
+    seedPlan({ id: 'pl-b', itemId: 'it-1', title: 'B' });
+    seedPlan({ id: 'pl-a', itemId: 'it-1', title: 'A', successorPlanId: 'pl-b' });
+
+    const res = await duplicateItem({ itemId: 'it-1', projectId: 'p-1' });
+
+    const copied = planStore.filter((p) => p.itemId === res.id);
+    const a = copied.find((p) => p.title === 'A')!;
+    const b = copied.find((p) => p.title === 'B')!;
+    expect(a.successorPlanId).toBe(b.id);
+    // 元の予定の紐付けは変えない
+    expect(planStore.find((p) => p.id === 'pl-a')!.successorPlanId).toBe('pl-b');
+  });
+
+  it('コピー範囲の外を指していた後続は引き継がない', async () => {
+    // 別の制作物を指していた紐付けを写すと、コピーが元のラインへ合流してしまう
+    seed({ id: 'it-1', projectId: 'p-1' });
+    seed({ id: 'it-2', projectId: 'p-1' });
+    seedPlan({ id: 'pl-out', itemId: 'it-2', title: '別制作物の予定' });
+    seedPlan({ id: 'pl-a', itemId: 'it-1', title: 'A', successorPlanId: 'pl-out' });
+
+    const res = await duplicateItem({ itemId: 'it-1', projectId: 'p-1' });
+
+    const copied = planStore.filter((p) => p.itemId === res.id);
+    expect(copied[0]!.successorPlanId).toBeNull();
+  });
+
+  it('削除済みの予定は複製しない', async () => {
+    seed({ id: 'it-1', projectId: 'p-1' });
+    seedPlan({ itemId: 'it-1', title: '生きている' });
+    seedPlan({ itemId: 'it-1', title: '削除済み', deletedAt: new Date('2026-06-02T00:00:00Z') });
+
+    const res = await duplicateItem({ itemId: 'it-1', projectId: 'p-1' });
+
+    const copied = planStore.filter((p) => p.itemId === res.id);
+    expect(copied.map((p) => p.title)).toEqual(['生きている']);
+  });
+
+  it('他プロジェクトの制作物は複製できない (404)', async () => {
+    seed({ id: 'it-1', projectId: 'p-other' });
+    await expect(duplicateItem({ itemId: 'it-1', projectId: 'p-1' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      status: 404,
+    });
   });
 });

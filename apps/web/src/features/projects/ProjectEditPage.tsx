@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays, Link2, Archive, ArchiveRestore, GripVertical } from 'lucide-react';
+import { Copy, Loader2, Pencil, Plus, Trash2, Users, ArrowLeft, AlertCircle, CalendarDays, Link2, Archive, ArchiveRestore, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -336,6 +336,18 @@ function ItemsSection({
     onError: (e) =>
       toast.error(e instanceof ApiClientError ? e.message : '更新に失敗しました'),
   });
+  /**
+   * 制作物を予定ごと複製する (#200)。
+   * 同じ工程をもう一度組むとき、カード 1 枚ずつ作り直さなくて済むようにする。
+   */
+  const copyMut = useMutation({
+    mutationFn: (id: string) => projectsApi.copyItem(projectId, id),
+    onSuccess: (created) => {
+      invalidate();
+      toast.success(`「${created.name}」を作成しました`);
+    },
+    onError: (e) => toast.error(e instanceof ApiClientError ? e.message : '複製に失敗しました'),
+  });
   const deleteMut = useMutation({
     mutationFn: (id: string) => projectsApi.deleteItem(projectId, id),
     onSuccess: () => {
@@ -428,6 +440,20 @@ function ItemsSection({
                   aria-label="編集"
                 >
                   <Pencil className="size-4" />
+                </Button>
+                {/* カラム (制作物) ごとスケジュールを複製する (#200) */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => copyMut.mutate(it.id)}
+                  disabled={copyMut.isPending}
+                  aria-label={`${it.name} を複製`}
+                >
+                  {copyMut.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Copy className="size-4" />
+                  )}
                 </Button>
                 <Button
                   variant="ghost"

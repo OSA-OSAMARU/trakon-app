@@ -105,6 +105,12 @@ export const projectsApi = {
     }),
   deleteItem: (projectId: string, itemId: string) =>
     apiRequest<void>(`/projects/${projectId}/items/${itemId}`, { method: 'DELETE' }),
+  /** 制作物を予定ごと複製する (#200)。ボールの履歴は引き継がない */
+  copyItem: (projectId: string, itemId: string) =>
+    apiRequest<ProjectItem>(`/projects/${projectId}/items/${itemId}/copy`, {
+      method: 'POST',
+      body: {},
+    }),
   reorderItems: (projectId: string, orderedIds: string[]) =>
     apiRequest<ProjectItem[]>(`/projects/${projectId}/items/reorder`, {
       method: 'POST',
