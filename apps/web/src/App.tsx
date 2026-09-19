@@ -10,10 +10,6 @@ import { SidebarLayout } from './app/SidebarLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { SC01LoginPage } from './features/auth/SC01LoginPage';
 import { InvitationAcceptPage } from './features/invitations/InvitationAcceptPage';
-import { CommercePage } from './features/legal/CommercePage';
-import { CompanyPage } from './features/legal/CompanyPage';
-import { PrivacyPage } from './features/legal/PrivacyPage';
-import { TermsPage } from './features/legal/TermsPage';
 import { MyPage } from '@/features/account/MyPage';
 import { OrgMembersPage } from '@/features/organization/OrgMembersPage';
 import { BillingPage } from './features/billing/BillingPage';
@@ -24,6 +20,12 @@ import { ProjectEditPage } from './features/projects/ProjectEditPage';
 import { ProjectListPage } from './features/projects/ProjectListPage';
 import { projectsApi, projectsQueryKey } from './features/projects/api';
 import { ShareLinksPage } from './features/shareLinks/ShareLinksPage';
+import { ExternalRedirect } from './features/legal/ExternalRedirect';
+import {
+  LEGACY_LEGAL_PATHS,
+  LEGAL_LINK_LABEL,
+  type LegalLinkKey,
+} from './features/legal/legalLinks';
 import { SharePage } from './features/shareLinks/SharePage';
 
 export function App() {
@@ -42,11 +44,17 @@ export function App() {
         <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
         <Route path="/share/:token" element={<SharePage />} />
 
-        {/* 未ログインでも閲覧可能な会社情報・法務ページ */}
-        <Route path="/company" element={<CompanyPage />} />
-        <Route path="/terms" element={<TermsPage />} />
-        <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/commerce" element={<CommercePage />} />
+        {/* 会社情報・法務ページは公式サイトが正 (#193)。
+            旧パスはブックマーク対策として公式サイトへ送るだけにする。 */}
+        {LEGACY_LEGAL_PATHS.map(({ path, href }) => (
+          <Route
+            key={path}
+            path={path}
+            element={
+              <ExternalRedirect href={href} label={LEGAL_LINK_LABEL[path.slice(1) as LegalLinkKey]} />
+            }
+          />
+        ))}
 
         <Route
           element={

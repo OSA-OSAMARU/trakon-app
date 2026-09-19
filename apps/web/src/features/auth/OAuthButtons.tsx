@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
+import { LEGAL_LINKS } from '@/features/legal/legalLinks';
 
 type TrakonProvider = 'google' | 'azure';
 
@@ -65,7 +66,7 @@ export function OAuthButtons() {
       <p className="text-label leading-relaxed text-muted-foreground">
         Google・Microsoft で続けると、
         <a
-          href="/terms"
+          href={LEGAL_LINKS.terms}
           target="_blank"
           rel="noreferrer"
           className="text-foreground underline underline-offset-2"
@@ -74,7 +75,7 @@ export function OAuthButtons() {
         </a>
         および
         <a
-          href="/privacy"
+          href={LEGAL_LINKS.privacy}
           target="_blank"
           rel="noreferrer"
           className="text-foreground underline underline-offset-2"

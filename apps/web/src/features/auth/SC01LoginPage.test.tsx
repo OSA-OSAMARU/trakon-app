@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import type { Session } from '@supabase/supabase-js';
@@ -122,11 +122,29 @@ describe('SC01LoginPage — login 画面', () => {
     expect(
       await screen.findByText(/同意したものとみなされます/),
     ).toBeInTheDocument();
-    // みなし同意文言内の利用規約リンクが /terms を指す。
+    // みなし同意文言内の利用規約リンクは公式サイトを指す (#193)。
     const termsLinks = screen
       .getAllByRole('link', { name: '利用規約' })
-      .filter((a) => a.getAttribute('href') === '/terms');
+      .filter((a) => a.getAttribute('href') === 'https://www.trakon.app/terms');
     expect(termsLinks.length).toBeGreaterThan(0);
+  });
+
+  it('フッターから会社情報・法務ページ 5 件すべてを公式サイトで開ける (#193)', async () => {
+    renderWithProviders(<SC01LoginPage />, { route: '/login' });
+
+    const footer = await screen.findByRole('navigation', { name: '会社情報・法務' });
+    for (const [label, href] of [
+      ['会社概要', 'https://www.trakon.app/company'],
+      ['利用規約', 'https://www.trakon.app/terms'],
+      ['プライバシーポリシー', 'https://www.trakon.app/privacy'],
+      ['特定商取引法に基づく表記', 'https://www.trakon.app/commerce'],
+      ['お問い合わせ', 'https://www.trakon.app/contact'],
+    ] as const) {
+      const link = within(footer).getByRole('link', { name: label });
+      expect(link).toHaveAttribute('href', href);
+      // 入力途中の同意チェックや認証フローを失わせないため別タブで開く
+      expect(link).toHaveAttribute('target', '_blank');
+    }
   });
 
   it('認証済みかつ create-account 以外なら /dashboard へリダイレクトする', async () => {
