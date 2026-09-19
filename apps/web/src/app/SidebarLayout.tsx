@@ -25,12 +25,15 @@ export function SidebarLayout() {
 
   // サイドバーのプランバッジは契約状態から作る (ハードコードしない、§4.5)。
   // 契約プランではなく**実効プラン**を出す。解約済みで Team と出し続けると、
-  // 実際には Free の上限が効いている状態と食い違う
+  // 実際には Free の上限が効いている状態と食い違う。
+  // Free も含めて常に出す (#201)。「無料で使えている」ことも契約状態の一つ。
   const { entitlement } = useEntitlement();
-  const planBadge =
-    entitlement && entitlement.effectivePlanCode !== 'free'
-      ? { label: BILLING_PLANS[entitlement.effectivePlanCode].label, variant: 'brand' as const }
-      : null;
+  const planBadge = entitlement
+    ? {
+        label: BILLING_PLANS[entitlement.effectivePlanCode].label,
+        variant: entitlement.effectivePlanCode === 'free' ? ('secondary' as const) : ('brand' as const),
+      }
+    : null;
 
   const signOut = async () => {
     await supabase.auth.signOut();

@@ -53,7 +53,10 @@ export function AppSidebar({
   /** 読込中・未ログインは null（フッターを Skeleton にする） */
   user: SidebarUser | null;
   onSignOut: () => void;
-  /** プランバッジ。契約状態から注入する。null なら非表示 (Free) */
+  /**
+   * 加入プランのバッジ (#201)。契約状態から注入する。
+   * Free を含め常に出し、まだ引けていない間だけ null (Skeleton) にする。
+   */
   planBadge?: { label: string; variant: 'brand' | 'secondary' } | null;
 }) {
   return (
@@ -112,21 +115,29 @@ export function AppSidebar({
                   src={user.avatarUrl}
                   className="size-9 text-body"
                 />
+                {/* 2 行目はメールアドレスではなく加入プラン (#201)。
+                    毎日見る場所に出す価値があるのは「いまどのプランか」で、
+                    メールアドレスは自分のものと分かっている情報のため。
+                    アカウントの確認が要るときのためにメニュー側へ残している。 */}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-body font-medium">{user.displayName}</span>
-                  <span className="text-text-tertiary block truncate text-label">
-                    {user.email}
-                  </span>
-                  {planBadge && (
-                    <Badge variant={planBadge.variant} size="sm" className="mt-1 font-bold">
+                  {planBadge ? (
+                    <Badge variant={planBadge.variant} size="sm" className="mt-0.5 font-bold">
                       {planBadge.label}
                     </Badge>
+                  ) : (
+                    <Skeleton className="mt-1 h-4 w-14" />
                   )}
                 </span>
                 <MoreHorizontal className="text-text-tertiary size-5 shrink-0" aria-hidden />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" side="top" className="w-52">
+              {/* トリガー行から外したメールアドレスはここで確認できるようにする */}
+              <DropdownMenuLabel className="text-text-tertiary truncate font-normal">
+                {user.email}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <Link to="/settings/profile">
                   <UserRound className="size-4" />

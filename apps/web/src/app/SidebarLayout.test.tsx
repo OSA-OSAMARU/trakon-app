@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { server } from '@/test/handlers';
+import { defaultBillingResponse, server } from '@/test/handlers';
 import { createTestQueryClient } from '@/test/render';
 import type { ProjectSummary } from '@/features/projects/api';
 import type { SyncResponse } from '@/features/auth/api';
@@ -161,6 +161,41 @@ describe('SidebarLayout', () => {
 
     await user.click(screen.getByRole('menuitem', { name: 'ログアウト' }));
     await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+  });
+
+  it('フッター 2 行目はメールアドレスではなく加入プランを出す (#201)', async () => {
+    stubEndpoints();
+    renderLayout();
+
+    // 既定の MSW 応答は Free。Free も「契約状態の一つ」なので必ず出す
+    expect(await screen.findByText('Free')).toBeInTheDocument();
+    expect(screen.queryByText('taro@example.com')).not.toBeInTheDocument();
+  });
+
+  it('プラン名はメニューを開くとメールアドレスと併せて確認できる (#201)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    server.use(
+      http.get('*/api/v1/billing/subscription', () =>
+        HttpResponse.json({
+          data: {
+            ...defaultBillingResponse,
+            entitlement: {
+              ...defaultBillingResponse.entitlement,
+              planCode: 'team',
+              effectivePlanCode: 'team',
+            },
+          },
+        }),
+      ),
+    );
+    stubEndpoints();
+    renderLayout();
+
+    expect(await screen.findByText('Team')).toBeInTheDocument();
+
+    // トリガー行から外したメールアドレスはメニュー側に残す
+    await user.click(await screen.findByRole('button', { name: /タロウ/ }));
+    expect(await screen.findByText('taro@example.com')).toBeInTheDocument();
   });
 
   it('プロフィール未完了 (session 無し) ならフッターは Skeleton を表示する', async () => {
