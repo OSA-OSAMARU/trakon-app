@@ -700,8 +700,57 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    await openMoreMenu(user);
-    await user.click(await screen.findByRole('menuitem', { name: 'TOSS を取り消す' }));
+    // 取り消し系はフッターへ出す (#199)。「⋯」を開く手間なく押せる
+    await user.click(await screen.findByRole('button', { name: 'TOSS を取り消す' }));
+
+    await waitFor(() => expect(undoCalled).toBe(true));
+    // 取り消せるのに「操作はありません」と言わない
+    expect(screen.queryByText(/いまこの予定で行える操作はありません/)).not.toBeInTheDocument();
+  });
+
+  it('TOSS の取り消し: 権限が無ければフッターにも出さず、操作なしと伝える (#199)', async () => {
+    // TOSS は管理者のみ。その裏返しである取り消しも同じ権限に揃えている
+    setupReads(
+      {
+        plan: makePlan({ ballState: 'tossed', ballHolder: memberRef(otherMember) }),
+        events: [makeEvent()],
+      },
+      { role: 'editor' },
+    );
+    renderModal();
+
+    await screen.findByText('デザインカンプ作成');
+    expect(screen.queryByRole('button', { name: 'TOSS を取り消す' })).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/いまこの予定で行える操作はありません/),
+    ).toBeInTheDocument();
+  });
+
+  it('承認の取り消し: 承認済みなら TOSS と並べて取り消しを出す (#199)', async () => {
+    setupReads(
+      {
+        plan: makePlan({ ballState: 'approved', successorPlanId: 'plan-2' }),
+        events: [makeEvent({ eventType: 'approved' })],
+      },
+      { role: 'admin' },
+    );
+    let undoCalled = false;
+    server.use(
+      http.post(
+        `*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}/approve-undo`,
+        () => {
+          undoCalled = true;
+          return HttpResponse.json({ data: { plan: makePlan({ ballState: 'review_pending' }) } });
+        },
+      ),
+    );
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderModal();
+
+    // 前へ進める操作と戻す操作が同じ場所に並ぶ
+    expect(await screen.findByRole('button', { name: '次の工程へトス' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '承認を取り消す' }));
 
     await waitFor(() => expect(undoCalled).toBe(true));
   });
@@ -732,8 +781,7 @@ describe('BallDetailModal (integration)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderModal();
 
-    await openMoreMenu(user);
-    await user.click(await screen.findByRole('menuitem', { name: '完了を取り消す' }));
+    await user.click(await screen.findByRole('button', { name: '完了を取り消す' }));
 
     await waitFor(() => expect(undoApproveCalled).toBe(true));
   });
@@ -752,7 +800,7 @@ describe('BallDetailModal (integration)', () => {
     renderModal();
 
     expect(await screen.findByText('完了済み')).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: '完了を取り消す' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '完了を取り消す' })).not.toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
