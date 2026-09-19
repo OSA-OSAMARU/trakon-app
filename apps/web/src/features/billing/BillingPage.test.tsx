@@ -108,6 +108,46 @@ describe('BillingPage (integration)', () => {
       expect(await screen.findByTestId('plan-team')).toBeInTheDocument();
     });
 
+    it('Free でも「プランを変更」が押すたびに開閉する (#197)', async () => {
+      // 既定 (Free) はアップグレード導線を隠さないため最初から開いている。
+      // ここでボタンが何も起こさないと「反応しない」ように見えるため、
+      // 押したら必ず表示が変わることを保証する。
+      stubBilling();
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      expect(await screen.findByTestId('plan-team')).toBeInTheDocument();
+
+      const toggle = screen.getByRole('button', { name: 'プラン一覧を閉じる' });
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await userEvent.click(toggle);
+      expect(screen.queryByTestId('plan-team')).not.toBeInTheDocument();
+
+      const reopen = screen.getByRole('button', { name: 'プランを変更' });
+      expect(reopen).toHaveAttribute('aria-expanded', 'false');
+      await userEvent.click(reopen);
+      expect(await screen.findByTestId('plan-team')).toBeInTheDocument();
+    });
+
+    it('権限が無くてもプラン一覧は開ける (#197)', async () => {
+      // 一覧の開閉は表示の切り替えでしかない。申し込みボタン側で無効化と
+      // 理由の提示を行うので、見ること自体は妨げない。
+      stubBilling({
+        orgRole: 'member',
+        subscription: { ...defaultBillingResponse.subscription, planCode: 'team', status: 'active' },
+        entitlement: {
+          ...defaultBillingResponse.entitlement,
+          planCode: 'team',
+          effectivePlanCode: 'team',
+        },
+      });
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await userEvent.click(await screen.findByRole('button', { name: 'プランを変更' }));
+      expect(await screen.findByTestId('plan-personal')).toBeInTheDocument();
+      // 申し込み側は無効のまま
+      expect(screen.getByRole('button', { name: 'このプランに変更' })).toBeDisabled();
+    });
+
     it('組織メンバー (非管理者) には変更操作を無効化し理由を出す', async () => {
       stubBilling({ orgRole: 'member' });
       renderWithProviders(<BillingPage />, { route: '/settings/billing' });
