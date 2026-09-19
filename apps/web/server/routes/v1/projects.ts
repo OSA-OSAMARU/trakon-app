@@ -26,6 +26,7 @@ import {
 import {
   createItem,
   deleteItem,
+  duplicateItem,
   getItem,
   listItems,
   reorderItems,
@@ -149,6 +150,21 @@ export const projectsRoute = new Hono()
         orderedIds: body.orderedIds,
       });
       return c.json({ data: items });
+    },
+  )
+
+  // 制作物の複製 (#200)。静的セグメント /copy は :itemId の後ろなので衝突しない。
+  .post(
+    '/:projectId/items/:itemId/copy',
+    requireProjectMember(),
+    requireProjectWritable(),
+    requireProjectAction('item.create'),
+    async (c) => {
+      const project = c.get('project');
+      const itemId = c.req.param('itemId');
+      if (!itemId) throw new ApiException('BAD_REQUEST', 400, 'itemId required');
+      const item = await duplicateItem({ itemId, projectId: project.projectId });
+      return c.json({ data: item }, 201);
     },
   )
 

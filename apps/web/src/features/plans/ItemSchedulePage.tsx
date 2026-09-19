@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, differenceInDays, format, parseISO } from 'date-fns';
-import { Plus, Settings, TriangleAlert, Users } from 'lucide-react';
+import { Copy, Loader2, Plus, Settings, TriangleAlert, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiClientError } from '@/lib/api';
@@ -81,6 +81,21 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
       qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
       qc.invalidateQueries({ queryKey: plansQueryKey.list(projectId, plan.itemId) });
       toast.success('複製しました');
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiClientError ? e.message : '複製に失敗しました'),
+  });
+
+  /**
+   * 制作物 (カラム) を予定ごと複製する (#200)。
+   * 複製した列は末尾に増え、そのままスケジュール上に現れる。
+   */
+  const copyItemMut = useMutation({
+    mutationFn: (targetItemId: string) => projectsApi.copyItem(projectId, targetItemId),
+    onSuccess: (created) => {
+      qc.invalidateQueries({ queryKey: projectsQueryKey.items(projectId) });
+      qc.invalidateQueries({ queryKey: plansQueryKey.projectList(projectId) });
+      toast.success(`「${created.name}」を作成しました`);
     },
     onError: (e) =>
       toast.error(e instanceof ApiClientError ? e.message : '複製に失敗しました'),
@@ -289,6 +304,22 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
                 ))}
               </SelectContent>
             </Select>
+            {/* カラムごと複製する (#200)。対象が一意に決まる「1 制作物表示」のときだけ出す */}
+            {viewItemId !== 'all' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => copyItemMut.mutate(viewItemId)}
+                disabled={copyItemMut.isPending}
+              >
+                {copyItemMut.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Copy className="size-4" />
+                )}
+                この制作物を複製
+              </Button>
+            )}
             <Button variant="ghost" size="sm" asChild>
               <Link to={`/projects/${projectId}/members`}>
                 <Users className="size-4" />

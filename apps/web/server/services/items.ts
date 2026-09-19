@@ -80,6 +80,99 @@ export async function createItem(input: {
   return toItemDTO(it);
 }
 
+/**
+ * 制作物を予定ごと複製する (#200)。
+ *
+ * スケジュールの「カラム」をまるごと写し取る操作。第 2 弾の撮影や、同じ工程を
+ * 別の制作物でもう一度組むときに、1 枚ずつ作り直さなくて済むようにする。
+ *
+ * 複製するもの / しないものの切り分け:
+ *   - **複製する**: 制作物の名前 (「〜 のコピー」) と期間、配下の全予定の
+ *     日付・カテゴリ・色・担当 3 役割・メモ、そして**予定どうしの後続の紐付け**
+ *   - **複製しない**: `ball_events` (ボールの履歴)、TOSS の FROM/TO スナップショット、
+ *     完了状態。複製された予定はすべて「未着手」から始まる
+ *
+ * 履歴を写さないのは、ボールの流れが「実際に誰が何をしたか」の記録だからで、
+ * コピーした瞬間に架空の履歴が生まれるのを避けている。
+ */
+export async function duplicateItem(input: {
+  itemId: string;
+  projectId: string;
+}): Promise<ProjectItemDTO> {
+  const source = await prisma.projectItem.findFirst({
+    where: { id: input.itemId, projectId: input.projectId, deletedAt: null },
+  });
+  if (!source) throw new ApiException('NOT_FOUND', 404, 'Item not found.');
+
+  const plans = await prisma.plan.findMany({
+    where: { itemId: source.id, deletedAt: null },
+    orderBy: [{ scheduledDate: 'asc' }, { createdAt: 'asc' }],
+  });
+
+  const sortOrder = await nextSortOrder(input.projectId);
+
+  const created = await prisma.$transaction(async (tx) => {
+    const item = await tx.projectItem.create({
+      data: {
+        projectId: input.projectId,
+        name: copyName(source.name),
+        itemType: source.itemType,
+        sortOrder,
+        startDate: source.startDate,
+        endDate: source.endDate,
+      },
+    });
+
+    // 1 周目: 予定を作る。後続の紐付けは相手の新 ID が要るのでまだ張らない。
+    const newIdBySourceId = new Map<string, string>();
+    for (const p of plans) {
+      const row = await tx.plan.create({
+        data: {
+          itemId: item.id,
+          planType: p.planType,
+          title: p.title,
+          category: p.category,
+          colorTheme: p.colorTheme,
+          scheduledDate: p.scheduledDate,
+          dueDate: p.dueDate,
+          executorMemberId: p.executorMemberId,
+          approverMemberId: p.approverMemberId,
+          progressManagerMemberId: p.progressManagerMemberId,
+          memo: p.memo,
+          // ボールは引き継がない。複製直後はすべて未着手 (status='active')
+        },
+        select: { id: true },
+      });
+      newIdBySourceId.set(p.id, row.id);
+    }
+
+    // 2 周目: 後続の紐付けを新 ID へ張り替える。
+    // **複製した集合の中で閉じている紐付けだけ**を写す。元の制作物の予定を
+    // 指したままにすると、コピーが元のラインへ合流してしまう。
+    for (const p of plans) {
+      if (!p.successorPlanId) continue;
+      const successorId = newIdBySourceId.get(p.successorPlanId);
+      if (!successorId) continue;
+      await tx.plan.update({
+        where: { id: newIdBySourceId.get(p.id)! },
+        data: { successorPlanId: successorId },
+      });
+    }
+
+    return item;
+  });
+
+  return toItemDTO(created);
+}
+
+/** 「〜 のコピー」。既に付いていても重ねる (何度複製したか分かるほうが良い)。 */
+function copyName(name: string): string {
+  const suffix = ' のコピー';
+  // カラム名は 255 文字上限。溢れる分は前を削って接尾辞を必ず残す
+  const head = name.slice(0, 255 - suffix.length);
+  return `${head}${suffix}`;
+}
+
 export async function updateItem(input: {
   itemId: string;
   projectId: string;

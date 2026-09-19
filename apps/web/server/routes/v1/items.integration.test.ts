@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { api } from '../../test/request.js';
+import { prisma } from '@trakon/db';
+
 import {
   createItem,
   createMember,
   createOutsider,
+  createPlan,
   createUser,
   setupProjectWithDirector,
 } from '../../test/factories.js';
@@ -117,7 +120,40 @@ describe('items routes (integration)', () => {
       const after = await api<{ data: ItemDTO[] }>(base, { token: ctx.token });
       expect(after.body.data.map((i) => i.id)).not.toContain(a.id);
     });
+
+    it('POST /items/:itemId/copy は制作物を予定ごと複製する (#200)', async () => {
+      const source = await createItem({ projectId: ctx.project.id, name: '本編', sortOrder: 0 });
+      const second = await createPlan({ itemId: source.id, title: '撮影' });
+      await createPlan({
+        itemId: source.id,
+        title: '構成案',
+        executorMemberId: ctx.member.id,
+        successorPlanId: second.id,
+      });
+
+      const res = await api<{ data: ItemDTO }>(`${base}/${source.id}/copy`, {
+        method: 'POST',
+        token: ctx.token,
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.name).toBe('本編 のコピー');
+
+      const copied = await prisma.plan.findMany({
+        where: { itemId: res.body.data.id, deletedAt: null },
+        orderBy: { title: 'asc' },
+      });
+      expect(copied.map((p) => p.title).sort()).toEqual(['撮影', '構成案'].sort());
+      // 担当は引き継ぎ、ボールは持ち越さない
+      const copiedFirst = copied.find((p) => p.title === '構成案')!;
+      expect(copiedFirst.executorMemberId).toBe(ctx.member.id);
+      expect(copiedFirst.status).toBe('active');
+      // 後続の紐付けはコピー内で閉じる (元の予定を指さない)
+      const copiedSecond = copied.find((p) => p.title === '撮影')!;
+      expect(copiedFirst.successorPlanId).toBe(copiedSecond.id);
+    });
   });
+
 
   describe('異常系', () => {
     it('未認証の一覧取得は 401 AUTH_MISSING', async () => {
