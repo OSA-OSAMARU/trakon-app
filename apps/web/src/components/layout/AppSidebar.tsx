@@ -27,7 +27,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/components/ui/utils';
 import { Wordmark } from '@/components/trakon/Wordmark';
-import { COMPANY, LEGAL_NAV } from '@/features/legal/companyInfo';
+import { COMPANY } from '@/features/legal/companyInfo';
 
 export type SidebarProject = { id: string; name: string };
 export type SidebarUser = {
@@ -102,24 +102,6 @@ export function AppSidebar({
           ヘルプ・サポート
         </a>
       </div>
-
-      {/* 会社情報・法務ページへの導線 (公開ページ)。別タブで開きアプリ操作を妨げない。
-          Figma には無いが表示義務があるため残している。 */}
-      <nav className="shrink-0 px-6 pb-3">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {LEGAL_NAV.map((item) => (
-            <a
-              key={item.to}
-              href={item.to}
-              target="_blank"
-              rel="noreferrer"
-              className="text-text-tertiary hover:text-foreground text-label underline-offset-2 hover:underline"
-            >
-              {item.label}
-            </a>
-          ))}
-        </div>
-      </nav>
 
       {/* ユーザー情報フッター: 全ページ共通で常時表示 (読込中は Skeleton)。
           アカウント系の導線はここに集約する (Figma node 254:2 のメニュー)。 */}
