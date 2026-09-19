@@ -1,7 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import {
   Archive,
-  CircleHelp,
   LayoutDashboard,
   List,
   MoreHorizontal,
@@ -27,7 +26,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/components/ui/utils';
 import { Wordmark } from '@/components/trakon/Wordmark';
-import { COMPANY } from '@/features/legal/companyInfo';
 
 export type SidebarProject = { id: string; name: string };
 export type SidebarUser = {
@@ -41,7 +39,7 @@ export type SidebarUser = {
  * ログイン後画面の左サイドバー (Figma node 9:2)。
  *
  * 幅 224px。上から ワードマーク / ダッシュボード / プロジェクト一覧、
- * 下に ヘルプ・法務導線 / ユーザー情報 を固定で置く。
+ * 下に ユーザー情報を固定で置く。
  * データ取得は行わない表示専用コンポーネント（配線は app/SidebarLayout.tsx）。
  */
 export function AppSidebar({
@@ -90,17 +88,6 @@ export function AppSidebar({
             <ProjectRow key={p.id} id={p.id} name={p.name} />
           ))}
         </nav>
-      </div>
-
-      {/* ヘルプページはまだ無いため、Figma のこの位置には問い合わせ導線を置く */}
-      <div className="shrink-0 px-3 pb-1">
-        <a
-          href={`mailto:${COMPANY.contactEmail}`}
-          className="text-text-secondary hover:bg-accent hover:text-foreground flex h-11 items-center gap-3 rounded-lg px-4 text-body transition-colors"
-        >
-          <CircleHelp className="size-5" aria-hidden />
-          ヘルプ・サポート
-        </a>
       </div>
 
       {/* ユーザー情報フッター: 全ページ共通で常時表示 (読込中は Skeleton)。
