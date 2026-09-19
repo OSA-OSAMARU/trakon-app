@@ -1,22 +1,20 @@
 import {
-  JOB_TITLES,
   JOB_TITLE_LABEL,
   MEMBER_TYPES,
   MEMBER_TYPE_LABEL,
   PROJECT_ROLES,
   PROJECT_ROLE_DESCRIPTION,
   PROJECT_ROLE_LABEL,
-  type JobTitle,
   type MemberType,
   type ProjectRole,
 } from '@trakon/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare, GripVertical, Mail, X } from 'lucide-react';
+import { Loader2, Plus, Trash2, UsersRound, ArrowLeft, KanbanSquare, GripVertical, X } from 'lucide-react';
 import { MemberKanbanTab } from '@/features/plans/MemberKanbanTab';
 import { toast } from 'sonner';
 
@@ -24,7 +22,6 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -66,6 +63,8 @@ import { cn } from '@/components/ui/utils';
 import { moveItem, useDragReorder } from '@/lib/reorder';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { NoOrgMembersHint, OrgMemberSelect } from '@/features/organization/OrgMemberSelect';
+import { useSelectableOrgMembers } from '@/features/organization/useOrgMembers';
 import { membersApi, membersQueryKey, type ProjectMember } from './membersApi';
 import { invitationsApi, invitationsQueryKey } from './invitationsApi';
 
@@ -146,7 +145,6 @@ export function MembersPage() {
 function ManageTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [removing, setRemoving] = useState<ProjectMember | null>(null);
 
   const query = useQuery({
@@ -234,9 +232,13 @@ function ManageTab({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-heading-section">参加者一覧</CardTitle>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setInviteOpen(true)}>
-              <Mail className="size-4" />
-              招待を送る
+            {/* 組織にまだ居ない人はここでは招待できない (#202)。
+                メンバー管理で組織へ招待してから、この画面で選ぶ一本道にしている。 */}
+            <Button size="sm" variant="secondary" asChild>
+              <Link to="/settings/members">
+                <UsersRound className="size-4" />
+                メンバー管理
+              </Link>
             </Button>
             <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="size-4" />
@@ -384,12 +386,7 @@ function ManageTab({ projectId }: { projectId: string }) {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         projectId={projectId}
-      />
-
-      <InviteMemberDialog
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        projectId={projectId}
+        existingUserIds={members.flatMap((m) => (m.userId ? [m.userId] : []))}
       />
 
       <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
@@ -422,47 +419,55 @@ function ManageTab({ projectId }: { projectId: string }) {
 // 参加者追加ダイアログ
 // -----------------------------------------------------------------------------
 const addSchema = z.object({
-  name: z.string().trim().min(1, '氏名は必須').max(100),
-  // メールは任意。入力された場合のみ形式チェック
-  email: z.union([z.literal(''), z.string().trim().email('メール形式が不正').max(320)]),
-  organizationName: z.string().trim().max(255),
+  // 値はセレクトから来るので形式は問わない。UUID としての妥当性はサーバーが見る
+  userId: z.string().min(1, 'メンバーを選択してください'),
   memberType: z.enum(MEMBER_TYPES),
-  jobTitle: z.string(),
+  roleType: z.enum(PROJECT_ROLES),
 });
 type AddValues = z.infer<typeof addSchema>;
 
+/**
+ * 参加者追加ダイアログ (#202)。
+ *
+ * 氏名・メール・所属を手入力していた頃は、同じ人が案件ごとに別人として登録され、
+ * 表記ゆれと「アカウントに紐づかない参加者」が量産されていた。組織メンバー
+ * (メンバー管理の一覧) から選ぶ形に一本化し、アカウントを唯一の起点にする。
+ *
+ * ここで指定するのは**プロジェクトごとに変わるもの**だけ。氏名・メール・所属・職種は
+ * アカウント側が正 (#156) なのでサーバーが引く。
+ */
 function AddMembersDialog({
   open,
   onClose,
   projectId,
+  existingUserIds,
 }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
+  /** 既にこのプロジェクトに居る人。候補から外す */
+  existingUserIds: string[];
 }) {
   const qc = useQueryClient();
+  const { members: orgMembers, isLoading: orgLoading } = useSelectableOrgMembers();
   const form = useForm<AddValues>({
     resolver: zodResolver(addSchema),
-    defaultValues: {
-      name: '',
-      email: '',
-      organizationName: '',
-      memberType: 'production',
-      jobTitle: '',
-    },
+    defaultValues: { userId: '', memberType: 'production', roleType: 'editor' },
   });
 
+  const selectedUserId = form.watch('userId');
+
+  // 選んだ相手の既定ロールを初期値にする。組織で「この人は閲覧者」と決めてあるなら
+  // プロジェクトでもそこから始めるのが自然 (その場で変更もできる)。
+  useEffect(() => {
+    const picked = orgMembers.find((m) => m.userId === selectedUserId);
+    if (picked) form.setValue('roleType', picked.defaultProjectRole);
+  }, [selectedUserId, orgMembers, form]);
+
+  const selectable = orgMembers.filter((m) => !existingUserIds.includes(m.userId));
+
   const addMut = useMutation({
-    mutationFn: (v: AddValues) =>
-      membersApi.add(projectId, {
-        members: [
-          {
-            ...v,
-            email: v.email.trim() || undefined,
-            jobTitle: (v.jobTitle as JobTitle) || undefined,
-          },
-        ],
-      }),
+    mutationFn: (v: AddValues) => membersApi.add(projectId, { members: [v] }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) });
       toast.success('参加者を追加しました');
@@ -470,7 +475,9 @@ function AddMembersDialog({
       onClose();
     },
     onError: (e) => {
-      if (e instanceof ApiClientError && e.code === 'MEMBER_EMAIL_TAKEN') {
+      if (e instanceof ApiClientError && e.code === 'ALREADY_MEMBER') {
+        toast.error('この方は既にこのプロジェクトの参加者です');
+      } else if (e instanceof ApiClientError && e.code === 'MEMBER_EMAIL_TAKEN') {
         toast.error('このメールアドレスは既に追加されています');
       } else {
         toast.error(e instanceof ApiClientError ? e.message : '追加に失敗しました');
@@ -484,65 +491,73 @@ function AddMembersDialog({
         <DialogHeader>
           <DialogTitle>参加者を追加</DialogTitle>
           <DialogDescription>
-            スケジュール上の担当者として登録します。メールは任意です。
+            メンバー管理に登録済みのメンバーから選んで、このプロジェクトに追加します。
           </DialogDescription>
         </DialogHeader>
-        <form
-          onSubmit={form.handleSubmit((v) => addMut.mutate(v))}
-          className="space-y-3"
-          id="add-member-form"
-        >
-          <Field label="氏名" error={form.formState.errors.name?.message}>
-            <Input {...form.register('name')} autoFocus />
-          </Field>
-          <Field label="所属" error={form.formState.errors.organizationName?.message}>
-            <Input {...form.register('organizationName')} />
-          </Field>
-          <Field label="メール（任意）" error={form.formState.errors.email?.message}>
-            <Input type="email" {...form.register('email')} />
-          </Field>
-          <Field label="職種">
-            <Select
-              value={form.watch('jobTitle')}
-              onValueChange={(v) => form.setValue('jobTitle', v)}
-            >
-              <SelectTrigger aria-label="職種">
-                <SelectValue placeholder="職種を選択" />
-              </SelectTrigger>
-              <SelectContent>
-                {JOB_TITLES.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {JOB_TITLE_LABEL[v]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="区分" error={form.formState.errors.memberType?.message}>
-            <Select
-              defaultValue="production"
-              onValueChange={(v) =>
-                form.setValue('memberType', v as MemberType)
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MEMBER_TYPES.map((v) => (
-                  <SelectItem key={v} value={v}>
-                    {MEMBER_TYPE_LABEL[v]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        </form>
+        {!orgLoading && selectable.length === 0 ? (
+          <NoOrgMembersHint className="text-text-secondary text-body" />
+        ) : (
+          <form
+            onSubmit={form.handleSubmit((v) => addMut.mutate(v))}
+            className="space-y-3"
+            id="add-member-form"
+          >
+            <Field label="メンバー" error={form.formState.errors.userId?.message}>
+              <OrgMemberSelect
+                label="メンバー"
+                value={selectedUserId}
+                exclude={existingUserIds}
+                onChange={(v) => form.setValue('userId', v, { shouldValidate: true })}
+              />
+            </Field>
+            <Field label="区分" error={form.formState.errors.memberType?.message}>
+              <Select
+                value={form.watch('memberType')}
+                onValueChange={(v) => form.setValue('memberType', v as MemberType)}
+              >
+                <SelectTrigger aria-label="区分">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MEMBER_TYPES.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {MEMBER_TYPE_LABEL[v]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="権限" error={form.formState.errors.roleType?.message}>
+              <Select
+                value={form.watch('roleType')}
+                onValueChange={(v) => form.setValue('roleType', v as ProjectRole)}
+              >
+                <SelectTrigger aria-label="権限">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROJECT_ROLES.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {PROJECT_ROLE_LABEL[v]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-text-tertiary text-label">
+                {PROJECT_ROLE_DESCRIPTION[form.watch('roleType')]}
+              </p>
+            </Field>
+          </form>
+        )}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
             キャンセル
           </Button>
-          <Button form="add-member-form" type="submit" disabled={addMut.isPending}>
+          <Button
+            form="add-member-form"
+            type="submit"
+            disabled={addMut.isPending || selectable.length === 0}
+          >
             {addMut.isPending ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
@@ -579,145 +594,5 @@ function NotFound({ projectId: _ }: { projectId: string | undefined }) {
     <div className="mx-auto max-w-3xl px-8 py-20 text-center text-body text-muted-foreground">
       プロジェクトが見つかりませんでした。
     </div>
-  );
-}
-
-// -----------------------------------------------------------------------------
-// 招待ダイアログ (UC-31)
-//
-// 招待は組織の座席を 1 つ消費する。上限に達している場合はサーバーが
-// SEAT_LIMIT_REACHED 409 を返すので、その旨をそのまま表示する。
-// -----------------------------------------------------------------------------
-const inviteSchema = z.object({
-  email: z.string().trim().email('メール形式が不正').max(320),
-  name: z.string().trim().max(100),
-  organizationName: z.string().trim().max(255),
-  memberType: z.enum(MEMBER_TYPES),
-  jobTitle: z.string(),
-  roleType: z.enum(PROJECT_ROLES),
-});
-type InviteValues = z.infer<typeof inviteSchema>;
-
-function InviteMemberDialog({
-  open,
-  onClose,
-  projectId,
-}: {
-  open: boolean;
-  onClose: () => void;
-  projectId: string;
-}) {
-  const qc = useQueryClient();
-  const form = useForm<InviteValues>({
-    resolver: zodResolver(inviteSchema),
-    defaultValues: {
-      email: '',
-      name: '',
-      organizationName: '',
-      memberType: 'production',
-      jobTitle: '',
-      roleType: 'editor',
-    },
-  });
-
-  const mutation = useMutation({
-    mutationFn: (values: InviteValues) =>
-      invitationsApi.create(projectId, {
-        email: values.email,
-        roleType: values.roleType,
-        ...(values.name ? { name: values.name } : {}),
-        organizationName: values.organizationName,
-        memberType: values.memberType,
-        jobTitle: (values.jobTitle || null) as JobTitle | null,
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) });
-      qc.invalidateQueries({ queryKey: invitationsQueryKey.list(projectId) });
-      toast.success('招待メールを送信しました');
-      form.reset();
-      onClose();
-    },
-    onError: (e) =>
-      toast.error(e instanceof ApiClientError ? e.message : '招待の送信に失敗しました'),
-  });
-
-  const roleType = form.watch('roleType');
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>参加者を招待</DialogTitle>
-          <DialogDescription>
-            招待メールを送り、受諾すると会員アカウントとして参加します。
-          </DialogDescription>
-        </DialogHeader>
-
-        <form
-          id="invite-member-form"
-          className="grid gap-4"
-          onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
-        >
-          <Field label="メールアドレス" error={form.formState.errors.email?.message}>
-            <Input type="email" autoComplete="off" {...form.register('email')} />
-          </Field>
-
-          <Field label="氏名 (任意)" error={form.formState.errors.name?.message}>
-            <Input {...form.register('name')} />
-          </Field>
-
-          <Field label="所属 (任意)" error={form.formState.errors.organizationName?.message}>
-            <Input {...form.register('organizationName')} />
-          </Field>
-
-          <Field label="区分">
-            <Select
-              value={form.watch('memberType')}
-              onValueChange={(v) => form.setValue('memberType', v as MemberType)}
-            >
-              <SelectTrigger aria-label="区分">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MEMBER_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {MEMBER_TYPE_LABEL[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="権限">
-            <Select
-              value={roleType}
-              onValueChange={(v) => form.setValue('roleType', v as ProjectRole)}
-            >
-              <SelectTrigger aria-label="権限">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROJECT_ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {PROJECT_ROLE_LABEL[r]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-label text-muted-foreground">{PROJECT_ROLE_DESCRIPTION[roleType]}</p>
-          </Field>
-        </form>
-
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={onClose}>
-            キャンセル
-          </Button>
-          <Button type="submit" form="invite-member-form" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader2 className="size-4 animate-spin" />}
-            招待を送る
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

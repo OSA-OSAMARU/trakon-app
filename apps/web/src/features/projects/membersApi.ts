@@ -20,13 +20,16 @@ export type ProjectMember = {
   updatedAt: string;
 };
 
+/**
+ * 参加者の追加 (#202)。
+ * 「メンバー管理」の組織メンバーから選ぶ。氏名・メール・所属・職種は
+ * アカウント側が正 (#156) なのでサーバーが引く。
+ */
 export type AddMembersInput = {
   members: Array<{
-    name: string;
-    email?: string;
-    organizationName: string;
+    userId: string;
     memberType: MemberType;
-    jobTitle?: JobTitle | null;
+    /** 省略時は組織で設定された既定ロール */
     roleType?: ProjectRole;
   }>;
 };

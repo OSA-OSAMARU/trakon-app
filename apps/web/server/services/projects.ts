@@ -252,12 +252,37 @@ export async function createProject(input: {
     );
   }
 
-  // 作成者のメールがメンバー入力に被ると uq_pm_project_email 違反になるため除外
-  // (メール未登録の参加者は衝突しないためそのまま残す)。
+  // 参加者は組織メンバーから選ぶ (#202)。氏名・メールはアカウントから引く。
+  const memberUserIds = body.members.map((m) => m.userId);
+  const orgMembers = memberUserIds.length
+    ? await prisma.organizationMember.findMany({
+        where: { organizationId, userId: { in: memberUserIds }, deletedAt: null },
+        select: {
+          userId: true,
+          defaultProjectRole: true,
+          user: { select: { id: true, displayName: true, email: true, deletedAt: true } },
+        },
+      })
+    : [];
+  const orgMemberByUserId = new Map(
+    orgMembers.filter((om) => om.user.deletedAt === null).map((om) => [om.userId, om]),
+  );
+  for (const id of memberUserIds) {
+    if (!orgMemberByUserId.has(id)) {
+      throw new ApiException(
+        'NOT_ORGANIZATION_MEMBER',
+        422,
+        'この組織のメンバーではないため追加できません。',
+        { userId: id },
+      );
+    }
+  }
+
+  // 作成者は必ず参加者に入るので、入力側から除く (uq_pm_project_user 違反を避ける)。
   // 進行責任者は入力順 (index) で指されるため、元の位置も控えておく。
   const filteredMembers = body.members
     .map((m, index) => ({ m, index }))
-    .filter(({ m }) => !m.email || m.email.toLowerCase() !== creator.email.toLowerCase());
+    .filter(({ m }) => m.userId !== currentUserId);
 
   const created = await prisma.$transaction(async (tx) => {
     const project = await tx.project.create({
@@ -298,16 +323,18 @@ export async function createProject(input: {
     // 進行責任者に据える参加者の id を拾うため 1 件ずつ作る (最大 50 件)
     let progressManagerMemberId: string | null = null;
     for (const [idx, { m, index }] of filteredMembers.entries()) {
+      const om = orgMemberByUserId.get(m.userId)!;
       const row = await tx.projectMember.create({
         data: {
           projectId: project.id,
-          userId: null,
-          name: m.name,
-          email: m.email ?? null,
-          organizationName: m.organizationName,
+          userId: om.user.id,
+          name: om.user.displayName,
+          email: om.user.email,
+          // アカウント紐付け済みの行は users 側が正 (#156)
+          organizationName: '',
+          jobTitle: null,
           memberType: m.memberType,
-          jobTitle: m.jobTitle ?? null,
-          roleType: m.roleType,
+          roleType: m.roleType ?? (om.defaultProjectRole as ProjectRole),
           sortOrder: idx + 1,
         },
       });

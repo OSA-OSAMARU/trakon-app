@@ -26,7 +26,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { ApiClientError } from '@/lib/api';
-import { JOB_TITLES, JOB_TITLE_LABEL, MEMBER_TYPES, MEMBER_TYPE_LABEL, type JobTitle, type MemberType } from '@trakon/shared';
+import {
+  MEMBER_TYPES,
+  MEMBER_TYPE_LABEL,
+  PROJECT_ROLES,
+  PROJECT_ROLE_LABEL,
+  type MemberType,
+  type ProjectRole,
+} from '@trakon/shared';
+
+import { NoOrgMembersHint, OrgMemberSelect } from '@/features/organization/OrgMemberSelect';
+import { orgMemberLabel, useSelectableOrgMembers } from '@/features/organization/useOrgMembers';
 
 import { projectsApi, projectsQueryKey } from './api';
 
@@ -41,13 +51,15 @@ const schema = z
     items: z
       .array(z.object({ name: z.string().trim().max(255) }))
       .min(1, '制作物は最低 1 件必要です'),
+    /**
+     * 参加者は「メンバー管理」の組織メンバーから選ぶ (#202)。
+     * 未選択の行は空文字で持ち、送信時に落とす。
+     */
     members: z.array(
       z.object({
-        name: z.string().trim().max(100),
-        email: z.string().trim().max(320),
-        organizationName: z.string().trim().max(255),
+        userId: z.string(),
         memberType: z.enum(MEMBER_TYPES),
-        jobTitle: z.string(),
+        roleType: z.enum(PROJECT_ROLES),
       }),
     ),
     /** 進行責任者に据える参加者。members のインデックス (文字列は Select の値) */
@@ -65,18 +77,20 @@ const schema = z
         message: '制作物を 1 件以上入力してください',
       });
     }
-    // 完全な空行は無視するが、一部だけ入力された行は氏名欄にエラーを出す (Figma node 78:18)
+    // 同じ人を 2 行選んでいたら気づけるようにする
+    const seen = new Set<string>();
     v.members.forEach((m, idx) => {
-      const filled = [m.email, m.organizationName, m.jobTitle].some((x) => x.trim() !== '');
-      if (filled && m.name.trim() === '') {
+      if (!m.userId) return;
+      if (seen.has(m.userId)) {
         ctx.addIssue({
           code: 'custom',
-          path: ['members', idx, 'name'],
-          message: '氏名を入力してください',
+          path: ['members', idx, 'userId'],
+          message: '同じメンバーが既に選ばれています',
         });
       }
+      seen.add(m.userId);
     });
-    if (v.members.filter((m) => m.name.trim() !== '').length > 0 && v.progressManagerIndex === '') {
+    if (v.members.filter((m) => m.userId !== '').length > 0 && v.progressManagerIndex === '') {
       ctx.addIssue({
         code: 'custom',
         path: ['progressManagerIndex'],
@@ -89,11 +103,9 @@ type FormValues = z.infer<typeof schema>;
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const emptyMember = () => ({
-  name: '',
-  email: '',
-  organizationName: '',
+  userId: '',
   memberType: 'production' as const,
-  jobTitle: '',
+  roleType: 'editor' as const,
 });
 
 export function ProjectCreatePage() {
@@ -116,6 +128,7 @@ export function ProjectCreatePage() {
 
   const items = useFieldArray({ control: form.control, name: 'items' });
   const members = useFieldArray({ control: form.control, name: 'members' });
+  const { byUserId: orgMemberById } = useSelectableOrgMembers();
 
   const createMut = useMutation({
     mutationFn: projectsApi.create,
@@ -133,17 +146,14 @@ export function ProjectCreatePage() {
 
   const onSubmit = (values: FormValues) => {
     const cleanedItems = values.items.filter((i) => i.name.trim() !== '');
-    // 参加者はスケジュール担当者。氏名があれば登録し、メールは任意 (空欄は未登録)
-    // 完全な空行は作成時に無視する (Figma node 78:18)
+    // 未選択の行は作成時に無視する (Figma node 78:18)
     const kept = values.members
       .map((m, index) => ({ m, index }))
-      .filter(({ m }) => m.name.trim() !== '');
+      .filter(({ m }) => m.userId !== '');
     const cleanedMembers = kept.map(({ m }) => ({
-      name: m.name.trim(),
-      email: m.email.trim() || undefined,
-      organizationName: m.organizationName.trim(),
+      userId: m.userId,
       memberType: m.memberType,
-      jobTitle: (m.jobTitle as JobTitle) || undefined,
+      roleType: m.roleType,
     }));
     // 進行責任者は「空行を除いたあとの位置」で送る
     const pmAt = kept.findIndex(({ index }) => String(index) === values.progressManagerIndex);
@@ -161,8 +171,8 @@ export function ProjectCreatePage() {
   const watchedMembers = form.watch('members');
   const watchedItems = form.watch('items');
   const namedMembers = watchedMembers
-    .map((m, index) => ({ ...m, index }))
-    .filter((m) => m.name.trim() !== '');
+    .map((m, index) => ({ ...m, index, member: orgMemberById.get(m.userId) }))
+    .filter((m) => !!m.member);
   const itemCount = watchedItems.filter((i) => i.name.trim() !== '').length;
 
   /** 末尾に空行を 1 行足して、その先頭欄へフォーカスする (Figma node 78:18)。 */
@@ -172,7 +182,6 @@ export function ProjectCreatePage() {
       requestAnimationFrame(() => form.setFocus(`items.${items.fields.length}.name`));
     } else {
       members.append(emptyMember());
-      requestAnimationFrame(() => form.setFocus(`members.${members.fields.length}.name`));
     }
   };
 
@@ -252,62 +261,35 @@ export function ProjectCreatePage() {
           </FormCard>
 
           <FormCard title="参加者" description="参加者を登録し、プロジェクトの進行責任者を設定します">
-            <div className="text-text-tertiary grid grid-cols-[1fr_1fr_1.3fr_1.5fr_1.2fr_36px] gap-3 text-label font-medium">
+            {/* 参加者は「メンバー管理」の組織メンバーから選ぶ (#202)。
+                氏名・所属・メール・職種はアカウント側が正なのでここでは扱わない。 */}
+            <div className="text-text-tertiary grid grid-cols-[2fr_1.2fr_1.2fr_36px] gap-3 text-label font-medium">
               <span className="flex items-center gap-1.5">
-                氏名
+                メンバー
                 <Badge variant="brand" size="sm">
                   必須
                 </Badge>
               </span>
-              <span>所属</span>
-              <span>通知先メール</span>
-              <span>職種</span>
               <span>区分</span>
+              <span>権限</span>
               <span />
             </div>
             {members.fields.map((f, idx) => (
-              <div
-                key={f.id}
-                className="grid grid-cols-[1fr_1fr_1.3fr_1.5fr_1.2fr_36px] items-start gap-3"
-              >
+              <div key={f.id} className="grid grid-cols-[2fr_1.2fr_1.2fr_36px] items-start gap-3">
                 <div className="flex flex-col gap-1">
-                  <Input
-                    className="h-[38px]"
-                    placeholder="氏名"
-                    {...form.register(`members.${idx}.name` as const)}
+                  <OrgMemberSelect
+                    size="sm"
+                    label={`参加者 ${idx + 1}`}
+                    value={form.watch(`members.${idx}.userId`)}
+                    exclude={watchedMembers.map((m) => m.userId).filter(Boolean)}
+                    onChange={(v) => form.setValue(`members.${idx}.userId`, v)}
                   />
-                  {form.formState.errors.members?.[idx]?.name && (
+                  {form.formState.errors.members?.[idx]?.userId && (
                     <span className="text-destructive text-label">
-                      {form.formState.errors.members[idx]?.name?.message}
+                      {form.formState.errors.members[idx]?.userId?.message}
                     </span>
                   )}
                 </div>
-                <Input
-                  className="h-[38px]"
-                  placeholder="所属"
-                  {...form.register(`members.${idx}.organizationName` as const)}
-                />
-                <Input
-                  className="h-[38px]"
-                  type="email"
-                  placeholder="通知先メール"
-                  {...form.register(`members.${idx}.email` as const)}
-                />
-                <Select
-                  value={form.watch(`members.${idx}.jobTitle`)}
-                  onValueChange={(v) => form.setValue(`members.${idx}.jobTitle`, v)}
-                >
-                  <SelectTrigger size="sm" aria-label={`参加者 ${idx + 1} の職種`}>
-                    <SelectValue placeholder="職種を選択" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {JOB_TITLES.map((v) => (
-                      <SelectItem key={v} value={v}>
-                        {JOB_TITLE_LABEL[v]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
                 <Select
                   value={form.watch(`members.${idx}.memberType`)}
                   onValueChange={(v) =>
@@ -321,6 +303,23 @@ export function ProjectCreatePage() {
                     {MEMBER_TYPES.map((v) => (
                       <SelectItem key={v} value={v}>
                         {MEMBER_TYPE_LABEL[v]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={form.watch(`members.${idx}.roleType`)}
+                  onValueChange={(v) =>
+                    form.setValue(`members.${idx}.roleType`, v as ProjectRole)
+                  }
+                >
+                  <SelectTrigger size="sm" aria-label={`参加者 ${idx + 1} の権限`}>
+                    <SelectValue placeholder="権限を選択" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PROJECT_ROLES.map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {PROJECT_ROLE_LABEL[v]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -348,9 +347,7 @@ export function ProjectCreatePage() {
                 <Plus />
                 参加者を追加
               </Button>
-              <p className="text-text-tertiary flex-1 text-label">
-                通知先メールには、確認TOSSやコメントRETURNなど、対応が必要なときに通知します。プロジェクト作成時には送信されません。
-              </p>
+              <NoOrgMembersHint className="text-text-tertiary flex-1 text-label" />
             </div>
 
             <Separator className="my-2" />
@@ -373,15 +370,14 @@ export function ProjectCreatePage() {
                 <SelectTrigger aria-label="進行責任者">
                   <SelectValue
                     placeholder={
-                      namedMembers.length === 0 ? 'まず参加者を入力してください' : '進行責任者を選択'
+                      namedMembers.length === 0 ? 'まず参加者を選んでください' : '進行責任者を選択'
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
                   {namedMembers.map((m) => (
                     <SelectItem key={m.index} value={String(m.index)}>
-                      {m.name}
-                      {m.organizationName ? ` / ${m.organizationName}` : ''}
+                      {orgMemberLabel(m.member!)}
                     </SelectItem>
                   ))}
                 </SelectContent>

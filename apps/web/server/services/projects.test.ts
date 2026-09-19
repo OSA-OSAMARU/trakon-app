@@ -192,6 +192,21 @@ const prismaMock = {
     findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
       userStore[where.userId] ? { organizationId: `org-${where.userId}`, orgRole: 'owner' } : null,
     ),
+    // 参加者の候補 (#202)。userStore に居る人はすべて同じ組織のメンバーとして扱う。
+    findMany: vi.fn(async ({ where }: { where: { userId: { in: string[] } } }) =>
+      where.userId.in.flatMap((id) => {
+        const u = userStore[id];
+        return u
+          ? [
+              {
+                userId: id,
+                defaultProjectRole: 'editor',
+                user: { id, displayName: u.displayName, email: u.email, deletedAt: null },
+              },
+            ]
+          : [];
+      }),
+    ),
     count: vi.fn(async () => 1),
   },
   // プロジェクト数上限の判定 (§7.11.1)。既定は Team (無制限) にして
@@ -264,19 +279,27 @@ function seedProject(p: Partial<MockProject> & { id: string; createdBy: string }
 }
 
 describe('createProject', () => {
+  // 参加者は組織メンバーから選ぶ (#202)。候補は userStore に居る人。
   const body = {
     name: '新規プロジェクト',
     startDate: '2026-07-01',
     endDate: '2026-07-31',
     items: [{ name: '台本' }, { name: '撮影' }],
     members: [
-      { name: '田中', email: 'tanaka@example.com', organizationName: 'A社', memberType: 'client' as const, roleType: 'viewer' as const },
-      { name: '鈴木', email: 'suzuki@example.com', organizationName: '', memberType: 'production' as const, roleType: 'editor' as const },
+      { userId: 'u-tanaka', memberType: 'client' as const, roleType: 'viewer' as const },
+      { userId: 'u-suzuki', memberType: 'production' as const, roleType: 'editor' as const },
     ],
   };
 
-  it('プロジェクト・制作物・メンバー (作成者+招待先) を 1 トランザクションで作成し詳細を返す', async () => {
+  /** 参加者候補の組織メンバーを投入する。 */
+  function seedCandidates() {
+    userStore['u-tanaka'] = { id: 'u-tanaka', displayName: '田中', email: 'tanaka@example.com' };
+    userStore['u-suzuki'] = { id: 'u-suzuki', displayName: '鈴木', email: 'suzuki@example.com' };
+  }
+
+  it('プロジェクト・制作物・メンバー (作成者+参加者) を 1 トランザクションで作成し詳細を返す', async () => {
     userStore['u-1'] = { id: 'u-1', displayName: '河津', email: 'kawazu@example.com' };
+    seedCandidates();
 
     const res = await createProject({ body, currentUserId: 'u-1' });
 
@@ -296,38 +319,50 @@ describe('createProject', () => {
     expect(itemStore).toHaveLength(2);
     expect(itemStore.map((i) => i.sortOrder)).toEqual([0, 1]);
 
-    // 作成者本人は userId 紐付き・sortOrder 0、招待先は userId NULL
+    // 参加者は全員アカウント紐付き (#202)。氏名・メールはアカウントから引く
     const creator = memberStore.find((m) => m.userId === 'u-1');
     expect(creator).toMatchObject({ name: '河津', email: 'kawazu@example.com', sortOrder: 0 });
-    const invited = memberStore.filter((m) => m.userId === null);
-    expect(invited.map((m) => m.email)).toEqual(['tanaka@example.com', 'suzuki@example.com']);
-    expect(invited.map((m) => m.sortOrder)).toEqual([1, 2]);
+    const others = memberStore.filter((m) => m.userId !== 'u-1');
+    expect(others.map((m) => m.email)).toEqual(['tanaka@example.com', 'suzuki@example.com']);
+    expect(others.map((m) => m.userId)).toEqual(['u-tanaka', 'u-suzuki']);
+    expect(others.map((m) => m.sortOrder)).toEqual([1, 2]);
 
     expect(txClient.projectItem.createMany).toHaveBeenCalledTimes(1);
     // #147: 進行責任者に据える参加者の id を拾うため、参加者は 1 件ずつ作る
-    // (作成者 1 + 招待先 2 = 3 回)
+    // (作成者 1 + 参加者 2 = 3 回)
     expect(txClient.projectMember.create).toHaveBeenCalledTimes(3);
   });
 
-  it('作成者と同一メールのメンバー入力は除外される (大小文字無視)', async () => {
-    userStore['u-1'] = { id: 'u-1', displayName: '河津', email: 'Kawazu@Example.com' };
+  it('作成者本人を参加者に選んでも二重に作らない', async () => {
+    userStore['u-1'] = { id: 'u-1', displayName: '河津', email: 'kawazu@example.com' };
+    seedCandidates();
     const dup = {
       ...body,
       members: [
-        { name: '本人重複', email: 'kawazu@example.com', organizationName: '', memberType: 'production' as const, roleType: 'editor' as const },
-        { name: '田中', email: 'tanaka@example.com', organizationName: '', memberType: 'client' as const, roleType: 'viewer' as const },
+        { userId: 'u-1', memberType: 'production' as const, roleType: 'editor' as const },
+        { userId: 'u-tanaka', memberType: 'client' as const, roleType: 'viewer' as const },
       ],
     };
 
     const res = await createProject({ body: dup, currentUserId: 'u-1' });
 
-    // 作成者 1 + 重複除外後の招待先 1 = 2
+    // 作成者 1 + 重複除外後の参加者 1 = 2
     expect(res.counts.memberCount).toBe(2);
-    const invited = memberStore.filter((m) => m.userId === null);
-    expect(invited.map((m) => m.email)).toEqual(['tanaka@example.com']);
+    const others = memberStore.filter((m) => m.userId !== 'u-1');
+    expect(others.map((m) => m.email)).toEqual(['tanaka@example.com']);
   });
 
-  it('制作物 0 件・招待先 0 件のとき createMany は呼ばれず作成者のみ', async () => {
+  it('組織メンバーでない相手は 422 NOT_ORGANIZATION_MEMBER', async () => {
+    userStore['u-1'] = { id: 'u-1', displayName: '河津', email: 'kawazu@example.com' };
+    await expect(
+      createProject({
+        body: { ...body, members: [{ userId: 'u-outsider', memberType: 'client' as const }] },
+        currentUserId: 'u-1',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_ORGANIZATION_MEMBER', status: 422 });
+  });
+
+  it('制作物 0 件・参加者 0 件のとき createMany は呼ばれず作成者のみ', async () => {
     userStore['u-1'] = { id: 'u-1', displayName: '河津', email: 'kawazu@example.com' };
     const minimal = { ...body, items: [], members: [] };
 
@@ -335,7 +370,7 @@ describe('createProject', () => {
 
     expect(res.counts).toEqual({ memberCount: 1, itemCount: 0 });
     expect(txClient.projectItem.createMany).not.toHaveBeenCalled();
-    // 招待先 0 件なので作成者の 1 回だけ
+    // 参加者 0 件なので作成者の 1 回だけ
     expect(txClient.projectMember.create).toHaveBeenCalledTimes(1);
     expect(txClient.projectMember.create).toHaveBeenCalledTimes(1);
   });

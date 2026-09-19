@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { api } from '../../test/request.js';
 import {
   createMember,
+  createOrgMember,
   createOutsider,
   createUser,
+  primaryOrganizationId,
   setupProjectWithDirector,
 } from '../../test/factories.js';
 import { signTestJwt } from '../../test/auth.js';
@@ -36,54 +38,61 @@ describe('members routes (integration)', () => {
       expect(res.body.data).toHaveLength(2);
     });
 
-    it('POST /members はディレクターが参加者を作成し 201 を返す (招待は送らない)', async () => {
-      const { token, project } = await setupProjectWithDirector();
+    it('POST /members は組織メンバーをアカウント紐付きで追加し 201 を返す (#202)', async () => {
+      const { token, project, user } = await setupProjectWithDirector();
+      const organizationId = await primaryOrganizationId(user.id);
+      const colleague = await createUser({ withOrganization: false });
+      await createOrgMember({ organizationId, userId: colleague.id });
 
       const res = await api<{
-        data: Array<{ id: string; email: string | null; userId: string | null }>;
+        data: Array<{ id: string; name: string; email: string | null; userId: string | null; roleType: string }>;
       }>(`/api/v1/projects/${project.id}/members`, {
         method: 'POST',
         token,
-        body: {
-          members: [
-            {
-              name: 'Client A',
-              email: 'client-a@example.test',
-              organizationName: 'Acme',
-              memberType: 'client',
-            },
-          ],
-        },
+        body: { members: [{ userId: colleague.id, memberType: 'client' }] },
       });
 
       expect(res.status).toBe(201);
       expect(res.body.data).toHaveLength(1);
-      expect(res.body.data[0]!.email).toBe('client-a@example.test');
-      expect(res.body.data[0]!.userId).toBeNull();
+      // 氏名・メールは入力ではなくアカウントから引く (#156)
+      expect(res.body.data[0]!.userId).toBe(colleague.id);
+      expect(res.body.data[0]!.email).toBe(colleague.email);
+      // 権限を省略したので組織の既定ロール (editor)
+      expect(res.body.data[0]!.roleType).toBe('editor');
     });
 
-    it('POST /members はメール無しの参加者を作成できる', async () => {
+    it('POST /members は組織外のユーザーを 422 NOT_ORGANIZATION_MEMBER で弾く (#202)', async () => {
       const { token, project } = await setupProjectWithDirector();
+      // 別組織を持つユーザー
+      const outsider = await createUser();
 
-      const res = await api<{
-        data: Array<{ id: string; email: string | null }>;
-      }>(`/api/v1/projects/${project.id}/members`, {
-        method: 'POST',
-        token,
-        body: {
-          members: [
-            {
-              name: 'メール無し 担当者',
-              organizationName: '',
-              memberType: 'production',
-            },
-          ],
+      const res = await api<{ error: { code: string } }>(
+        `/api/v1/projects/${project.id}/members`,
+        {
+          method: 'POST',
+          token,
+          body: { members: [{ userId: outsider.id, memberType: 'client' }] },
         },
-      });
+      );
 
-      expect(res.status).toBe(201);
-      expect(res.body.data).toHaveLength(1);
-      expect(res.body.data[0]!.email).toBeNull();
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('NOT_ORGANIZATION_MEMBER');
+    });
+
+    it('POST /members は既に参加している相手を 409 ALREADY_MEMBER で弾く (#202)', async () => {
+      const { token, project, user } = await setupProjectWithDirector();
+
+      const res = await api<{ error: { code: string } }>(
+        `/api/v1/projects/${project.id}/members`,
+        {
+          method: 'POST',
+          token,
+          body: { members: [{ userId: user.id, memberType: 'production' }] },
+        },
+      );
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('ALREADY_MEMBER');
     });
 
     it('POST /members/reorder はディレクターが並び替えでき、新しい順序を返す (#111)', async () => {
@@ -198,14 +207,7 @@ describe('members routes (integration)', () => {
           method: 'POST',
           token,
           body: {
-            members: [
-              {
-                name: 'X',
-                email: 'x@example.test',
-                organizationName: '',
-                memberType: 'client',
-              },
-            ],
+            members: [{ userId: crypto.randomUUID(), memberType: 'client' }],
           },
         },
       );
@@ -221,12 +223,15 @@ describe('members routes (integration)', () => {
       expect(res.status).toBe(422);
     });
 
-    it('既存メンバーと同一メールの追加は 409 MEMBER_EMAIL_TAKEN', async () => {
-      const { token, project } = await setupProjectWithDirector();
+    it('アカウント紐付け前の参加者行と同一メールなら 409 MEMBER_EMAIL_TAKEN', async () => {
+      const { token, project, user } = await setupProjectWithDirector();
+      const organizationId = await primaryOrganizationId(user.id);
+      const colleague = await createUser({ withOrganization: false });
+      await createOrgMember({ organizationId, userId: colleague.id });
       await createMember({
         projectId: project.id,
         userId: null,
-        email: 'dup@example.test',
+        email: colleague.email,
         memberType: 'client',
       });
 
@@ -235,16 +240,7 @@ describe('members routes (integration)', () => {
         {
           method: 'POST',
           token,
-          body: {
-            members: [
-              {
-                name: 'Dup',
-                email: 'dup@example.test',
-                organizationName: '',
-                memberType: 'client',
-              },
-            ],
-          },
+          body: { members: [{ userId: colleague.id, memberType: 'client' }] },
         },
       );
       expect(res.status).toBe(409);

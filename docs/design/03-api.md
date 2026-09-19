@@ -930,7 +930,7 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 
 #### `POST /api/v1/projects/:projectId/members`
 
-参加者追加。
+参加者追加。**組織メンバー（「メンバー管理」の一覧）からのみ追加できる**（#202）。
 
 **認可**：プロジェクトディレクター。
 
@@ -938,18 +938,27 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 ```typescript
 {
   members: Array<{
-    name: string,
-    email: string,
-    organizationName: string,
-    memberType: 'client' | 'production',
-    sortOrder?: number,
+    userId: string,                          // 組織メンバーの users.id
+    memberType: 'client' | 'production' | 'partner',
+    roleType?: 'admin' | 'editor' | 'viewer', // 省略時は組織の既定ロール
   }>,
 }
 ```
 
+氏名・メール・所属・職種は**受け取らない**。アカウント側（`users`）が正であり（#156）、
+手入力を許すと同じ人が案件ごとに別人として登録され、表記ゆれと
+「アカウントに紐づかない参加者」が量産されるため。
+
 **処理**：
-- `project_members` INSERT
-- 既存 `users` に紐付かないメールには `invitations` + 招待メール送信（POST /projects と同方式）
+- `organization_members` に居ることを確認し、`users` から氏名・メールを引いて `project_members` INSERT
+- `user_id` を埋めるので、追加した時点でその人は実際に操作できる（招待メールは送らない）
+- `organization_name` / `job_title` は空にする（アカウント紐付け済みの行は users 側が正、#156）
+
+**エラー**：
+- 422 `NOT_ORGANIZATION_MEMBER` — この組織のメンバーではない（組織外の人は先に「メンバー管理」から組織へ招待する）
+- 422 `DUPLICATE_MEMBER` — 同じ相手を 1 リクエスト内で重複指定
+- 409 `ALREADY_MEMBER` — 既にこのプロジェクトの参加者
+- 409 `MEMBER_EMAIL_TAKEN` — アカウント紐付け前の参加者行が同じメールで残っている
 
 ---
 

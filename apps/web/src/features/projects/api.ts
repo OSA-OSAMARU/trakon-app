@@ -1,4 +1,4 @@
-import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
+import type { MemberType, ProjectRole } from '@trakon/shared';
 
 import { apiRequest } from '@/lib/api';
 
@@ -53,12 +53,15 @@ export type CreateProjectInput = {
   startDate: string;
   endDate: string;
   items: Array<{ name: string }>;
+  /**
+   * 参加者。「メンバー管理」の組織メンバーから選ぶ (#202)。
+   * 氏名・メール・所属・職種はアカウント側が正なのでここでは送らない。
+   */
   members: Array<{
-    name: string;
-    email?: string;
-    organizationName: string;
+    userId: string;
     memberType: MemberType;
-    jobTitle?: JobTitle;
+    /** 省略時は組織で設定された既定ロール */
+    roleType?: ProjectRole;
   }>;
   /** 進行責任者に据える参加者。members のインデックスで指す (#147) */
   progressManagerIndex?: number;

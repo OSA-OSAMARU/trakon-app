@@ -54,17 +54,9 @@ describe('membersApi', () => {
         return HttpResponse.json({ data: [stubMember] });
       }),
     );
+    // 参加者は組織メンバーの userId で指定する (#202)
     const input: AddMembersInput = {
-      members: [
-        {
-          name: '田中',
-          email: 'tanaka@example.com',
-          organizationName: '株式会社A',
-          memberType: 'production',
-          jobTitle: null,
-          roleType: 'editor',
-        },
-      ],
+      members: [{ userId: 'u-tanaka', memberType: 'production', roleType: 'editor' }],
     };
     const res = await membersApi.add('proj-1', input);
     expect(res).toEqual([stubMember]);

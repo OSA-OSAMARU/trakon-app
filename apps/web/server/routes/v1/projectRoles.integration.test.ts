@@ -50,7 +50,7 @@ const ADMIN_ONLY: Array<{ name: string; method: 'POST' | 'PATCH' | 'DELETE'; pat
   { name: 'POST /items', method: 'POST', path: (c) => `/api/v1/projects/${c.projectId}/items`, body: { name: '新しい制作物' } },
   { name: 'PATCH /items/:itemId', method: 'PATCH', path: (c) => `/api/v1/projects/${c.projectId}/items/${c.itemId}`, body: { name: '変更後' } },
   { name: 'DELETE /items/:itemId', method: 'DELETE', path: (c) => `/api/v1/projects/${c.projectId}/items/${c.itemId}` },
-  { name: 'POST /members', method: 'POST', path: (c) => `/api/v1/projects/${c.projectId}/members`, body: { members: [{ name: '新規', organizationName: '', memberType: 'production' }] } },
+  { name: 'POST /members', method: 'POST', path: (c) => `/api/v1/projects/${c.projectId}/members`, body: { members: [{ userId: '018f1a2b-3c4d-7e8f-9012-3456789abcde', memberType: 'production' }] } },
   { name: 'POST /share-links', method: 'POST', path: (c) => `/api/v1/projects/${c.projectId}/share-links`, body: { scopeType: 'project' } },
 ];
 

@@ -4,10 +4,12 @@ import { api } from '../../test/request.js';
 import {
   createItem,
   createMember,
+  createOrgMember,
   createOutsider,
   createPlan,
   createProject,
   createUser,
+  primaryOrganizationId,
   setupProjectWithDirector,
 } from '../../test/factories.js';
 import { signTestJwt } from '../../test/auth.js';
@@ -21,6 +23,9 @@ describe('projects routes (integration)', () => {
   describe('正常系', () => {
     it('POST /projects は作成者を管理者としてプロジェクトを作成する', async () => {
       const user = await createUser();
+      const organizationId = await primaryOrganizationId(user.id);
+      const colleague = await createUser({ withOrganization: false });
+      await createOrgMember({ organizationId, userId: colleague.id });
       const token = await signTestJwt({
         authUserId: user.authUserId,
         email: user.email,
@@ -36,9 +41,8 @@ describe('projects routes (integration)', () => {
             startDate: '2026-01-01',
             endDate: '2026-03-31',
             items: [{ name: 'LP' }, { name: 'OGP' }],
-            members: [
-              { name: 'Client A', email: 'client-a@example.test', memberType: 'client' },
-            ],
+            // 参加者は組織メンバーから選ぶ (#202)
+            members: [{ userId: colleague.id, memberType: 'client' }],
           },
         },
       );
@@ -47,7 +51,7 @@ describe('projects routes (integration)', () => {
       expect(res.body.data.name).toBe('Launch Site');
       // 作成者は role_type によらず常に管理者 (FR-ROLE-04)
       expect(res.body.data.role).toBe('admin');
-      // 作成者本人 + 招待先 1 名 = 2、制作物 2
+      // 作成者本人 + 参加者 1 名 = 2、制作物 2
       expect(res.body.data.counts).toEqual({ memberCount: 2, itemCount: 2 });
     });
 

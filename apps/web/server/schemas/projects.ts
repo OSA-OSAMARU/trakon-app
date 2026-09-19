@@ -1,33 +1,13 @@
 import { z } from 'zod';
 
-import { JOB_TITLES, MEMBER_TYPES, PROJECT_ROLES } from '@trakon/shared';
+import { memberInputSchema } from './members.js';
 
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.');
 
-// メールは任意 (スケジュール担当者としての登録)。空文字は「未登録」= undefined に正規化。
-const optionalEmail = z.preprocess(
-  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-  z.string().trim().toLowerCase().email().max(320).optional(),
-);
-
-// 空文字は「未設定」= undefined に正規化する (フォームの未選択が '' で届くため)。
-const optionalJobTitle = z.preprocess(
-  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-  z.enum(JOB_TITLES).optional(),
-);
-
-const memberInput = z.object({
-  name: z.string().trim().min(1).max(100),
-  /** 通知先メール。確認TOSS / コメントRETURN など対応が必要なときにだけ送る (#147) */
-  email: optionalEmail,
-  organizationName: z.string().trim().max(255).default(''),
-  memberType: z.enum(MEMBER_TYPES),
-  jobTitle: optionalJobTitle,
-  /** 権限ロール (FR-ROLE-01)。未指定は編集者 */
-  roleType: z.enum(PROJECT_ROLES).default('editor'),
-});
+// 参加者の指定は「メンバー管理」の組織メンバーから選ぶ (#202)。定義は 1 箇所に置く。
+const memberInput = memberInputSchema;
 
 const itemInput = z.object({
   name: z.string().trim().min(1).max(255),
@@ -56,17 +36,8 @@ export const createProjectBodySchema = z
     message: 'endDate must be on or after startDate.',
   })
   .refine(
-    (v) => {
-      // メール未登録 (undefined) の参加者は重複チェック対象外
-      const seen = new Set<string>();
-      for (const m of v.members) {
-        if (!m.email) continue;
-        if (seen.has(m.email)) return false;
-        seen.add(m.email);
-      }
-      return true;
-    },
-    { path: ['members'], message: 'members must have unique emails.' },
+    (v) => new Set(v.members.map((m) => m.userId)).size === v.members.length,
+    { path: ['members'], message: 'members must be unique.' },
   )
   .refine((v) => v.progressManagerIndex === undefined || v.progressManagerIndex < v.members.length, {
     path: ['progressManagerIndex'],

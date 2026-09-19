@@ -2,27 +2,23 @@ import { z } from 'zod';
 
 import { JOB_TITLES, MEMBER_TYPES, PROJECT_ROLES } from '@trakon/shared';
 
-// メールは任意 (スケジュール担当者としての登録)。空文字は「未登録」= undefined に正規化。
-const optionalEmail = z.preprocess(
-  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-  z.string().trim().toLowerCase().email().max(320).optional(),
-);
-
-// 空文字は「未設定」= undefined に正規化する (フォームの未選択が '' で届くため)。
-const optionalJobTitle = z.preprocess(
-  (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
-  z.enum(JOB_TITLES).optional(),
-);
-
+/**
+ * プロジェクト参加者の指定 (#202)。
+ *
+ * **参加者は「メンバー管理」の組織メンバー一覧から選ぶ。** 氏名・メール・所属を
+ * ここで手入力していた頃は、同じ人が案件ごとに別人として登録され、表記ゆれや
+ * 「アカウントに紐づかない参加者」が量産されていた。アカウントを唯一の起点にする。
+ *
+ * 氏名・メール・所属・職種は users 側が正 (#156) なのでここでは受け取らない。
+ * 受け取るのは**プロジェクトごとに変わるもの**だけ。
+ */
 export const memberInputSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-  /** 通知先メール。確認TOSS / コメントRETURN など対応が必要なときにだけ送る (#147) */
-  email: optionalEmail,
-  organizationName: z.string().trim().max(255).default(''),
+  /** 組織メンバーの users.id */
+  userId: z.string().uuid(),
+  /** 区分 (production / client / partner)。表示専用で権限には影響しない */
   memberType: z.enum(MEMBER_TYPES),
-  jobTitle: optionalJobTitle,
-  /** 権限ロール (FR-ROLE-01)。未指定は編集者 */
-  roleType: z.enum(PROJECT_ROLES).default('editor'),
+  /** 権限ロール (FR-ROLE-01)。未指定は組織で設定された既定ロール */
+  roleType: z.enum(PROJECT_ROLES).optional(),
 });
 export type MemberInput = z.infer<typeof memberInputSchema>;
 
