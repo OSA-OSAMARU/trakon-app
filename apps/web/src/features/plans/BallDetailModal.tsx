@@ -321,7 +321,39 @@ export function BallDetailModal({
               });
             }
 
-            /** 取り消し系・前工程への差し戻しはヘッダーの「⋯」へ寄せる。 */
+            /**
+             * 取り消し系はフッターに出す (#199)。
+             *
+             * 以前はヘッダーの「⋯」に寄せていたが、TOSS 済みの予定では
+             * 主要操作が 1 つも無くなるためフッターが
+             * 「いまこの予定で行える操作はありません。」になり、**取り消せるのに
+             * 取り消せないように見えていた**。一度下した判断を戻すのは
+             * ボールを前へ進めるのと同じ重さの操作なので、同じ場所に置く。
+             */
+            const undoActions: { label: string; onClick: () => void; pending: boolean }[] = [];
+            if (canUndoApprove) {
+              undoActions.push({
+                label: '承認を取り消す',
+                onClick: () => undoApproveMut.mutate(),
+                pending: undoApproveMut.isPending,
+              });
+            }
+            if (canUndoToss) {
+              undoActions.push({
+                label: 'TOSS を取り消す',
+                onClick: () => undoTossMut.mutate(),
+                pending: undoTossMut.isPending,
+              });
+            }
+            if (canUndoCompleted) {
+              undoActions.push({
+                label: '完了を取り消す',
+                onClick: () => undoApproveMut.mutate(),
+                pending: undoApproveMut.isPending,
+              });
+            }
+
+            /** 前工程への差し戻しは「別の予定へボールを動かす」操作なので「⋯」に残す。 */
             const secondaryActions: {
               label: string;
               icon: React.ReactNode;
@@ -332,27 +364,6 @@ export function BallDetailModal({
                 label: '前工程へ差し戻す',
                 icon: <Rewind />,
                 onSelect: () => sendBackToPredecessorMut.mutate(),
-              });
-            }
-            if (canUndoApprove) {
-              secondaryActions.push({
-                label: '承認を取り消す',
-                icon: <Undo2 />,
-                onSelect: () => undoApproveMut.mutate(),
-              });
-            }
-            if (canUndoToss) {
-              secondaryActions.push({
-                label: 'TOSS を取り消す',
-                icon: <Undo2 />,
-                onSelect: () => undoTossMut.mutate(),
-              });
-            }
-            if (canUndoCompleted) {
-              secondaryActions.push({
-                label: '完了を取り消す',
-                icon: <Undo2 />,
-                onSelect: () => undoApproveMut.mutate(),
               });
             }
 
@@ -633,23 +644,34 @@ export function BallDetailModal({
                     <p className="text-text-secondary text-label">{footerHelper}</p>
                   )}
                   <div className="flex flex-wrap gap-3">
-                    {primaryActions.length > 0 ? (
-                      primaryActions.map((a) => (
-                        <div key={a.label} className="flex flex-col gap-1">
-                          <WorkflowButton
-                            action={a.action}
-                            onClick={a.onClick}
-                            disabled={anyPending || Boolean(a.disabledReason)}
-                          >
-                            {a.pending ? <Loader2 className="size-4 animate-spin" /> : null}
-                            {a.label}
-                          </WorkflowButton>
-                          {a.disabledReason && (
-                            <p className="text-text-tertiary text-label">{a.disabledReason}</p>
-                          )}
-                        </div>
-                      ))
-                    ) : (
+                    {primaryActions.map((a) => (
+                      <div key={a.label} className="flex flex-col gap-1">
+                        <WorkflowButton
+                          action={a.action}
+                          onClick={a.onClick}
+                          disabled={anyPending || Boolean(a.disabledReason)}
+                        >
+                          {a.pending ? <Loader2 className="size-4 animate-spin" /> : null}
+                          {a.label}
+                        </WorkflowButton>
+                        {a.disabledReason && (
+                          <p className="text-text-tertiary text-label">{a.disabledReason}</p>
+                        )}
+                      </div>
+                    ))}
+                    {/* 取り消し系は「戻す」と同じ白 + 枠線で出し、前へ進める操作と見分ける */}
+                    {undoActions.map((a) => (
+                      <WorkflowButton
+                        key={a.label}
+                        action="comment-return"
+                        onClick={a.onClick}
+                        disabled={anyPending}
+                      >
+                        {a.pending ? <Loader2 className="size-4 animate-spin" /> : null}
+                        {a.label}
+                      </WorkflowButton>
+                    ))}
+                    {primaryActions.length === 0 && undoActions.length === 0 && (
                       <p className="text-text-tertiary text-label">
                         いまこの予定で行える操作はありません。
                       </p>
