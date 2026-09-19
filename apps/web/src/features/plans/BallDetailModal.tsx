@@ -396,7 +396,7 @@ export function BallDetailModal({
                         )}
                       </Button>
                       )}
-                      {secondaryActions.length > 0 || (active && canRoleDeletePlan && events.length === 0) ? (
+                      {secondaryActions.length > 0 || canRoleDeletePlan ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon-sm" aria-label="その他の操作">
@@ -414,7 +414,9 @@ export function BallDetailModal({
                                 {a.label}
                               </DropdownMenuItem>
                             ))}
-                            {active && canRoleDeletePlan && events.length === 0 && (
+                            {/* 削除は状態を問わず出す (#205)。完了済み・TOSS 済みでも
+                                「間違えて作った予定」は消せないと行き止まりになる。 */}
+                            {canRoleDeletePlan && (
                               <>
                                 {secondaryActions.length > 0 && <DropdownMenuSeparator />}
                                 <DropdownMenuItem
@@ -663,7 +665,12 @@ export function BallDetailModal({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>予定を削除しますか？</AlertDialogTitle>
-            <AlertDialogDescription>この操作は取り消せません。</AlertDialogDescription>
+            {/* ボールが動いた予定を消すのは影響が大きい。何が失われるかを言ってから聞く (#205) */}
+            <AlertDialogDescription>
+              {(detailQuery.data?.events.length ?? 0) > 0
+                ? 'この予定にはボールのやり取りの履歴があります。削除するとスケジュールと履歴の表示から外れ、この操作は取り消せません。'
+                : 'この操作は取り消せません。'}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
