@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { server } from '@/test/handlers';
@@ -256,6 +256,37 @@ describe('BallDetailModal (integration)', () => {
     expect(list.className).toContain('rounded-xl');
     expect(list.className).toContain('divide-y');
     expect(list.firstElementChild!.className).toContain('px-4 py-3');
+  });
+
+  it('担当欄に各人のプロジェクト権限を併記する (#198)', async () => {
+    setupReads({ plan: makePlan(), events: [] });
+    // 実施者=自分 (編集者) / 承認者=他人 (管理者) / 進行責任者=自分 (編集者)
+    renderModal({
+      members: [meMember, { ...otherMember, roleType: 'admin' }],
+    });
+
+    await screen.findByText('デザインカンプ作成');
+
+    const assignees = screen.getByText('担当').closest('section')!;
+    // 担当 (この予定での役割) と権限 (プロジェクト全体で何ができるか) は別の軸なので
+    // ラベルを置き換えるのではなく両方出す
+    expect(within(assignees).getByText('実施者')).toBeInTheDocument();
+    expect(within(assignees).getByText('承認者')).toBeInTheDocument();
+    expect(within(assignees).getByText('進行責任者')).toBeInTheDocument();
+    expect(within(assignees).getAllByText('編集者')).toHaveLength(2);
+    expect(within(assignees).getByText('管理者')).toBeInTheDocument();
+  });
+
+  it('担当が未設定の行には権限バッジを出さない (#198)', async () => {
+    setupReads({ plan: makePlan({ approver: null }), events: [] });
+    renderModal({ members: [meMember] });
+
+    await screen.findByText('デザインカンプ作成');
+
+    const assignees = screen.getByText('担当').closest('section')!;
+    expect(within(assignees).getByText('未設定（実施者が承認）')).toBeInTheDocument();
+    // 実施者・進行責任者 (どちらも自分) の 2 件だけ
+    expect(within(assignees).getAllByText('編集者')).toHaveLength(2);
   });
 
   it('タブは選択中も枠を持たず、下線を罫線と同じ太さ・位置に重ねる', async () => {

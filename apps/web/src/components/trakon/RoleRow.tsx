@@ -10,6 +10,11 @@ type RoleRowProps = React.ComponentProps<'div'> & {
   /** 職種・所属などの補足。detail でのみ表示する */
   caption?: string;
   /**
+   * 行の右端に置く補足要素。detail でのみ表示する。
+   * 担当欄で「この人はプロジェクト上どの権限か」を併記するのに使う (#198)。
+   */
+  trailing?: React.ReactNode;
+  /**
    * compact … スケジュールカード内 (Figma node 25:2)。濃い役割色の 20px アバター。
    * detail  … サイドモーダルの担当欄 (Figma node 38:12)。淡いタイルの 32px アバター。
    */
@@ -26,6 +31,7 @@ export function RoleRow({
   role,
   name,
   caption,
+  trailing,
   variant = 'compact',
   className,
   ...props
@@ -74,6 +80,7 @@ export function RoleRow({
       {!detail && caption ? (
         <span className="text-text-tertiary min-w-0 truncate text-micro">{caption}</span>
       ) : null}
+      {detail && trailing ? <span className="ml-auto shrink-0 pl-2">{trailing}</span> : null}
     </div>
   );
 }
