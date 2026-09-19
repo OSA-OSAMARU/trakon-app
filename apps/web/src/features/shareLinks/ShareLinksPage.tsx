@@ -99,7 +99,7 @@ function Inner({ projectId }: { projectId: string }) {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base">発行済みリンク</CardTitle>
+            <CardTitle className="text-heading-section">発行済みリンク</CardTitle>
             <Button size="sm" onClick={() => setCreating(true)}>
               <Link2 className="size-4" />
               新規発行
@@ -109,14 +109,14 @@ function Inner({ projectId }: { projectId: string }) {
         <CardContent>
           {linksQuery.isLoading && <Skeleton className="h-24 rounded-md" />}
           {linksQuery.data && linksQuery.data.length === 0 && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body text-muted-foreground">
               発行済みのリンクはありません。
             </p>
           )}
           <ul className="divide-y divide-border">
             {linksQuery.data?.map((s) => (
               <li key={s.id} className="flex items-start justify-between gap-2 py-3">
-                <div className="space-y-0.5 text-sm">
+                <div className="space-y-0.5 text-body">
                   <div className="flex items-center gap-2">
                     <Badge
                       variant={
@@ -133,11 +133,11 @@ function Inner({ projectId }: { projectId: string }) {
                           ? '失効'
                           : '期限切れ'}
                     </Badge>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-label text-muted-foreground">
                       scope: {s.scopeType}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-label text-muted-foreground">
                     {s.expiresAt
                       ? `期限 ${format(new Date(s.expiresAt), 'yyyy/M/d HH:mm')}`
                       : '期限 無期限'}
@@ -335,7 +335,7 @@ function IssuedDialog({ url, onClose }: { url: string; onClose: () => void }) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-2">
-          <Input value={url} readOnly className="font-mono text-xs" />
+          <Input value={url} readOnly className="font-mono text-label" />
           <Button type="button" onClick={copy}>
             <Copy className="size-4" />
             コピー

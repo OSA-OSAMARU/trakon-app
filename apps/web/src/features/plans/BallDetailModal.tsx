@@ -414,7 +414,7 @@ export function BallDetailModal({
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <SheetTitle className="min-w-0 flex-1 text-2xl font-bold">
+                    <SheetTitle className="min-w-0 flex-1 text-heading-page font-bold">
                       {plan.title}
                     </SheetTitle>
                     <ScheduleThemePicker
@@ -544,11 +544,11 @@ export function BallDetailModal({
                           <DetailRow className="flex items-center gap-3">
                             <Send className="text-toss-line size-6 shrink-0" aria-hidden />
                             <span className="flex min-w-0 flex-1 flex-col">
-                              <span className="truncate text-sm font-bold">
+                              <span className="truncate text-body font-bold">
                                 {successor ? successor.title : '（別の制作物 / 取得中）'}
                               </span>
                               {successor && (
-                                <span className="text-text-secondary truncate text-xs">
+                                <span className="text-text-secondary truncate text-label">
                                   {format(new Date(successor.scheduledDate), 'M.d（E）', {
                                     locale: ja,
                                   })}
@@ -588,7 +588,7 @@ export function BallDetailModal({
                         events.length > 3 ? (
                           <button
                             type="button"
-                            className="text-toss-line text-xs font-medium"
+                            className="text-toss-line text-label font-medium"
                             onClick={() => setTab('history')}
                           >
                             すべて見る
@@ -607,7 +607,7 @@ export function BallDetailModal({
 
                 <SheetFooter className="-mx-6 -mb-6 gap-3 border-t border-border px-6 pt-4 pb-6">
                   {footerHelper && (
-                    <p className="text-text-secondary text-xs">{footerHelper}</p>
+                    <p className="text-text-secondary text-label">{footerHelper}</p>
                   )}
                   <div className="flex flex-wrap gap-3">
                     {primaryActions.length > 0 ? (
@@ -622,12 +622,12 @@ export function BallDetailModal({
                             {a.label}
                           </WorkflowButton>
                           {a.disabledReason && (
-                            <p className="text-text-tertiary text-xs">{a.disabledReason}</p>
+                            <p className="text-text-tertiary text-label">{a.disabledReason}</p>
                           )}
                         </div>
                       ))
                     ) : (
-                      <p className="text-text-tertiary text-xs">
+                      <p className="text-text-tertiary text-label">
                         いまこの予定で行える操作はありません。
                       </p>
                     )}
@@ -690,11 +690,11 @@ function BallHolderBanner({
           {completed ? <CheckCircle2 className="size-4" /> : (holder?.name.trim().charAt(0) ?? '—')}
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[15px] font-bold">
+          <span className="truncate text-body font-bold">
             {completed ? '完了済み' : (holder?.name ?? '—')}
           </span>
           {!completed && holder?.organizationName && (
-            <span className="text-text-secondary truncate text-xs">{holder.organizationName}</span>
+            <span className="text-text-secondary truncate text-label">{holder.organizationName}</span>
           )}
         </span>
         {/* neutral の pill はカード面と同じ淡色なので、面に埋もれないよう背景を白に起こす */}
@@ -759,7 +759,7 @@ function Field({
 }) {
   return (
     <div className="flex items-baseline gap-3">
-      <span className="text-text-secondary w-10 shrink-0 text-xs">{label}</span>
+      <span className="text-text-secondary w-10 shrink-0 text-label">{label}</span>
       <span className={cn('min-w-0 text-body font-medium', emphasis && 'text-brand-strong')}>
         {children}
       </span>
@@ -779,7 +779,7 @@ function Section({
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-text-secondary text-xs font-medium">{title}</h3>
+        <h3 className="text-text-secondary text-label font-medium">{title}</h3>
         {action}
       </div>
       {children}
@@ -813,19 +813,19 @@ function EventIcon({ type }: { type: BallEvent['eventType'] }) {
 
 function EventTimeline({ events, compact }: { events: BallEvent[]; compact?: boolean }) {
   if (events.length === 0) {
-    return <p className="text-text-tertiary text-xs">まだイベントはありません。</p>;
+    return <p className="text-text-tertiary text-label">まだイベントはありません。</p>;
   }
   if (compact) {
     // 概要タブの「最近の履歴」(Figma node 39:2): ドット + 文 + 時刻の 1 行
     return (
       <ol className={DETAIL_CARD}>
         {events.map((e) => (
-          <li key={e.id} className={cn(DETAIL_ROW, 'flex items-center gap-3 text-xs')}>
+          <li key={e.id} className={cn(DETAIL_ROW, 'flex items-center gap-3 text-label')}>
             <span className="bg-toss-line size-2 shrink-0 rounded-full" aria-hidden />
             <span className="min-w-0 flex-1 truncate">
               {e.actor?.name ?? 'システム'}が{EVENT_LABEL[e.eventType]}しました
             </span>
-            <span className="text-text-secondary shrink-0 text-tiny">
+            <span className="text-text-secondary shrink-0 text-label">
               {format(new Date(e.occurredAt), 'M.d HH:mm')}
             </span>
           </li>
@@ -847,11 +847,11 @@ function EventTimeline({ events, compact }: { events: BallEvent[]; compact?: boo
                   自動連鎖
                 </Badge>
               )}
-              <span className="text-text-secondary text-xs">{e.actor?.name ?? 'システム'}</span>
+              <span className="text-text-secondary text-label">{e.actor?.name ?? 'システム'}</span>
             </span>
-            {e.note && <span className="text-text-secondary text-xs">「{e.note}」</span>}
+            {e.note && <span className="text-text-secondary text-label">「{e.note}」</span>}
           </span>
-          <span className="text-text-tertiary shrink-0 text-tiny">
+          <span className="text-text-tertiary shrink-0 text-label">
             {format(new Date(e.occurredAt), 'yyyy.M.d HH:mm')}
           </span>
         </li>

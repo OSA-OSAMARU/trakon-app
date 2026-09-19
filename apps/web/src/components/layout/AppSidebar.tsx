@@ -64,7 +64,7 @@ export function AppSidebar({
       </Link>
 
       <nav className="shrink-0 px-3 pt-2">
-        <SideLink to="/dashboard" icon={<LayoutDashboard className="size-[18px]" />}>
+        <SideLink to="/dashboard" icon={<LayoutDashboard className="size-5" />}>
           ダッシュボード
         </SideLink>
       </nav>
@@ -72,15 +72,15 @@ export function AppSidebar({
       {/* プロジェクトセクションの見出し。右にセクション単位の操作を並べる (Figma 87:2 / 18:2 / 9:12)。
           スクロール領域の外に置き、プロジェクトが増えても隠れないようにしている (#54)。 */}
       <div className="mt-5 flex shrink-0 items-center gap-1 px-6 pb-1">
-        <span className="text-text-tertiary flex-1 text-tiny font-medium">プロジェクト</span>
+        <span className="text-text-tertiary flex-1 text-label font-medium">プロジェクト</span>
         <SectionIconLink to="/projects" label="プロジェクト一覧">
-          <List className="size-4" />
+          <List className="size-5" />
         </SectionIconLink>
         <SectionIconLink to="/projects?tab=archived" label="アーカイブ済みプロジェクト">
-          <Archive className="size-4" />
+          <Archive className="size-5" />
         </SectionIconLink>
         <SectionIconLink to="/projects/new" label="プロジェクトを作成">
-          <Plus className="size-4" />
+          <Plus className="size-5" />
         </SectionIconLink>
       </div>
 
@@ -98,7 +98,7 @@ export function AppSidebar({
           href={`mailto:${COMPANY.contactEmail}`}
           className="text-text-secondary hover:bg-accent hover:text-foreground flex h-11 items-center gap-3 rounded-lg px-4 text-body transition-colors"
         >
-          <CircleHelp className="size-[18px]" aria-hidden />
+          <CircleHelp className="size-5" aria-hidden />
           ヘルプ・サポート
         </a>
       </div>
@@ -113,7 +113,7 @@ export function AppSidebar({
               href={item.to}
               target="_blank"
               rel="noreferrer"
-              className="text-text-tertiary hover:text-foreground text-micro underline-offset-2 hover:underline"
+              className="text-text-tertiary hover:text-foreground text-label underline-offset-2 hover:underline"
             >
               {item.label}
             </a>
@@ -138,7 +138,7 @@ export function AppSidebar({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-body font-medium">{user.displayName}</span>
-                  <span className="text-text-tertiary block truncate text-mini">
+                  <span className="text-text-tertiary block truncate text-label">
                     {user.email}
                   </span>
                   {planBadge && (
@@ -147,7 +147,7 @@ export function AppSidebar({
                     </Badge>
                   )}
                 </span>
-                <MoreHorizontal className="text-text-tertiary size-[18px] shrink-0" aria-hidden />
+                <MoreHorizontal className="text-text-tertiary size-5 shrink-0" aria-hidden />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" side="top" className="w-52">
@@ -198,7 +198,7 @@ function ProjectRow({ id, name }: SidebarProject) {
         to={`/projects/${id}`}
         className={({ isActive }) =>
           cn(
-            'flex h-11 items-center rounded-lg pr-9 pl-4 text-xs transition-colors',
+            'flex h-11 items-center rounded-lg pr-9 pl-4 text-label transition-colors',
             isActive ? 'bg-brand-subtle font-medium' : 'text-foreground hover:bg-accent',
           )
         }
@@ -208,7 +208,7 @@ function ProjectRow({ id, name }: SidebarProject) {
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`${name} の操作`}
-          className="text-text-tertiary hover:text-foreground focus-visible:ring-ring/50 absolute top-1/2 right-2 flex size-6 -translate-y-1/2 items-center justify-center rounded-sm outline-none focus-visible:ring-[3px]"
+          className="text-text-tertiary hover:text-foreground focus-visible:ring-ring absolute top-1/2 right-2 flex size-6 -translate-y-1/2 items-center justify-center rounded-sm outline-none focus-visible:ring-2"
         >
           <MoreHorizontal className="size-[18px]" aria-hidden />
         </DropdownMenuTrigger>
@@ -274,7 +274,7 @@ function SideLink({
       to={to}
       className={({ isActive }) =>
         cn(
-          'flex h-11 items-center gap-3 rounded-lg px-4 text-sm transition-colors',
+          'flex h-11 items-center gap-3 rounded-lg px-4 text-body transition-colors',
           isActive
             ? 'bg-brand-subtle font-medium'
             : 'text-text-secondary hover:bg-accent hover:text-foreground',

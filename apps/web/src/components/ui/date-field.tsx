@@ -38,14 +38,14 @@ export const DateField = React.forwardRef<HTMLInputElement, React.ComponentProps
         <Input
           ref={setRefs}
           type="date"
-          className={cn('pr-9 [&::-webkit-calendar-picker-indicator]:opacity-0', className)}
+          className={cn('pr-10 [&::-webkit-calendar-picker-indicator]:opacity-0', className)}
           {...props}
         />
         <button
           type="button"
           onClick={openPicker}
           aria-label="カレンダーを開く"
-          className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-muted-foreground hover:text-foreground"
+          className="text-text-tertiary hover:text-foreground absolute inset-y-0 right-0 flex items-center pr-4 disabled:pointer-events-none"
         >
           <CalendarDays className="size-4" />
         </button>

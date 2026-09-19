@@ -17,7 +17,7 @@ export const EventTimestamp: Story = {
   render: () => (
     <Tooltip open>
       <TooltipTrigger asChild>
-        <span className="text-mini text-text-tertiary">3日前</span>
+        <span className="text-label text-text-tertiary">3日前</span>
       </TooltipTrigger>
       <TooltipContent side="bottom">2026.7.24（金）16:42</TooltipContent>
     </Tooltip>

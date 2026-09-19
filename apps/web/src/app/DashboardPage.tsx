@@ -171,12 +171,12 @@ function BoardColumn({ column, balls }: { column: BallBoardColumn; balls: BoardB
           theme.surface,
         )}
       >
-        <h2 className={cn('flex-1 truncate text-[15px] font-bold', theme.text)}>
+        <h2 className={cn('flex-1 truncate text-body font-bold', theme.text)}>
           {BALL_BOARD_COLUMN_LABEL[column]}
         </h2>
         <span
           className={cn(
-            'flex h-7 min-w-8 shrink-0 items-center justify-center rounded-full bg-background px-2 text-xs font-medium',
+            'flex h-7 min-w-8 shrink-0 items-center justify-center rounded-full bg-background px-2 text-label font-medium',
             theme.text,
           )}
         >
@@ -185,7 +185,7 @@ function BoardColumn({ column, balls }: { column: BallBoardColumn; balls: BoardB
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         {balls.length === 0 ? (
-          <p className="text-text-tertiary py-6 text-center text-xs">対象のボールはありません</p>
+          <p className="text-text-tertiary py-6 text-center text-label">対象のボールはありません</p>
         ) : (
           balls.map((b) => <BallCard key={b.planId} ball={b} />)
         )}
@@ -206,23 +206,23 @@ function BallCard({ ball }: { ball: BoardBall }) {
         ball.isOverdue ? 'border-danger border-2' : 'border-border',
       )}
     >
-      <span className="text-text-secondary truncate text-mini font-medium">
+      <span className="text-text-secondary truncate text-label font-medium">
         {ball.projectName}｜{ball.itemName}
       </span>
-      <span className="truncate text-base font-bold">{ball.title}</span>
+      <span className="truncate text-body font-bold">{ball.title}</span>
 
-      <span className="text-text-secondary mt-1 text-mini">現在の保持者</span>
+      <span className="text-text-secondary mt-1 text-label">現在の保持者</span>
       <span className="flex items-center gap-2.5">
         <span
           aria-hidden
-          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-background text-tiny font-bold"
+          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-background text-label font-bold"
         >
           {ball.holderName.trim().charAt(0)}
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-body font-bold">{ball.holderName}</span>
           {ball.progressManager && (
-            <span className="text-text-secondary truncate text-mini">
+            <span className="text-text-secondary truncate text-label">
               進行責任者 {ball.progressManager.name}
             </span>
           )}
@@ -230,7 +230,7 @@ function BallCard({ ball }: { ball: BoardBall }) {
       </span>
 
       <span className="mt-1 flex items-center justify-between gap-2">
-        <span className="text-text-secondary text-tiny font-medium">
+        <span className="text-text-secondary text-label font-medium">
           {ball.dueDate
             ? `期限 ${format(parseISO(ball.dueDate), 'M.d（E）', { locale: ja })}`
             : '期限なし'}

@@ -17,10 +17,10 @@ export const Default: Story = {
         <TabsTrigger value="active">進行中</TabsTrigger>
         <TabsTrigger value="archived">アーカイブ済み</TabsTrigger>
       </TabsList>
-      <TabsContent value="active" className="mt-4 text-sm">
+      <TabsContent value="active" className="mt-4 text-body">
         進行中のプロジェクト一覧です。
       </TabsContent>
-      <TabsContent value="archived" className="mt-4 text-sm">
+      <TabsContent value="archived" className="mt-4 text-body">
         アーカイブ済みのプロジェクト一覧です。
       </TabsContent>
     </Tabs>

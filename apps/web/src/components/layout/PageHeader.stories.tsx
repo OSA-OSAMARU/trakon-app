@@ -65,15 +65,15 @@ export const ScheduleHeader: Story = {
     toolbar: (
       <>
         <CalendarDays className="text-text-secondary size-5" aria-hidden />
-        <span className="text-xl font-bold">2026年7月</span>
+        <span className="text-heading-section font-bold">2026年7月</span>
         <Button variant="ghost" size="icon-sm" aria-label="月を選ぶ">
           <ChevronDown />
         </Button>
-        <Button variant="outline" size="sm">
+        <Button variant="secondary" size="sm">
           今日
         </Button>
         <span className="flex-1" />
-        <Button variant="outline" size="sm">
+        <Button variant="secondary" size="sm">
           <Users />
           メンバー
         </Button>

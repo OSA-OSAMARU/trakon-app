@@ -18,6 +18,9 @@ type RoleRowProps = React.ComponentProps<'div'> & {
 
 /**
  * 予定の役割行。「ラベル + 役割色のアバター + 氏名」で並べる。定義は ./planRole.ts を参照。
+ *
+ * compact はスケジュールカード (BallChip) の中だけで使うため、text-micro / text-mini の
+ * 高密度例外を許す (globals.css のタイポグラフィ節を参照)。detail は通常のスケールに従う。
  */
 export function RoleRow({
   role,
@@ -41,7 +44,7 @@ export function RoleRow({
       <span
         className={cn(
           'text-text-secondary shrink-0 font-medium',
-          detail ? 'w-21 text-xs' : 'w-14 text-micro',
+          detail ? 'w-21 text-label' : 'w-14 text-micro',
         )}
       >
         {spec.label}
@@ -60,12 +63,12 @@ export function RoleRow({
       <span className="flex min-w-0 flex-col">
         {/* detail は行の高さをアバター (32px) に揃えたいので行間を詰める (Figma node 38:12) */}
         <span
-          className={cn('truncate font-medium', detail ? 'text-sm leading-tight' : 'text-mini')}
+          className={cn('truncate font-medium', detail ? 'text-body leading-tight' : 'text-mini')}
         >
           {name}
         </span>
         {detail && caption ? (
-          <span className="text-text-secondary truncate text-tiny leading-tight">{caption}</span>
+          <span className="text-text-secondary truncate text-label leading-tight">{caption}</span>
         ) : null}
       </span>
       {!detail && caption ? (

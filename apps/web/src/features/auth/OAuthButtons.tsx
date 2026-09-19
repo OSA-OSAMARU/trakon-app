@@ -43,7 +43,7 @@ export function OAuthButtons() {
       <Divider />
       <Button
         type="button"
-        variant="outline"
+        variant="secondary"
         className="w-full"
         disabled={busy !== null}
         onClick={() => start('google')}
@@ -53,7 +53,7 @@ export function OAuthButtons() {
       </Button>
       <Button
         type="button"
-        variant="outline"
+        variant="secondary"
         className="w-full"
         disabled={busy !== null}
         onClick={() => start('azure')}
@@ -61,8 +61,8 @@ export function OAuthButtons() {
         <MicrosoftMark />
         Microsoft で続ける
       </Button>
-      {error && <p className="text-xs text-destructive">{error}</p>}
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      {error && <p className="text-label text-destructive">{error}</p>}
+      <p className="text-label leading-relaxed text-muted-foreground">
         Google・Microsoft で続けると、
         <a
           href="/terms"
@@ -89,7 +89,7 @@ export function OAuthButtons() {
 
 function Divider() {
   return (
-    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+    <div className="flex items-center gap-3 text-label text-muted-foreground">
       <span className="h-px flex-1 bg-border" />
       または
       <span className="h-px flex-1 bg-border" />

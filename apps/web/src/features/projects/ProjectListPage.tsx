@@ -129,7 +129,7 @@ export function ProjectListPage() {
       <div className="min-h-0 flex-1 overflow-auto px-12 py-8">
         <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-6">
           {limitReached && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-warning-subtle px-4 py-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-warning-subtle px-4 py-3 text-body">
               <span>{entitlement?.message}</span>
               <span className="flex gap-3">
                 <Link to="/settings/billing" className="font-medium underline underline-offset-2">
@@ -210,7 +210,7 @@ export function ProjectTable({
 }) {
   return (
     <div className="border-border overflow-hidden rounded-2xl border bg-background">
-      <div className="border-border bg-surface-subtle text-text-secondary grid h-13 grid-cols-[72px_1fr_200px_180px_56px] items-center border-b text-xs font-medium">
+      <div className="border-border bg-surface-subtle text-text-secondary grid h-13 grid-cols-[72px_1fr_200px_180px_56px] items-center border-b text-label font-medium">
         <span />
         <span>プロジェクト</span>
         <span>期間</span>
@@ -267,14 +267,14 @@ function ProjectRow({
       </span>
       <span className="flex min-w-0 flex-col gap-1 pr-4">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-bold">{p.name}</span>
+          <span className="truncate text-body font-bold">{p.name}</span>
           {frozen && (
             <Badge variant="secondary" size="sm" className="shrink-0">
               閲覧のみ
             </Badge>
           )}
         </span>
-        <span className="text-text-secondary truncate text-xs">{p.clientName ?? '—'}</span>
+        <span className="text-text-secondary truncate text-label">{p.clientName ?? '—'}</span>
       </span>
       <span className="text-text-secondary text-body">
         {format(parseISO(p.startDate), 'yyyy.M.d')} – {format(parseISO(p.endDate), 'M.d')}

@@ -232,9 +232,9 @@ function ManageTab({ projectId }: { projectId: string }) {
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">参加者一覧</CardTitle>
+          <CardTitle className="text-heading-section">参加者一覧</CardTitle>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
+            <Button size="sm" variant="secondary" onClick={() => setInviteOpen(true)}>
               <Mail className="size-4" />
               招待を送る
             </Button>
@@ -248,7 +248,7 @@ function ManageTab({ projectId }: { projectId: string }) {
       <CardContent>
         {query.isLoading && <Skeleton className="h-32 w-full rounded-md" />}
         {query.error && (
-          <p className="text-sm text-destructive">参加者の取得に失敗しました</p>
+          <p className="text-body text-destructive">参加者の取得に失敗しました</p>
         )}
         {query.data && (
           <Table>
@@ -287,7 +287,7 @@ function ManageTab({ projectId }: { projectId: string }) {
                     </TableCell>
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-2">
-                        <Avatar name={m.name} src={m.avatarUrl} className="size-6 text-mini" />
+                        <Avatar name={m.name} src={m.avatarUrl} className="size-6 text-label" />
                         <span className="truncate">{m.name}</span>
                         {/* アカウントを持つ人と、予定上に表示されるだけの人を見分けられるようにする (#160)。
                             前者だけが契約の枠を消費し、編集操作ができる。 */}
@@ -306,13 +306,13 @@ function ManageTab({ projectId }: { projectId: string }) {
                       {m.organizationName || '—'}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{m.email || '—'}</TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="text-label">
                       {m.jobTitle ? JOB_TITLE_LABEL[m.jobTitle] : '—'}
                     </TableCell>
                     <TableCell>
                       {MEMBER_TYPE_LABEL[m.memberType]}
                       {pendingByMemberId.has(m.id) && (
-                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-label text-muted-foreground">
                           招待中
                         </span>
                       )}
@@ -339,14 +339,14 @@ function ManageTab({ projectId }: { projectId: string }) {
                             </SelectContent>
                           </Select>
                           {isLastAdmin(m) && (
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="mt-1 text-label text-muted-foreground">
                               管理者は 1 名以上必要です
                             </p>
                           )}
                         </>
                       ) : (
                         /* ログインできない相手に権限を持たせても意味がないので出さない (#160) */
-                        <span className="text-muted-foreground text-xs">—</span>
+                        <span className="text-muted-foreground text-label">—</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -569,14 +569,14 @@ function Field({
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-label text-destructive">{error}</p>}
     </div>
   );
 }
 
 function NotFound({ projectId: _ }: { projectId: string | undefined }) {
   return (
-    <div className="mx-auto max-w-3xl px-8 py-20 text-center text-sm text-muted-foreground">
+    <div className="mx-auto max-w-3xl px-8 py-20 text-center text-body text-muted-foreground">
       プロジェクトが見つかりませんでした。
     </div>
   );
@@ -704,12 +704,12 @@ function InviteMemberDialog({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">{PROJECT_ROLE_DESCRIPTION[roleType]}</p>
+            <p className="text-label text-muted-foreground">{PROJECT_ROLE_DESCRIPTION[roleType]}</p>
           </Field>
         </form>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={onClose}>
             キャンセル
           </Button>
           <Button type="submit" form="invite-member-form" disabled={mutation.isPending}>

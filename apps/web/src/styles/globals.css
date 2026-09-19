@@ -4,13 +4,22 @@
 /* =============================================================================
  * TRAKON デザイントークン
  *
- * 出典: Figma「TRAKON｜Landing Page」(fileKey 6juEDpIueDBvcfYvOmPJ3w)
- *   - 画面全般      : node 8:3 (Schedule / Desktop / 1440)
- *   - カード配色     : node 54:2 (Color Palette / Schedule Card / 10 themes)
- *   - 操作ボタン     : node 42:4 (Components / Workflow Button)
+ * 出典: Figma「TRAKON｜Design」(fileKey 6juEDpIueDBvcfYvOmPJ3w)
+ *   TRAKON / APP DESIGN GUIDE / v1.0 / 実装基準
+ *   - 01 Typography    : node 233:40
+ *   - 02 COLOR         : node 234:40
+ *   - 03 Button        : node 237:40 (実体 469:304 / 470:304)
+ *   - 04 ICON          : node 286:90
+ *   - 06 Form Controls : node 342:90
+ *   - 07 Calendar      : node 355:132 (寸法のみ採用。日付行 96px 固定は不採用)
+ *   - 08 Header        : node 419:132
+ *   - カード配色 10 テーマ: node 206:259
+ *   - Workflow Button  : node 206:380
  *
- * 基調は暖色ニュートラル + ブランドオレンジ (#E7672C)。
- * 設計書 §4.9 の暫定 accent (#1F6FEB) はここで #E7672C に確定した。
+ * Figma 側の変数は `--trakon-color-*` 名前空間だが、ここではアプリ既存の
+ * セマンティック名を維持して値だけをガイドへ寄せている (呼び出し側 300 箇所超の
+ * リネームを避けるため)。対応する Figma 変数名は各行のコメントに書く。
+ *
  * ダークモードは実装しない (設計書 §4.9.4 / Phase 0 方針)。
  * ============================================================================= */
 
@@ -20,66 +29,82 @@
   --font-weight-medium: 500;
   --font-weight-bold: 700;
 
-  /* --- shadcn 標準トークン (名前は据え置き、値のみ TRAKON 配色へ) --------- */
-  --background: #ffffff;
-  --foreground: #23231f;
-  --card: #ffffff;
-  --card-foreground: #23231f;
+  /* --- shadcn 標準トークン (名前は据え置き、値のみ v1.0 へ) --------------- */
+  --background: #ffffff; /* color/bg/surface */
+  --foreground: #20201e; /* color/text/primary */
+  --card: #ffffff; /* color/bg/surface */
+  --card-foreground: #20201e;
   --popover: #ffffff;
-  --popover-foreground: #23231f;
+  --popover-foreground: #20201e;
   /* 主要ボタン・ワードマークの「強い黒」 */
-  --primary: #23231f;
-  --primary-foreground: #ffffff;
-  --secondary: #f7f5f1;
-  --secondary-foreground: #23231f;
-  --muted: #f9f8f5;
-  --muted-foreground: #676862;
-  /* ホバー等の中立サーフェス (ブランドオレンジ系は --brand-* を使う) */
-  --accent: #f2efe9;
-  --accent-foreground: #23231f;
-  --destructive: #b14e41;
+  --primary: #20201e; /* color/bg/strong = action/primary/bg-default */
+  --primary-foreground: #ffffff; /* color/text/on-strong */
+  /* 補助面・ホバー面はすべて color/bg/subtle に集約する
+   * (ガイド 234:40 §02「装飾目的で新しいベージュやオレンジを追加しません」) */
+  --secondary: #f3efe8; /* color/bg/subtle */
+  --secondary-foreground: #20201e;
+  --muted: #f3efe8;
+  --muted-foreground: #6f6b63; /* color/text/muted */
+  --accent: #f3efe8;
+  --accent-foreground: #20201e;
+  --destructive: #c73329; /* color/border/error = color/text/error */
   --destructive-foreground: #ffffff;
-  --border: #e6e2db;
-  --input: #ded8ce;
-  --input-background: #faf8f4;
+  --border: #ded8ce; /* color/border/default: カード・パネルの装飾的な区切り */
+  /* 操作可能な要素 (入力欄・白ボタン) の輪郭。装飾的な罫線より明確に濃い。
+   * ガイド 234:40 §03「操作可能な要素の輪郭は Control を使用します」 */
+  --input: #8d8988; /* color/border/control */
+  --input-background: #ffffff; /* color/bg/surface (Disabled のみ subtle) */
   --switch-background: #ded8ce;
-  --ring: #e7672c;
-  --radius: 0.625rem; /* 10px: カード・ナビ・入力の基準 */
+  /* Button のフォーカスリングは黒 2px (ガイド 237:40 §04)。
+   * 入力系の Focus はオレンジ枠なので --color-border-accent を使う (342:90)。 */
+  --ring: #20201e; /* action/focus/ring。太さ 2px は Button 側で指定する */
+  --radius: 0.5rem; /* 8px: field/radius */
 
-  --sidebar: #fcfbf8;
-  --sidebar-foreground: #23231f;
-  --sidebar-primary: #23231f;
+  --sidebar: #faf8f4; /* color/bg/page */
+  --sidebar-foreground: #20201e;
+  --sidebar-primary: #20201e;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f8efe8;
-  --sidebar-accent-foreground: #23231f;
-  --sidebar-border: #e6e2db;
-  --sidebar-ring: #e7672c;
+  --sidebar-accent: #fdf3ee; /* color/bg/accent-soft: 選択中のナビ項目 */
+  --sidebar-accent-foreground: #20201e;
+  --sidebar-border: #ded8ce;
+  --sidebar-ring: #20201e;
 
   /* --- TRAKON 独自セマンティックトークン --------------------------------- */
-  /* アプリ本体の背景 (白ヘッダ帯・白カードと対比させる暖色グレー) */
-  --content: #f7f6f2;
-  /* 週末行・セクション見出し帯などの控えめなサーフェス */
-  --surface-muted: #f7f5f1;
-  --surface-subtle: #f9f8f5;
-  /* カレンダー罫線 (--border より一段淡い) */
-  --grid-border: #e8e5df;
-  --text-secondary: #676862;
-  --text-tertiary: #908f87;
+  /* アプリ本体の背景 (白ヘッダ帯・白カードと対比させる暖色ベージュ) */
+  --content: #faf8f4; /* color/bg/page */
+  /* グループや補助領域の面。muted / subtle は v1.0 で 1 段に統合された */
+  --surface-muted: #f3efe8; /* color/bg/subtle */
+  --surface-subtle: #f3efe8; /* color/bg/subtle */
+  /* 領域内の控えめな区切り (カレンダー罫線など) */
+  --border-subtle: #e7e1d8; /* color/border/subtle */
+  --grid-border: #e7e1d8; /* color/border/subtle */
+  --text-secondary: #4f4e49; /* color/text/secondary */
+  --text-tertiary: #6f6b63; /* color/text/muted */
 
-  /* ブランドオレンジ */
-  --brand: #e7672c;
-  --brand-foreground: #ffffff;
-  --brand-strong: #e05224;
-  --brand-subtle: #f8efe8;
-  --brand-badge: #fce8db;
+  /* ブランドオレンジ。白文字とのコントラスト 4.81:1 (ガイド 234:40) */
+  --brand: #c44b17; /* color/bg/accent = action/brand/bg-default */
+  --brand-foreground: #ffffff; /* color/text/on-accent */
+  --brand-strong: #b34212; /* action/brand/bg-hover */
+  --brand-pressed: #9f370e; /* action/brand/bg-pressed */
+  --brand-subtle: #fdf3ee; /* color/bg/accent-soft */
+  --brand-badge: #fdf3ee; /* color/bg/accent-soft */
 
-  /* 状態色 (FIX・承認済み / 進行中 / 遅延・祝日) */
+  /* Button の状態色 (ガイド 237:40 §02)。画面側で独自の色を作らない。 */
+  --primary-hover: #4f4e49; /* action/primary/bg-hover */
+  --primary-pressed: #141413; /* action/primary/bg-pressed */
+  --secondary-hover: #f3efe8; /* action/secondary/bg-hover */
+  --secondary-pressed: #e7e1d8; /* action/secondary/bg-pressed */
+  --action-disabled: #f3efe8; /* action/disabled/bg */
+  --action-disabled-foreground: #aaa69c; /* action/disabled/text */
+  --action-disabled-border: #ded8ce; /* action/disabled/border */
+
+  /* 状態色 (FIX・承認済み / 進行中 / 遅延・エラー) */
   --success: #2e7d4f;
   --success-subtle: #e8f6ec;
   --warning: #c88718;
   --warning-subtle: #fff5de;
-  --danger: #b14e41;
-  --danger-subtle: #fef7f5;
+  --danger: #c73329; /* color/text/error */
+  --danger-subtle: #fdf0ef;
 
   /* 予定の 3 役割 (#131)。カード内の役割アバターで使う (Figma 25:2) */
   --role-executor: #2e6ea6;
@@ -96,14 +121,14 @@
   /* 「次のTOSS」カードの面 (Figma node 38:40) */
   --toss-line-subtle: #ebf7ff;
 
-  /* カレンダー日付軸 */
+  /* カレンダー日付軸。v1.0 ガイドに規定がないためカレンダー固有色として維持する */
   --today-bg: #fff8e3;
-  --today-marker: #e7672c;
-  --weekend-bg: #f7f5f1;
-  --holiday-bg: #fef7f5;
-  --holiday-foreground: #b14e41;
+  --today-marker: #c44b17;
+  --weekend-bg: #f3efe8;
+  --holiday-bg: #fdf0ef;
+  --holiday-foreground: #c73329;
 
-  /* --- スケジュールカード 10 テーマ (Figma 54:2) -------------------------
+  /* --- スケジュールカード 10 テーマ (Figma 206:259) -----------------------
    * 文字色は全テーマ共通 (--plan-foreground)。背景とのコントラスト 13:1 以上。
    * 色は「状態」ではなく、ユーザーがスケジュールを視覚整理するために使う。
    * -------------------------------------------------------------------- */
@@ -137,33 +162,45 @@
     sans-serif;
   --font-display: 'Sora Variable', 'Sora', var(--font-sans);
 
-  /* --- タイポグラフィスケール (Figma 実測) -------------------------------
-   * Tailwind 既定 (text-xs=12 / text-sm=14 / text-base=16 ...) はそのまま残し、
-   * Figma に出現する 9 / 10 / 11 / 13 / 22 px を独自名で追加する。
+  /* --- タイポグラフィスケール (ガイド 233:40) ----------------------------
+   * 登録済みテキストスタイル 6 種をサイズ 5 段で表す (Label と Caption は
+   * 12px/18px で同寸、weight だけが違う)。字間はすべて 0。
+   * 本文・操作名は 14px、補助情報は 12px。重要な説明を小さくしない。
+   * 新しいサイズが必要になったら個別指定せずガイドを更新すること。
    * -------------------------------------------------------------------- */
-  --text-micro: 0.5625rem; /* 9px  : カード内ロールラベル */
+  --text-heading-page: 1.5rem; /* 24px : App/Heading/Page   画面タイトル */
+  --text-heading-page--line-height: 2.125rem; /* 34px */
+  --text-heading-section: 1.125rem; /* 18px : App/Heading/Section 領域見出し */
+  --text-heading-section--line-height: 1.75rem; /* 28px */
+  --text-body: 0.875rem; /* 14px : App/Body/Default  本文・説明文 */
+  --text-body--line-height: 1.375rem; /* 22px */
+  --text-button: 0.875rem; /* 14px : App/Button/Default ボタンラベル */
+  --text-button--line-height: 1.25rem; /* 20px */
+  --text-label: 0.75rem; /* 12px : App/Label(Medium) / App/Caption(Regular) */
+  --text-label--line-height: 1.125rem; /* 18px */
+
+  /* 例外: スケジュールの高密度表示専用 (features/plans/schedule/**)。
+   * ガイドは 10px 以下の独自スタイル追加を禁じているため、ここより外では
+   * 使わない。縦 1 日 20px まで縮むカレンダーだけが対象。 */
+  --text-micro: 0.5625rem; /* 9px  : 高密度カード内ロールラベル */
   --text-micro--line-height: 1.45;
   --text-mini: 0.625rem; /* 10px : 高密度カレンダー */
   --text-mini--line-height: 1.45;
-  --text-tiny: 0.6875rem; /* 11px : 日付軸・補助ラベル */
-  --text-tiny--line-height: 1.45;
-  --text-body: 0.8125rem; /* 13px : 本文・ボタン */
-  --text-body--line-height: 1.5;
-  --text-title: 1.375rem; /* 22px : 画面タイトル */
-  --text-title--line-height: 1.5;
-  --text-wordmark: 2rem; /* 32px : TRAKON ワードマーク */
+
+  /* ロゴ専用 (Sora)。本文スケールの対象外 */
+  --text-wordmark: 2rem; /* 32px */
   --text-wordmark--line-height: 1.5;
 
-  /* --- 角丸 (Figma 実測: 6 / 8 / 10 / 12 / 14) --------------------------- */
-  --radius-sm: 0.375rem; /* 6px  */
-  --radius-md: 0.5rem; /* 8px  */
-  --radius-lg: 0.625rem; /* 10px */
+  /* --- 角丸 (button/radius 6 / field/radius 8) --------------------------- */
+  --radius-sm: 0.375rem; /* 6px  : Button */
+  --radius-md: 0.5rem; /* 8px  : 入力欄・Select・DateField */
+  --radius-lg: 0.625rem; /* 10px : カード・ナビ */
   --radius-xl: 0.75rem; /* 12px */
   --radius-2xl: 0.875rem; /* 14px */
 
   /* --- 影 --------------------------------------------------------------- */
-  --shadow-card: 0 4px 12px 0 rgb(35 35 31 / 0.06);
-  --shadow-float: 0 6px 18px 0 rgb(35 35 31 / 0.1);
+  --shadow-card: 0 4px 12px 0 rgb(32 32 30 / 0.06);
+  --shadow-float: 0 6px 18px 0 rgb(32 32 30 / 0.1);
 
   /* --- 色 (shadcn 標準) -------------------------------------------------- */
   --color-background: var(--background);
@@ -200,6 +237,7 @@
   --color-content: var(--content);
   --color-surface-muted: var(--surface-muted);
   --color-surface-subtle: var(--surface-subtle);
+  --color-border-subtle: var(--border-subtle);
   --color-grid-border: var(--grid-border);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
@@ -207,8 +245,17 @@
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-strong: var(--brand-strong);
+  --color-brand-pressed: var(--brand-pressed);
   --color-brand-subtle: var(--brand-subtle);
   --color-brand-badge: var(--brand-badge);
+
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-secondary-pressed: var(--secondary-pressed);
+  --color-action-disabled: var(--action-disabled);
+  --color-action-disabled-foreground: var(--action-disabled-foreground);
+  --color-action-disabled-border: var(--action-disabled-border);
 
   --color-success: var(--success);
   --color-success-subtle: var(--success-subtle);
@@ -264,6 +311,7 @@
  * 裸の要素セレクタでのスタイリングは最小限に留める。
  * 実際に依存しているのは CardTitle (<h4>) のみで、他の見出しは
  * すべて呼び出し側でユーティリティクラスを指定している。
+ * サイズはガイド 233:40 の登録済みテキストスタイルに揃える。
  * ============================================================================= */
 
 @layer base {
@@ -280,47 +328,48 @@
     font-family: var(--font-sans);
   }
 
+  /* App/Heading/Page */
   h1 {
-    font-size: 1.375rem; /* 22px */
+    font-size: 1.5rem; /* 24px */
     font-weight: var(--font-weight-bold);
-    line-height: 1.5;
+    line-height: 2.125rem; /* 34px */
   }
 
-  h2 {
-    font-size: 1.25rem; /* 20px */
-    font-weight: var(--font-weight-bold);
-    line-height: 1.5;
-  }
-
+  /* App/Heading/Section */
+  h2,
   h3 {
-    font-size: 1rem; /* 16px */
+    font-size: 1.125rem; /* 18px */
     font-weight: var(--font-weight-bold);
-    line-height: 1.5;
+    line-height: 1.75rem; /* 28px */
   }
 
+  /* CardTitle。見出しスケールの最小段として本文サイズの太字にする */
   h4 {
-    font-size: 1rem; /* 16px */
+    font-size: 0.875rem; /* 14px */
     font-weight: var(--font-weight-bold);
-    line-height: 1.5;
+    line-height: 1.375rem; /* 22px */
   }
 
+  /* App/Label/Default */
   label {
-    font-size: 0.8125rem; /* 13px */
+    font-size: 0.75rem; /* 12px */
     font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    line-height: 1.125rem; /* 18px */
   }
 
+  /* App/Button/Default */
   button {
-    font-size: 0.8125rem; /* 13px */
+    font-size: 0.875rem; /* 14px */
     font-weight: var(--font-weight-medium);
-    line-height: 1.5;
+    line-height: 1.25rem; /* 20px */
   }
 
+  /* App/Body/Default */
   input,
   select,
   textarea {
     font-size: 0.875rem; /* 14px */
     font-weight: var(--font-weight-normal);
-    line-height: 1.5;
+    line-height: 1.375rem; /* 22px */
   }
 }

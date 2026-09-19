@@ -11,14 +11,14 @@ type WorkflowButtonProps = Omit<React.ComponentProps<typeof Button>, 'variant' |
   children?: React.ReactNode;
 };
 
-/** ボール操作ボタン (Figma node 42:4)。定義は ./workflow.ts を参照。 */
+/** ボール操作ボタン (Figma node 206:380)。定義は ./workflow.ts を参照。 */
 export function WorkflowButton({ action, className, children, ...props }: WorkflowButtonProps) {
   const spec = WORKFLOW_ACTION_SPEC[action];
   return (
     <Button
       data-slot="workflow-button"
       data-action={action}
-      variant={spec.variant}
+      variant={spec.role}
       // Figma は高さ 42px・角丸 8px・幅 208px。幅は置き場所で変わるため既定は伸縮させる
       className={cn('h-[42px] min-w-[160px] flex-1 rounded-md', className)}
       {...props}

@@ -62,11 +62,11 @@ export function InvitationAcceptPage() {
   return (
     <div className="flex min-h-screen items-start justify-center bg-background px-4 pt-24">
       <div className="w-full max-w-sm space-y-6">
-        <h1 className="text-center text-2xl font-semibold tracking-tight">TRAKON</h1>
+        <h1 className="text-center text-heading-page font-semibold tracking-tight">TRAKON</h1>
 
         {verifyQuery.isLoading && (
           <Card>
-            <CardContent className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+            <CardContent className="flex items-center justify-center gap-2 py-10 text-body text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               招待を確認しています…
             </CardContent>
@@ -76,7 +76,7 @@ export function InvitationAcceptPage() {
         {verifyQuery.error && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
+              <CardTitle className="flex items-center gap-2 text-heading-section">
                 <AlertCircle className="size-4 text-destructive" />
                 招待を確認できません
               </CardTitle>
@@ -90,7 +90,7 @@ export function InvitationAcceptPage() {
         {verifyQuery.data && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">プロジェクトへの招待</CardTitle>
+              <CardTitle className="text-heading-section">プロジェクトへの招待</CardTitle>
               <CardDescription>
                 <span className="font-medium text-foreground">
                   {verifyQuery.data.project.name}
@@ -99,7 +99,7 @@ export function InvitationAcceptPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-body">
                 <dt className="text-muted-foreground">招待先</dt>
                 <dd>{verifyQuery.data.invitedMember.email}</dd>
                 <dt className="text-muted-foreground">氏名</dt>
@@ -157,7 +157,7 @@ export function InvitationAcceptPage() {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 text-sm text-muted-foreground">
+    <div className="flex min-h-screen items-center justify-center px-4 text-body text-muted-foreground">
       {children}
     </div>
   );

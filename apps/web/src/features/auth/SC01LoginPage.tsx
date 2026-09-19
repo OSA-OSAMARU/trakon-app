@@ -112,7 +112,7 @@ function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, strin
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">ログイン</CardTitle>
+        <CardTitle className="text-heading-section">ログイン</CardTitle>
         <CardDescription>アカウントにサインインします</CardDescription>
       </CardHeader>
       <CardContent>
@@ -128,7 +128,7 @@ function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, strin
               {...form.register('password')}
             />
           </Field>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <label className="flex items-center gap-2 text-body text-muted-foreground">
             <input
               type="checkbox"
               className="size-4 accent-primary"
@@ -137,7 +137,7 @@ function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, strin
             />
             ログイン状態を保存する
           </label>
-          {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+          {serverError && <p className="text-body text-destructive">{serverError}</p>}
           <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
             ログイン
@@ -146,7 +146,7 @@ function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, strin
         <div className="mt-6">
           <OAuthButtons />
         </div>
-        <div className="mt-6 flex flex-col items-center gap-2 text-sm">
+        <div className="mt-6 flex flex-col items-center gap-2 text-body">
           <button
             type="button"
             className="text-muted-foreground underline-offset-4 hover:underline"
@@ -215,7 +215,7 @@ function SignupForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">新規登録</CardTitle>
+        <CardTitle className="text-heading-section">新規登録</CardTitle>
         <CardDescription>
           メールアドレスを入力するとログイン用のリンクが届きます
         </CardDescription>
@@ -226,7 +226,7 @@ function SignupForm({
             <Input id="email" type="email" autoComplete="email" {...form.register('email')} />
           </Field>
           <div className="space-y-1">
-            <label className="flex items-start gap-2 text-[13px] leading-relaxed text-muted-foreground">
+            <label className="flex items-start gap-2 text-body leading-relaxed text-muted-foreground">
               <input
                 type="checkbox"
                 className="mt-0.5 size-4 shrink-0 accent-primary"
@@ -254,12 +254,12 @@ function SignupForm({
               </span>
             </label>
             {form.formState.errors.agreeToTerms && (
-              <p className="text-xs text-destructive">
+              <p className="text-label text-destructive">
                 {form.formState.errors.agreeToTerms.message}
               </p>
             )}
           </div>
-          {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+          {serverError && <p className="text-body text-destructive">{serverError}</p>}
           <Button
             type="submit"
             className="w-full"
@@ -275,7 +275,7 @@ function SignupForm({
               未完でも押下可能。チェックボックスはメール登録ボタン専用。 */}
           <OAuthButtons />
         </div>
-        <p className="mt-5 text-center text-[11px] leading-relaxed text-muted-foreground">
+        <p className="mt-5 text-center text-label leading-relaxed text-muted-foreground">
           <a href="/terms" target="_blank" rel="noreferrer" className="underline underline-offset-2">
             利用規約
           </a>
@@ -298,7 +298,7 @@ function SignupForm({
             特定商取引法に基づく表記
           </a>
         </p>
-        <div className="mt-4 text-center text-sm">
+        <div className="mt-4 text-center text-body">
           <button
             type="button"
             className="text-foreground underline-offset-4 hover:underline"
@@ -345,7 +345,7 @@ function EmailSent({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">メールを送信しました</CardTitle>
+        <CardTitle className="text-heading-section">メールを送信しました</CardTitle>
         <CardDescription>
           <span className="font-medium text-foreground">{email}</span> 宛にログイン用リンクを送りました。
           メールアプリを開いてリンクをクリックしてください。
@@ -354,7 +354,7 @@ function EmailSent({
       <CardContent className="space-y-3">
         <Button
           type="button"
-          variant="outline"
+          variant="secondary"
           className="w-full"
           disabled={cooldown > 0 || resending || !email}
           onClick={resend}
@@ -408,7 +408,7 @@ function CreateAccountForm() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">セッションが見つかりません</CardTitle>
+          <CardTitle className="text-heading-section">セッションが見つかりません</CardTitle>
           <CardDescription>
             メールのリンクから開き直してください。
           </CardDescription>
@@ -456,7 +456,7 @@ function CreateAccountForm() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">プロフィール登録</CardTitle>
+        <CardTitle className="text-heading-section">プロフィール登録</CardTitle>
         <CardDescription>
           <span className="font-medium text-foreground">{session.user.email}</span>{' '}
           として、お名前とパスワードを設定します。
@@ -501,7 +501,7 @@ function CreateAccountForm() {
               {...form.register('passwordConfirm')}
             />
           </Field>
-          {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+          {serverError && <p className="text-body text-destructive">{serverError}</p>}
           <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
             登録
@@ -540,7 +540,7 @@ function PasswordResetRequest({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">パスワードの再設定</CardTitle>
+        <CardTitle className="text-heading-section">パスワードの再設定</CardTitle>
         <CardDescription>
           ご登録のメールアドレスにリセット用のリンクを送ります。
         </CardDescription>
@@ -548,7 +548,7 @@ function PasswordResetRequest({
       <CardContent>
         {sent ? (
           <div className="space-y-4">
-            <p className="text-sm">
+            <p className="text-body">
               入力されたメールアドレスが登録されていればリンクを送信しました。届かない場合は迷惑メールフォルダもご確認ください。
             </p>
             <Button type="button" variant="ghost" className="w-full" onClick={() => goTo('login')}>
@@ -561,7 +561,7 @@ function PasswordResetRequest({
             <Field id="email" label="メールアドレス" error={form.formState.errors.email?.message}>
               <Input id="email" type="email" autoComplete="email" {...form.register('email')} />
             </Field>
-            {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+            {serverError && <p className="text-body text-destructive">{serverError}</p>}
             <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
               {form.formState.isSubmitting && <Loader2 className="size-4 animate-spin" />}
               リセットメールを送る
@@ -597,8 +597,8 @@ function Field({
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
       {children}
-      {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {hint && !error && <p className="text-label text-muted-foreground">{hint}</p>}
+      {error && <p className="text-label text-destructive">{error}</p>}
     </div>
   );
 }
@@ -633,7 +633,7 @@ function PasswordStrength({ value }: { value: string }) {
           />
         ))}
       </div>
-      <p className="text-[11px] text-muted-foreground">強度：{meta.label}</p>
+      <p className="text-label text-muted-foreground">強度：{meta.label}</p>
     </div>
   );
 }
@@ -641,7 +641,7 @@ function PasswordStrength({ value }: { value: string }) {
 function CardSkeleton({ label }: { label: string }) {
   return (
     <Card>
-      <CardContent className="flex items-center justify-center gap-2 pt-6 text-sm text-muted-foreground">
+      <CardContent className="flex items-center justify-center gap-2 pt-6 text-body text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
         {label}
       </CardContent>

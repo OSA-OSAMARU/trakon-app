@@ -29,7 +29,7 @@ export function ColumnHeader({
     >
       {allCompleted && <CheckCircle2 className="text-success size-4 shrink-0" aria-hidden />}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="truncate text-sm font-medium">{name}</span>
+        <span className="truncate text-body font-medium">{name}</span>
         <span className="text-text-secondary flex min-w-0 items-center gap-0.5 text-mini">
           <span className="shrink-0">ボール：</span>
           <span className="truncate">

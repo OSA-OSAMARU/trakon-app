@@ -25,7 +25,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
 function CenteredSpinner({ label }: { label: string }) {
   return (
     <div className="flex min-h-screen items-center justify-center">
-      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-body text-muted-foreground">{label}</span>
     </div>
   );
 }

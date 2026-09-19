@@ -148,7 +148,7 @@ export function OrgMembersPage() {
         <PageContainer>
           <Card>
             <CardContent className="py-10 text-center">
-              <p className="text-muted-foreground text-sm">
+              <p className="text-muted-foreground text-body">
                 メンバー管理は組織のオーナーまたは管理者のみが利用できます。
               </p>
             </CardContent>
@@ -173,11 +173,11 @@ export function OrgMembersPage() {
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-4 py-5">
             <div>
-              <p className="text-base font-semibold">{planLabel} プラン</p>
-              <p className="text-text-secondary mt-0.5 text-mini">
+              <p className="text-heading-section font-semibold">{planLabel} プラン</p>
+              <p className="text-text-secondary mt-0.5 text-label">
                 {seatCount} / {seatLimit ?? '無制限'}名 利用中
               </p>
-              <p className="text-text-tertiary text-mini">
+              <p className="text-text-tertiary text-label">
                 プロジェクト数：
                 {entitlement?.limits.projectLimit === null
                   ? '無制限'
@@ -194,7 +194,7 @@ export function OrgMembersPage() {
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <CardTitle className="text-base">メンバー一覧</CardTitle>
+              <CardTitle className="text-heading-section">メンバー一覧</CardTitle>
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -207,7 +207,7 @@ export function OrgMembersPage() {
           <CardContent>
             {membersQuery.isLoading && <Skeleton className="h-40 w-full rounded-md" />}
             {membersQuery.error && (
-              <p className="text-destructive text-sm">メンバーを取得できませんでした</p>
+              <p className="text-destructive text-body">メンバーを取得できませんでした</p>
             )}
             {membersQuery.data && (
               <Table>
@@ -227,7 +227,7 @@ export function OrgMembersPage() {
                     <TableRow key={m.userId ?? m.invitationId}>
                       <TableCell>
                         <span className="flex items-center gap-2">
-                          <Avatar name={m.name} src={m.avatarUrl} className="size-7 text-mini" />
+                          <Avatar name={m.name} src={m.avatarUrl} className="size-7 text-label" />
                           <span className="truncate font-medium">{m.name}</span>
                         </span>
                       </TableCell>
@@ -335,19 +335,19 @@ export function OrgMembersPage() {
           </AlertDialogHeader>
           {roleChange && (
             <div className="space-y-2">
-              <div className="bg-accent flex items-center justify-center gap-4 rounded-md px-4 py-2.5 text-sm">
+              <div className="bg-accent flex items-center justify-center gap-4 rounded-md px-4 py-2.5 text-body">
                 <span>{PROJECT_ROLE_LABEL[roleChange.member.defaultProjectRole]}</span>
                 <span aria-hidden>→</span>
                 <span className="text-brand font-semibold">
                   {PROJECT_ROLE_LABEL[roleChange.to]}
                 </span>
               </div>
-              <p className="text-text-secondary text-xs">
+              <p className="text-text-secondary text-label">
                 {PROJECT_ROLE_DESCRIPTION[roleChange.to]}
               </p>
               {/* 既定値の変更ではなく実際の権限変更であることを明示する */}
               {roleChange.member.projectCount > 0 && (
-                <p className="text-text-tertiary text-xs">
+                <p className="text-text-tertiary text-label">
                   参加中の {roleChange.member.projectCount} 件のプロジェクトすべてに反映されます。
                 </p>
               )}
@@ -565,10 +565,10 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
           <Field label="参加プロジェクト（任意）">
             <div className="border-border max-h-40 space-y-1.5 overflow-y-auto rounded-md border p-3">
               {(projectsQuery.data ?? []).length === 0 && (
-                <p className="text-text-tertiary text-xs">プロジェクトがありません。</p>
+                <p className="text-text-tertiary text-label">プロジェクトがありません。</p>
               )}
               {(projectsQuery.data ?? []).map((p) => (
-                <label key={p.id} className="flex items-center gap-2 text-sm">
+                <label key={p.id} className="flex items-center gap-2 text-body">
                   <input
                     type="checkbox"
                     checked={projectIds.includes(p.id)}
@@ -589,7 +589,7 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
             <p className="text-body font-medium">
               {isViewer ? '招待すると閲覧者枠を1名分使用します' : '招待すると利用枠を1名分使用します'}
             </p>
-            <p className="text-text-secondary mt-0.5 text-mini">
+            <p className="text-text-secondary mt-0.5 text-label">
               {remaining === null
                 ? '現在の空きは無制限です。'
                 : `現在の空きは${remaining}名です。`}
@@ -599,7 +599,7 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>
+            <Button type="button" variant="secondary" onClick={onClose} disabled={mut.isPending}>
               キャンセル
             </Button>
             <Button type="submit" disabled={mut.isPending}>
@@ -656,9 +656,9 @@ function MemberProjectsSheet({
         {member && (
           <div className="space-y-4 px-4 pb-6">
             <div>
-              <p className="text-base font-semibold">{member.name}</p>
-              <p className="text-text-secondary text-mini">{member.email}</p>
-              <p className="text-brand mt-1 text-mini">
+              <p className="text-body font-semibold">{member.name}</p>
+              <p className="text-text-secondary text-label">{member.email}</p>
+              <p className="text-brand mt-1 text-label">
                 {PROJECT_ROLE_LABEL[member.defaultProjectRole]} ・{' '}
                 {member.projectCount}件のプロジェクトに参加
               </p>
@@ -675,7 +675,7 @@ function MemberProjectsSheet({
                     >
                       {p.projectName}
                     </Link>
-                    <p className="text-text-secondary text-mini">
+                    <p className="text-text-secondary text-label">
                       Ball Holder：{p.ballHolderCount}件
                     </p>
                   </div>
@@ -694,7 +694,7 @@ function MemberProjectsSheet({
               ))}
             </ul>
             {query.data?.length === 0 && (
-              <p className="text-muted-foreground text-sm">参加しているプロジェクトはありません。</p>
+              <p className="text-muted-foreground text-body">参加しているプロジェクトはありません。</p>
             )}
           </div>
         )}
@@ -724,7 +724,7 @@ function Field({
         {required && <span aria-hidden> ＊</span>}
       </Label>
       {children}
-      {error && <p className="text-destructive text-xs">{error}</p>}
+      {error && <p className="text-destructive text-label">{error}</p>}
     </div>
   );
 }

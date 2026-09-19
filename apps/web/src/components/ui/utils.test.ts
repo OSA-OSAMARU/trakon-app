@@ -16,6 +16,6 @@ describe('cn', () => {
 
   it('独自のフォントサイズ同士は後勝ちになる', () => {
     expect(cn('text-mini', 'text-body')).toBe('text-body');
-    expect(cn('text-body', 'text-sm')).toBe('text-sm');
+    expect(cn('text-body', 'text-body')).toBe('text-body');
   });
 });

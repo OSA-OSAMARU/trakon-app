@@ -5,8 +5,8 @@ import { cn } from '@/components/ui/utils';
 
 import type { DayTone } from './dayTones';
 
-/** 日付軸の幅 px (Figma node 10:3)。 */
-export const DATE_AXIS_WIDTH = 96;
+/** 日付軸の幅 px (Figma「07 Calendar / Guide v2.0」node 355:132 の日付列 72px)。 */
+export const DATE_AXIS_WIDTH = 72;
 
 /** 列ヘッダーの高さ px (Figma node 10:3 / 10:5)。 */
 export const COLUMN_HEADER_HEIGHT = 72;
@@ -14,8 +14,9 @@ export const COLUMN_HEADER_HEIGHT = 72;
 /**
  * 行高に応じた日付の見せ方。
  *
- * Figma は行高 56px 固定で日を 20px の大きな数字にしているが、実装には
- * 20〜80px のズームがある。小さい行高では数字が収まらないため 3 段階に落とす。
+ * Figma は日付行 96px 固定で日を大きな数字にしているが、実装には 20〜80px の
+ * ズームがある (固定行高はガイド v2.0 でも今回は採用していない)。
+ * 小さい行高では数字が収まらないため 3 段階に落とす。
  */
 function dateLayout(rowHeight: number): 'full' | 'compact' | 'minimal' {
   if (rowHeight >= 44) return 'full';
@@ -42,10 +43,10 @@ export function DateAxis({
       style={{ width: DATE_AXIS_WIDTH }}
     >
       <div
-        className="border-grid-border bg-surface-subtle sticky top-0 z-10 flex items-center border-b px-[18px]"
+        className="border-grid-border bg-surface-subtle sticky top-0 z-10 flex items-center border-b px-4"
         style={{ height: COLUMN_HEADER_HEIGHT }}
       >
-        <span className="text-text-tertiary text-tiny font-medium">日付</span>
+        <span className="text-text-tertiary text-label font-medium">日付</span>
       </div>
       <div className="relative" style={{ height: totalHeight }}>
         {days.map((d, i) => {
@@ -54,7 +55,7 @@ export function DateAxis({
             <div
               key={i}
               className={cn(
-                'border-grid-border absolute right-0 left-0 flex items-center gap-1 border-b pr-[22px] pl-[18px]',
+                'border-grid-border absolute right-0 left-0 flex items-center gap-1 border-b pr-3 pl-4',
                 t.tone,
                 t.text,
                 t.first && 'border-t-grid-border border-t-2',
@@ -72,13 +73,13 @@ export function DateAxis({
               <span
                 className={cn(
                   'flex-1 text-right font-bold tabular-nums',
-                  layout === 'full' ? 'text-xl' : layout === 'compact' ? 'text-sm' : 'text-tiny',
+                  layout === 'full' ? 'text-heading-section' : layout === 'compact' ? 'text-body' : 'text-label',
                 )}
               >
                 {format(d, 'd')}
               </span>
               {layout !== 'minimal' && (
-                <span className="w-5 text-center text-tiny font-medium">
+                <span className="w-5 text-center text-label font-medium">
                   {format(d, 'EEEEE', { locale: ja })}
                 </span>
               )}

@@ -8,28 +8,64 @@ import type { Meta, StoryObj } from '@storybook/react';
 type Swatch = { name: string; className: string; value: string; note?: string };
 
 const SURFACES: Swatch[] = [
-  { name: 'background', className: 'bg-background', value: '#FFFFFF', note: 'カード・ヘッダー帯' },
-  { name: 'content', className: 'bg-content', value: '#F7F6F2', note: 'アプリ本体の背景' },
-  { name: 'sidebar', className: 'bg-sidebar', value: '#FCFBF8' },
-  { name: 'surface-muted', className: 'bg-surface-muted', value: '#F7F5F1', note: '週末行' },
-  { name: 'surface-subtle', className: 'bg-surface-subtle', value: '#F9F8F5' },
-  { name: 'muted', className: 'bg-muted', value: '#F9F8F5' },
-  { name: 'secondary', className: 'bg-secondary', value: '#F7F5F1' },
-  { name: 'accent', className: 'bg-accent', value: '#F2EFE9', note: 'ホバー面' },
-  { name: 'primary', className: 'bg-primary', value: '#23231F', note: '主要ボタン' },
+  { name: 'background', className: 'bg-background', value: '#FFFFFF', note: 'bg/surface カード・帯' },
+  { name: 'content', className: 'bg-content', value: '#FAF8F4', note: 'bg/page 画面全体の土台' },
+  { name: 'sidebar', className: 'bg-sidebar', value: '#FAF8F4', note: 'bg/page' },
+  { name: 'surface-muted', className: 'bg-surface-muted', value: '#F3EFE8', note: 'bg/subtle' },
+  { name: 'surface-subtle', className: 'bg-surface-subtle', value: '#F3EFE8', note: 'bg/subtle' },
+  { name: 'accent', className: 'bg-accent', value: '#F3EFE8', note: 'ホバー面' },
+  { name: 'brand-subtle', className: 'bg-brand-subtle', value: '#FDF3EE', note: 'bg/accent-soft' },
+  { name: 'primary', className: 'bg-primary', value: '#20201E', note: 'bg/strong 主要ボタン' },
 ];
 
 const LINES: Swatch[] = [
-  { name: 'border', className: 'bg-border', value: '#E6E2DB' },
-  { name: 'input', className: 'bg-input', value: '#DED8CE', note: '入力・ボタン輪郭' },
-  { name: 'grid-border', className: 'bg-grid-border', value: '#E8E5DF', note: 'カレンダー罫線' },
+  { name: 'border', className: 'bg-border', value: '#DED8CE', note: 'border/default 装飾的な区切り' },
+  { name: 'border-subtle', className: 'bg-border-subtle', value: '#E7E1D8', note: 'border/subtle' },
+  { name: 'input', className: 'bg-input', value: '#8D8988', note: 'border/control 操作要素の輪郭' },
+  { name: 'grid-border', className: 'bg-grid-border', value: '#E7E1D8', note: 'カレンダー罫線' },
 ];
 
 const BRAND: Swatch[] = [
-  { name: 'brand', className: 'bg-brand', value: '#E7672C' },
-  { name: 'brand-strong', className: 'bg-brand-strong', value: '#E05224' },
-  { name: 'brand-subtle', className: 'bg-brand-subtle', value: '#F8EFE8', note: '選択中のナビ' },
-  { name: 'brand-badge', className: 'bg-brand-badge', value: '#FCE8DB', note: 'PRO バッジ' },
+  { name: 'brand', className: 'bg-brand', value: '#C44B17', note: 'Default / 白文字 4.81:1' },
+  { name: 'brand-strong', className: 'bg-brand-strong', value: '#B34212', note: 'Hover' },
+  { name: 'brand-pressed', className: 'bg-brand-pressed', value: '#9F370E', note: 'Pressed' },
+  { name: 'brand-subtle', className: 'bg-brand-subtle', value: '#FDF3EE', note: '選択中のナビ' },
+];
+
+/** Button の Role 別状態色 (Figma「03 Button」node 237:40 §02)。 */
+const ACTION: Swatch[] = [
+  { name: 'primary-hover', className: 'bg-primary-hover', value: '#4F4E49', note: 'Primary / Hover' },
+  {
+    name: 'primary-pressed',
+    className: 'bg-primary-pressed',
+    value: '#141413',
+    note: 'Primary / Pressed',
+  },
+  {
+    name: 'secondary-hover',
+    className: 'bg-secondary-hover',
+    value: '#F3EFE8',
+    note: 'Secondary / Hover',
+  },
+  {
+    name: 'secondary-pressed',
+    className: 'bg-secondary-pressed',
+    value: '#E7E1D8',
+    note: 'Secondary / Pressed',
+  },
+  {
+    name: 'action-disabled',
+    className: 'bg-action-disabled',
+    value: '#F3EFE8',
+    note: 'Disabled の面 (全 Role 共通)',
+  },
+  {
+    name: 'action-disabled-foreground',
+    className: 'bg-action-disabled-foreground',
+    value: '#AAA69C',
+    note: 'Disabled の文字',
+  },
+  { name: 'ring', className: 'bg-ring', value: '#20201E', note: 'フォーカスリング 2px' },
 ];
 
 const STATUS: Swatch[] = [
@@ -37,25 +73,25 @@ const STATUS: Swatch[] = [
   { name: 'success-subtle', className: 'bg-success-subtle', value: '#E8F6EC' },
   { name: 'warning', className: 'bg-warning', value: '#C88718', note: '進行中' },
   { name: 'warning-subtle', className: 'bg-warning-subtle', value: '#FFF5DE' },
-  { name: 'danger', className: 'bg-danger', value: '#B14E41', note: '遅延・祝日' },
-  { name: 'danger-subtle', className: 'bg-danger-subtle', value: '#FEF7F5' },
+  { name: 'danger', className: 'bg-danger', value: '#C73329', note: 'エラー・遅延' },
+  { name: 'danger-subtle', className: 'bg-danger-subtle', value: '#FDF0EF' },
 ];
 
 const CALENDAR: Swatch[] = [
   { name: 'today-bg', className: 'bg-today-bg', value: '#FFF8E3' },
-  { name: 'today-marker', className: 'bg-today-marker', value: '#E7672C' },
-  { name: 'weekend-bg', className: 'bg-weekend-bg', value: '#F7F5F1' },
-  { name: 'holiday-bg', className: 'bg-holiday-bg', value: '#FEF7F5' },
-  { name: 'holiday-foreground', className: 'bg-holiday-foreground', value: '#B14E41' },
+  { name: 'today-marker', className: 'bg-today-marker', value: '#C44B17' },
+  { name: 'weekend-bg', className: 'bg-weekend-bg', value: '#F3EFE8' },
+  { name: 'holiday-bg', className: 'bg-holiday-bg', value: '#FDF0EF' },
+  { name: 'holiday-foreground', className: 'bg-holiday-foreground', value: '#C73329' },
 ];
 
 const TEXT_COLORS: Swatch[] = [
-  { name: 'foreground', className: 'bg-foreground', value: '#23231F' },
-  { name: 'text-secondary', className: 'bg-text-secondary', value: '#676862' },
-  { name: 'text-tertiary', className: 'bg-text-tertiary', value: '#908F87' },
+  { name: 'foreground', className: 'bg-foreground', value: '#20201E', note: 'text/primary' },
+  { name: 'text-secondary', className: 'bg-text-secondary', value: '#4F4E49', note: 'text/secondary' },
+  { name: 'text-tertiary', className: 'bg-text-tertiary', value: '#6F6B63', note: 'text/muted' },
 ];
 
-/** Figma 54:2 のスケジュールカード 10 テーマ。文字色は全テーマ共通 (#22211F)。 */
+/** Figma 206:259 のスケジュールカード 10 テーマ。文字色は全テーマ共通 (#22211F)。 */
 const PLAN_THEMES = [
   { name: 'Warm Gray', surface: 'bg-plan-warm-gray-surface', accent: 'bg-plan-warm-gray-accent' },
   { name: 'Rose', surface: 'bg-plan-rose-surface', accent: 'bg-plan-rose-accent' },
@@ -72,7 +108,7 @@ const PLAN_THEMES = [
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h3 className="text-base font-bold">{title}</h3>
+      <h3 className="text-heading-section font-bold">{title}</h3>
       {children}
     </section>
   );
@@ -86,8 +122,8 @@ function SwatchGrid({ items }: { items: Swatch[] }) {
           <div className={`h-14 border-b border-border ${s.className}`} />
           <div className="flex flex-col gap-0.5 px-3 py-2">
             <span className="text-body font-medium">{s.name}</span>
-            <span className="text-mini text-text-tertiary">{s.value}</span>
-            {s.note ? <span className="text-mini text-text-secondary">{s.note}</span> : null}
+            <span className="text-label text-text-tertiary">{s.value}</span>
+            {s.note ? <span className="text-label text-text-secondary">{s.note}</span> : null}
           </div>
         </li>
       ))}
@@ -99,10 +135,11 @@ function TokenCatalog() {
   return (
     <div className="flex flex-col gap-10 p-6">
       <header className="flex flex-col gap-1">
-        <p className="text-mini font-bold tracking-widest text-brand-strong">DESIGN TOKENS</p>
+        <p className="text-label font-bold tracking-widest text-brand-strong">DESIGN TOKENS</p>
         <h2 className="font-display text-wordmark">TRAKON</h2>
         <p className="text-body text-text-secondary">
-          Figma「TRAKON｜Landing Page」由来。暖色ニュートラル + ブランドオレンジ #E7672C。
+          Figma「TRAKON｜Design」/ APP DESIGN GUIDE v1.0 由来。暖色ニュートラル + ブランドオレンジ
+          #C44B17。
         </p>
       </header>
 
@@ -118,6 +155,9 @@ function TokenCatalog() {
       <Section title="ブランド">
         <SwatchGrid items={BRAND} />
       </Section>
+      <Section title="Button の状態色 (node 237:40)">
+        <SwatchGrid items={ACTION} />
+      </Section>
       <Section title="状態">
         <SwatchGrid items={STATUS} />
       </Section>
@@ -125,7 +165,7 @@ function TokenCatalog() {
         <SwatchGrid items={CALENDAR} />
       </Section>
 
-      <Section title="スケジュールカード 10 テーマ (Figma 54:2)">
+      <Section title="スケジュールカード 10 テーマ (Figma 206:259)">
         <p className="text-body text-text-secondary">
           色は状態ではなく、ユーザーがスケジュールを視覚整理するために使用する。
         </p>
@@ -137,8 +177,8 @@ function TokenCatalog() {
             >
               <div className={`flex items-start justify-between p-4 ${t.surface}`}>
                 <div className="flex flex-col gap-1 text-plan-foreground">
-                  <span className="text-sm font-bold">Webデザイン</span>
-                  <span className="text-mini">7.21（火）– 7.24（金）</span>
+                  <span className="text-body font-bold">Webデザイン</span>
+                  <span className="text-label">7.21（火）– 7.24（金）</span>
                 </div>
                 <span className={`size-[18px] shrink-0 rounded-full ${t.accent}`} />
               </div>
@@ -151,15 +191,30 @@ function TokenCatalog() {
       <Section title="タイポグラフィ">
         <ul className="flex flex-col gap-3">
           <li className="font-display text-wordmark">TRAKON — font-display / text-wordmark (32px)</li>
-          <li className="text-title font-bold">画面タイトル — text-title (22px) / Bold</li>
-          <li className="text-xl font-bold">セクション・月見出し — text-xl (20px) / Bold</li>
-          <li className="text-base font-bold">カード見出し — text-base (16px) / Bold</li>
-          <li className="text-sm">本文 — text-sm (14px) / Regular</li>
-          <li className="text-body">本文（密） — text-body (13px) / Regular</li>
-          <li className="text-xs">キャプション — text-xs (12px)</li>
-          <li className="text-tiny">日付軸・補助 — text-tiny (11px)</li>
-          <li className="text-mini">高密度カレンダー — text-mini (10px)</li>
-          <li className="text-micro">ロールラベル — text-micro (9px)</li>
+          <li className="text-heading-page font-bold">
+            App/Heading/Page — text-heading-page (24px / 34px) / Bold — 画面のタイトル
+          </li>
+          <li className="text-heading-section font-bold">
+            App/Heading/Section — text-heading-section (18px / 28px) / Bold — 領域・セクションの見出し
+          </li>
+          <li className="text-body">
+            App/Body/Default — text-body (14px / 22px) / Regular — 本文・説明文
+          </li>
+          <li className="text-button font-medium">
+            App/Button/Default — text-button (14px / 20px) / Medium — ボタンのラベル
+          </li>
+          <li className="text-label font-medium">
+            App/Label/Default — text-label (12px / 18px) / Medium — 短い項目名・ラベル
+          </li>
+          <li className="text-label">
+            App/Caption/Default — text-label (12px / 18px) / Regular — 日付・注記・補足情報
+          </li>
+          <li className="text-mini text-text-secondary">
+            例外 — text-mini (10px) — スケジュール高密度表示専用
+          </li>
+          <li className="text-micro text-text-secondary">
+            例外 — text-micro (9px) — スケジュール高密度表示専用
+          </li>
         </ul>
       </Section>
 
@@ -174,7 +229,7 @@ function TokenCatalog() {
           ].map(([cls, px]) => (
             <li key={cls} className="flex flex-col items-center gap-2">
               <div className={`size-20 border border-border bg-surface-muted ${cls}`} />
-              <span className="text-mini text-text-secondary">
+              <span className="text-label text-text-secondary">
                 {cls} / {px}
               </span>
             </li>
@@ -190,7 +245,7 @@ function TokenCatalog() {
           ].map(([cls, label]) => (
             <li key={cls} className="flex flex-col items-center gap-2">
               <div className={`size-24 rounded-lg bg-background ${cls}`} />
-              <span className="text-mini text-text-secondary">
+              <span className="text-label text-text-secondary">
                 {cls} / {label}
               </span>
             </li>

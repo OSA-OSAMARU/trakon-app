@@ -252,7 +252,7 @@ export function CreatePlanModal({
             </Field>
             {/* 色はカテゴリとは独立して選べる (#149)。未選択ならカテゴリ由来の既定色。 */}
             <div className="flex flex-col gap-1.5 pb-1">
-              <span className="text-text-secondary text-tiny font-medium">色</span>
+              <span className="text-text-secondary text-label font-medium">色</span>
               <ScheduleThemePicker
                 value={(form.watch('colorTheme') as ScheduleThemeKey) || null}
                 fallback={CATEGORY_THEME[form.watch('category')]}
@@ -336,7 +336,7 @@ export function CreatePlanModal({
             );
           })()}
           {mode === 'edit' && !rolesEditable && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               確認依頼・承認後のため実施者/承認者は変更できません。
             </p>
           )}
@@ -399,8 +399,8 @@ function Field({
     <div className={cn('space-y-1.5', className)}>
       <Label>{label}</Label>
       {children}
-      {hint && !error && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {hint && !error && <p className="text-label text-muted-foreground">{hint}</p>}
+      {error && <p className="text-label text-destructive">{error}</p>}
     </div>
   );
 }

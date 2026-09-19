@@ -96,8 +96,8 @@ export function ShareActionModal({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 space-y-3 overflow-y-auto text-sm">
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2 text-xs">
+        <div className="flex-1 space-y-3 overflow-y-auto text-body">
+          <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 p-2 text-label">
             <span className="text-muted-foreground">現在のホルダー</span>
             <span className="font-medium">{plan.ballHolder?.name ?? '—'}</span>
             <Badge variant="secondary" className="ml-auto">
@@ -111,12 +111,12 @@ export function ShareActionModal({
             <dd>{plan.approver ? memberLabel(plan.approver) : '未設定 (実施者が承認)'}</dd>
           </dl>
           {plan.memo && (
-            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs whitespace-pre-wrap">
+            <div className="rounded-md border border-border bg-muted/40 p-3 text-label whitespace-pre-wrap">
               {plan.memo}
             </div>
           )}
           {noAction && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-label text-muted-foreground">
               この予定に対してクライアントが行える操作はありません。
             </p>
           )}
@@ -134,7 +134,7 @@ export function ShareActionModal({
             </Button>
           )}
           {canSendBack && (
-            <Button variant="outline" onClick={() => sendBackMut.mutate()} disabled={pending}>
+            <Button variant="secondary" onClick={() => sendBackMut.mutate()} disabled={pending}>
               {sendBackMut.isPending ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (

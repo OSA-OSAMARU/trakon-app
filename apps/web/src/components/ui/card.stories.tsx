@@ -26,7 +26,7 @@ export const Default: Story = {
         <CardDescription>プランの説明文がここに入ります。</CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="text-sm">カードの本文コンテンツ。</p>
+        <p className="text-body">カードの本文コンテンツ。</p>
       </CardContent>
       <CardFooter>
         <Button size="sm">アクション</Button>

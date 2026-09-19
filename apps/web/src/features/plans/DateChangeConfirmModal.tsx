@@ -35,13 +35,13 @@ export function DateChangeConfirmModal({
           <Button onClick={() => onConfirm(true)}>
             次の予定（後続チェーン）も一緒にずらす
           </Button>
-          <p className="-mt-1 text-[11px] text-muted-foreground">
+          <p className="-mt-1 text-label text-muted-foreground">
             「次の予定」で連なる後続の予定を、同じ日数分ずらします。
           </p>
-          <Button variant="outline" onClick={() => onConfirm(false)}>
+          <Button variant="secondary" onClick={() => onConfirm(false)}>
             この予定のみ変更
           </Button>
-          <p className="-mt-1 text-[11px] text-muted-foreground">
+          <p className="-mt-1 text-label text-muted-foreground">
             他の予定の日程は変更しません。
           </p>
           <Button variant="ghost" onClick={onClose}>

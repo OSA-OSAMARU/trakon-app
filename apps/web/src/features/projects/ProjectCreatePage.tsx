@@ -209,10 +209,10 @@ export function ProjectCreatePage() {
           </FormCard>
 
           <FormCard title="制作物" description="入力順が、そのままスケジュールの列順になります">
-            <span className="text-text-tertiary pl-16 text-tiny font-medium">制作物名</span>
+            <span className="text-text-tertiary pl-16 text-label font-medium">制作物名</span>
             {items.fields.map((f, idx) => (
               <div key={f.id} className="flex items-center gap-4">
-                <span className="text-text-tertiary w-12 shrink-0 text-right text-tiny font-medium tabular-nums">
+                <span className="text-text-tertiary w-12 shrink-0 text-right text-label font-medium tabular-nums">
                   {String(idx + 1).padStart(2, '0')}
                 </span>
                 <Input
@@ -233,14 +233,14 @@ export function ProjectCreatePage() {
               </div>
             ))}
             {form.formState.errors.items && (
-              <p className="text-destructive text-xs">
+              <p className="text-destructive text-label">
                 {form.formState.errors.items.message ?? '制作物を 1 件以上入力してください'}
               </p>
             )}
             <div>
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 size="lg"
                 onClick={() => appendAndFocus('item')}
                 disabled={items.fields.length >= 50}
@@ -252,7 +252,7 @@ export function ProjectCreatePage() {
           </FormCard>
 
           <FormCard title="参加者" description="参加者を登録し、プロジェクトの進行責任者を設定します">
-            <div className="text-text-tertiary grid grid-cols-[1fr_1fr_1.3fr_1.5fr_1.2fr_36px] gap-3 text-tiny font-medium">
+            <div className="text-text-tertiary grid grid-cols-[1fr_1fr_1.3fr_1.5fr_1.2fr_36px] gap-3 text-label font-medium">
               <span className="flex items-center gap-1.5">
                 氏名
                 <Badge variant="brand" size="sm">
@@ -277,7 +277,7 @@ export function ProjectCreatePage() {
                     {...form.register(`members.${idx}.name` as const)}
                   />
                   {form.formState.errors.members?.[idx]?.name && (
-                    <span className="text-destructive text-micro">
+                    <span className="text-destructive text-label">
                       {form.formState.errors.members[idx]?.name?.message}
                     </span>
                   )}
@@ -340,7 +340,7 @@ export function ProjectCreatePage() {
             <div className="flex flex-wrap items-center gap-6">
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 size="lg"
                 onClick={() => appendAndFocus('member')}
                 disabled={members.fields.length >= 50}
@@ -348,7 +348,7 @@ export function ProjectCreatePage() {
                 <Plus />
                 参加者を追加
               </Button>
-              <p className="text-text-tertiary flex-1 text-mini">
+              <p className="text-text-tertiary flex-1 text-label">
                 通知先メールには、確認TOSSやコメントRETURNなど、対応が必要なときに通知します。プロジェクト作成時には送信されません。
               </p>
             </div>
@@ -362,7 +362,7 @@ export function ProjectCreatePage() {
                   必須
                 </Badge>
               </span>
-              <span className="text-text-tertiary text-mini">
+              <span className="text-text-tertiary text-label">
                 新しいタスクカードの進行責任者へ初期入力されます
               </span>
               <Select
@@ -387,11 +387,11 @@ export function ProjectCreatePage() {
                 </SelectContent>
               </Select>
               {form.formState.errors.progressManagerIndex && (
-                <span className="text-destructive text-xs">
+                <span className="text-destructive text-label">
                   {form.formState.errors.progressManagerIndex.message}
                 </span>
               )}
-              <p className="bg-brand-subtle text-text-secondary mt-2 rounded-xl p-4 text-mini">
+              <p className="bg-brand-subtle text-text-secondary mt-2 rounded-xl p-4 text-label">
                 <span className="text-foreground block text-body font-medium">
                   進行責任者はタスクごとに変更できます
                 </span>
@@ -405,14 +405,14 @@ export function ProjectCreatePage() {
       {/* 作成内容のサマリと主操作を画面下に固定する (Figma node 73:114) */}
       <div className="border-border flex shrink-0 flex-wrap items-center gap-6 border-t bg-background px-14 py-6">
         <div className="flex flex-col gap-1.5">
-          <span className="text-text-tertiary text-mini font-medium">作成される内容</span>
+          <span className="text-text-tertiary text-label font-medium">作成される内容</span>
           <span className="text-body font-medium">
             制作物 {itemCount}件 ・ 参加者 {namedMembers.length}名 ・ 
             {form.watch('startDate')} – {form.watch('endDate')}
           </span>
         </div>
-        <p className="text-text-tertiary flex-1 text-mini">すべての内容は作成後に変更できます</p>
-        <Button type="button" variant="outline" size="lg" onClick={() => setCancelOpen(true)}>
+        <p className="text-text-tertiary flex-1 text-label">すべての内容は作成後に変更できます</p>
+        <Button type="button" variant="secondary" size="lg" onClick={() => setCancelOpen(true)}>
           キャンセル
         </Button>
         <Button type="submit" form="project-create-form" size="lg" disabled={createMut.isPending}>
@@ -450,8 +450,8 @@ function FormCard({
   return (
     <section className="border-input flex flex-col gap-4 rounded-xl border bg-background p-6">
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-bold">{title}</h2>
-        <p className="text-text-tertiary text-tiny">{description}</p>
+        <h2 className="text-heading-section font-bold">{title}</h2>
+        <p className="text-text-tertiary text-label">{description}</p>
       </div>
       {children}
     </section>
@@ -471,7 +471,7 @@ function Field({
     <div className="space-y-1.5">
       <Label>{label}</Label>
       {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-label text-destructive">{error}</p>}
     </div>
   );
 }

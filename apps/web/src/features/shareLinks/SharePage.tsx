@@ -82,12 +82,12 @@ function Header({ view }: { view: ShareView }) {
   return (
     <header className="flex items-start justify-between gap-3 border-b border-border bg-background px-6 py-4">
       <div className="space-y-1">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 text-label text-muted-foreground">
           <Lock className="size-3" />
           共有リンク (確認・承認)
         </div>
-        <h1 className="text-xl font-semibold tracking-tight">{view.project.name}</h1>
-        <p className="text-xs text-muted-foreground">
+        <h1 className="text-heading-page font-semibold tracking-tight">{view.project.name}</h1>
+        <p className="text-label text-muted-foreground">
           期間: {format(new Date(view.project.startDate), 'yyyy/M/d')} 〜{' '}
           {format(new Date(view.project.endDate), 'yyyy/M/d')}
           {' ・ '}
@@ -112,7 +112,7 @@ function PageSkeleton() {
 
 function CenteredError({ text }: { text: string }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-2 px-6 text-center text-body text-muted-foreground">
       <AlertCircle className="size-6 text-destructive" />
       <p>{text}</p>
     </div>
