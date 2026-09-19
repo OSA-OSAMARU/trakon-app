@@ -29,6 +29,24 @@ describe('RoleRow', () => {
     expect(container.querySelector('.bg-role-approver')).not.toBeNull();
   });
 
+  it('trailing は detail のときだけ出る (#198)', () => {
+    const { rerender } = render(
+      <RoleRow role="executor" name="石原 美咲" trailing={<span>管理者</span>} />,
+    );
+    // compact はスケジュールカード内の高密度表示なので右端の補足は出さない
+    expect(screen.queryByText('管理者')).toBeNull();
+
+    rerender(
+      <RoleRow
+        variant="detail"
+        role="executor"
+        name="石原 美咲"
+        trailing={<span>管理者</span>}
+      />,
+    );
+    expect(screen.getByText('管理者')).toBeInTheDocument();
+  });
+
   it('caption は指定したときだけ出る', () => {
     const { rerender } = render(<RoleRow role="manager" name="横山 直樹" />);
     expect(screen.queryByText('ディレクター')).toBeNull();

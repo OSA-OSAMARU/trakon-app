@@ -1,4 +1,4 @@
-import { canProjectRole } from '@trakon/shared';
+import { canProjectRole, PROJECT_ROLE_LABEL } from '@trakon/shared';
 import type { ScheduleThemeKey } from '@trakon/shared';
 
 import { useMemo, useState } from 'react';
@@ -118,6 +118,24 @@ export function BallDetailModal({
   const myMember = members.find((m) => m.userId === myUserId);
   // 担当者のホバーカード用の索引 (#159)
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+
+  /**
+   * 担当欄に併記する権限ロール (#198)。
+   *
+   * 担当 (実施者 / 承認者 / 進行責任者) は**この予定での役割**、
+   * 権限ロール (管理者 / 編集者 / 閲覧者) は**プロジェクト全体で何ができるか**で、
+   * 別の軸の情報。「承認者に指名したのに閲覧者なので承認できない」といった
+   * 食い違いは、この 2 つを並べて初めて気づける。
+   */
+  const roleBadgeFor = (memberId: string | undefined) => {
+    const member = memberId ? memberById.get(memberId) : undefined;
+    if (!member) return undefined;
+    return (
+      <Badge variant="neutral" size="sm">
+        {PROJECT_ROLE_LABEL[member.roleType]}
+      </Badge>
+    );
+  };
 
   const detailQuery = useQuery({
     queryKey: plansQueryKey.detail(projectId, itemId, planId),
@@ -462,6 +480,7 @@ export function BallDetailModal({
                             <RoleRow
                               variant="detail"
                               role="executor"
+                              trailing={roleBadgeFor(plan.executor?.id)}
                               name={plan.executor?.name ?? '未設定'}
                               caption={plan.executor?.organizationName ?? undefined}
                             />
@@ -475,6 +494,7 @@ export function BallDetailModal({
                             <RoleRow
                               variant="detail"
                               role="approver"
+                              trailing={roleBadgeFor(plan.approver?.id)}
                               name={plan.approver?.name ?? '未設定（実施者が承認）'}
                               caption={plan.approver?.organizationName ?? undefined}
                             />
@@ -488,6 +508,7 @@ export function BallDetailModal({
                             <RoleRow
                               variant="detail"
                               role="manager"
+                              trailing={roleBadgeFor(plan.progressManager?.id)}
                               name={plan.progressManager?.name ?? '未設定'}
                               caption={plan.progressManager?.organizationName ?? undefined}
                             />
