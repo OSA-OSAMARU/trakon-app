@@ -1212,13 +1212,22 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 
 #### `DELETE /api/v1/projects/:projectId/items/:itemId/plans/:planId`
 
-予定削除。Phase 0 は物理削除（FR-BALL-12）。
+予定削除。**論理削除**（`deleted_at` を立てる、#205）。
 
 **認可**：プロジェクトディレクター（#131：`requireProjectDirector`）。
 
-**ビジネスルール**（#131）：
-- **`ball_events` が 1 件でも付いた予定は物理削除拒否**（409 `PLAN_HAS_EVENTS`）。ball_events は append-only（FK ON DELETE RESTRICT）のため CASCADE できない
-- **削除対象 plan を successor として参照している先行 plan があれば、その `successor_plan_id` を NULL にセット**（DB の `ON DELETE SET NULL`、v1.1）
+**ビジネスルール**（#131 / #205）：
+- **状態を問わず削除できる。** `ball_events` が付いていても拒否しない。
+  ball_events は append-only（FK ON DELETE RESTRICT）で物理削除できないため、
+  以前は 409 `PLAN_HAS_EVENTS` を返していたが、一度 TOSS した予定が永久に消せず
+  「間違えて作った予定がボードに残り続ける」行き止まりになっていた（#205）。
+  イベントの有無で物理／論理を出し分けると挙動が二重になるので、**常に論理削除**とする
+- 参照系はすべて `deleted_at IS NULL` で絞っているため、削除後は API にも画面にも現れない。
+  `ball_events` の行自体は履歴として残す
+- **削除対象 plan を successor として参照している先行 plan の `successor_plan_id` を NULL にする。**
+  物理削除なら FK の `ON DELETE SET NULL` が効くが、論理削除では残ってしまうため明示的に外す
+- **削除対象 plan が握っていた `successor_plan_id` も NULL にする。**
+  この列は UNIQUE なので、握ったままだと他の予定がその後続を指せなくなる
 
 ---
 

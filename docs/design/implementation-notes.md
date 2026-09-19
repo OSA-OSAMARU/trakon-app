@@ -9,7 +9,7 @@ Sub-Phase 0.0〜0.6 の実装過程で、基本設計書 v1.1 から意図的に
 | **DnD ライブラリ** | `react-dnd`（プロトタイプと統一） | **`@dnd-kit/core`** | React 18 + Vite 6 親和性、API のシンプルさ。操作セマンティクスは同じ | 必要なら react-dnd へ寄せ直しも可 |
 | **メンバーかんばん列構造** | 2 次元（状態行 × メンバー列） | **メンバー列のみ**（縦に active 予定を積む）、完了はボタン | Phase 0 で 5–10 名想定のためシンプル化 | 列数増・状態複雑化のタイミングで 2 次元化 |
 | **非会員 TOSS/完了 の `source`** | `ck_be_actor_consistency` を満たすため `human` か `auto_chain` のみ | **`source='auto_chain'` + actor_*=NULL** で記録（system actor 扱い） | `ck_be_actor_consistency` を変えずに済む最小妥協 | `source='share'` を ALTER で追加し CHECK を更新 |
-| **plan 削除** | アクティブボールがあれば警告 (UC-12) | **`ball_events` が 1 件でも付いた plan は 409 `PLAN_HAS_EVENTS`** で物理削除拒否 | append-only との整合性を最優先。Phase 0 は「キャンセル」未実装のため | `status='canceled'` 遷移を導入してキャンセルを可能に |
+| **plan 削除** | アクティブボールがあれば警告 (UC-12) | **状態を問わず論理削除**（`deleted_at`、#205）。履歴がある場合は確認ダイアログで影響を先に伝える | 当初は 409 `PLAN_HAS_EVENTS` で拒否していたが、一度 TOSS すると永久に消せず行き止まりになった。append-only は `ball_events` の行を残すことで守る | `status='canceled'` 遷移を導入してキャンセルと削除を使い分ける |
 | **dashboard の集計範囲** | 今日のタスク + 期限超過 + 自分が見える全プロジェクト | 同上だが `scheduled_date <= today` の **active のみ**（完了は除外） | シンプルな実装を優先 | 必要なら直近 N 日のフィルタやサマリー追加 |
 | **shadcn primitives "use client"** | — | **そのまま残置**（Vite SPA では無害） | Next.js のディレクティブ。削除コストの方が高い | — |
 | **CSP nonce 化** | Phase 0 から検討 | **`unsafe-inline` 許容**（vercel.json） | Vite + Vercel での nonce 注入は build/serve 仕掛けが要、Phase 1 で集中対応 | `vercel.json` を nonce + HTML transform に拡張 |

@@ -808,6 +808,49 @@ describe('BallDetailModal (integration)', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it('削除: 履歴のある完了済みの予定も削除でき、影響を先に伝える (#205)', async () => {
+    // 以前は ball_events が付くと削除メニュー自体が消え、間違えて作った予定が
+    // ボードに残り続けていた。状態を問わず消せることを保証する。
+    setupReads(
+      {
+        plan: makePlan({ ballState: 'tossed', status: 'completed' }),
+        events: [makeEvent({ eventType: 'tossed' })],
+      },
+      { role: 'admin' },
+    );
+    let deleteCalled = false;
+    server.use(
+      http.delete(`*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/plans/${PLAN_ID}`, () => {
+        deleteCalled = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    const { onClose } = renderModal();
+
+    await openMoreMenu(user);
+    await user.click(await screen.findByRole('menuitem', { name: '削除' }));
+
+    expect(
+      await screen.findByText(/この予定にはボールのやり取りの履歴があります/),
+    ).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: '削除' }));
+    await waitFor(() => expect(deleteCalled).toBe(true));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('削除: 閲覧者には削除の導線を出さない', async () => {
+    // 削除を状態で隠すのはやめたが (#205)、ロールによる出し分けは従来どおり。
+    // 閲覧者は取り消し系の操作も持たないので「⋯」自体が出ない。
+    setupReads({ plan: makePlan({ ballState: 'in_progress' }), events: [] }, { role: 'viewer' });
+    renderModal();
+
+    await screen.findByText('デザインカンプ作成');
+    expect(screen.queryByRole('button', { name: 'その他の操作' })).not.toBeInTheDocument();
+  });
+
   it('編集: active なら編集アイコンで onEdit を呼ぶ', async () => {
     setupReads({ plan: makePlan({ ballState: 'in_progress' }), events: [] });
     const user = userEvent.setup({ pointerEventsCheck: 0 });

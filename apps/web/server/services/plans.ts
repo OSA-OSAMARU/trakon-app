@@ -599,23 +599,37 @@ export async function setPlanSuccessor(input: {
   return toPlanDTO(row, []);
 }
 
+/**
+ * 予定を削除する (#205)。
+ *
+ * **論理削除**で統一している。`ball_events` は append-only (FK ON DELETE RESTRICT) で
+ * 物理削除できず、以前は「イベントが付いた予定は削除できない」としていた。しかし
+ * 一度でも確認依頼や TOSS をすると二度と消せなくなり、**間違えて作った予定が
+ * ボードに残り続ける**という運用上の行き止まりになっていた。
+ *
+ * イベントの有無で物理／論理を出し分けると「消したのに履歴に出る予定と出ない予定」が
+ * 混在するので、常に論理削除にして挙動を 1 つにしている。参照系は例外なく
+ * `deletedAt: null` で絞っているため、削除後は画面にも API にも現れない。
+ */
 export async function deletePlan(input: { itemId: string; planId: string }): Promise<void> {
   const existing = await prisma.plan.findFirst({
     where: { id: input.planId, itemId: input.itemId, deletedAt: null },
-    include: { ballEvents: { select: { id: true } } },
+    select: { id: true },
   });
   if (!existing) throw new ApiException('NOT_FOUND', 404, 'Plan not found.');
 
-  // ball_events は append-only なので CASCADE 削除できない (FK ON DELETE RESTRICT)
-  // → アプリ層で「ball_events が付いた予定は物理削除拒否」する。Phase 0 のシンプル運用。
-  if (existing.ballEvents.length > 0) {
-    throw new ApiException(
-      'PLAN_HAS_EVENTS',
-      409,
-      'Plan has ball events; cancel instead of deleting (not yet supported).',
-    );
-  }
-
-  // この plan を successor として指す先行 plan があれば自動的に SET NULL される (FK 設定済み)
-  await prisma.plan.delete({ where: { id: input.planId } });
+  await prisma.$transaction([
+    // 先行予定からの紐付けを外す。物理削除なら FK の SET NULL が効くが、
+    // 論理削除では残ってしまい「消えた予定への後続リンク」になる。
+    prisma.plan.updateMany({
+      where: { successorPlanId: input.planId },
+      data: { successorPlanId: null },
+    }),
+    // 自分が握っていた後続も解放する。successor_plan_id は UNIQUE なので、
+    // 握ったままだと他の予定がその後続を指せなくなる。
+    prisma.plan.update({
+      where: { id: input.planId },
+      data: { successorPlanId: null, deletedAt: new Date() },
+    }),
+  ]);
 }

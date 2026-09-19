@@ -279,6 +279,8 @@ const prismaMock = {
       return { startDate: DEFAULT_PERIOD_START, endDate: DEFAULT_PERIOD_END };
     }),
   },
+  // 配列渡しのトランザクション。インメモリ実装なので順に解決するだけでよい。
+  $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
 };
 
 vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
@@ -1154,20 +1156,52 @@ describe('deletePlan', () => {
     });
   });
 
-  it('ball_events が付いていれば 409 PLAN_HAS_EVENTS', async () => {
-    const plan = seedPlan();
-    seedBallEvent({ planId: plan.id, eventType: 'tossed' });
-    await expect(deletePlan({ itemId: ITEM_ID, planId: plan.id })).rejects.toMatchObject({
-      code: 'PLAN_HAS_EVENTS',
-      status: 409,
-    });
-  });
-
-  it('events なしの予定は削除でき、被参照は SET NULL される', async () => {
+  it('events なしの予定を削除でき、被参照の紐付けも外れる', async () => {
     const plan = seedPlan({ id: 'target' });
     seedPlan({ id: 'pred', successorPlanId: 'target' });
     await deletePlan({ itemId: ITEM_ID, planId: plan.id });
-    expect(planStore.find((p) => p.id === 'target')).toBeUndefined();
+
+    // 論理削除なので行は残るが、参照系はすべて deletedAt: null で絞っている
+    expect(planStore.find((p) => p.id === 'target')?.deletedAt).not.toBeNull();
     expect(planStore.find((p) => p.id === 'pred')?.successorPlanId).toBeNull();
+  });
+
+  it('ball_events が付いた予定も削除できる (#205)', async () => {
+    // 以前は 409 PLAN_HAS_EVENTS で拒否していた。一度でも TOSS すると
+    // 二度と消せず、間違えて作った予定がボードに残り続けていた。
+    const plan = seedPlan({ id: 'tossed' });
+    seedBallEvent({ planId: plan.id, eventType: 'tossed' });
+
+    await deletePlan({ itemId: ITEM_ID, planId: plan.id });
+
+    expect(planStore.find((p) => p.id === 'tossed')?.deletedAt).not.toBeNull();
+    // ball_events は append-only。削除しても履歴の行自体は残す
+    expect(ballEventStore.filter((e) => e.planId === 'tossed')).toHaveLength(1);
+  });
+
+  it('削除した予定は一覧に出ない', async () => {
+    const plan = seedPlan({ id: 'gone' });
+    seedPlan({ id: 'kept' });
+    await deletePlan({ itemId: ITEM_ID, planId: plan.id });
+
+    const { items } = await listPlans({ itemId: ITEM_ID, query: { limit: 50, offset: 0 } });
+    expect(items.map((p) => p.id)).toEqual(['kept']);
+  });
+
+  it('削除した予定を握っていた後続は他の予定から指せるようになる', async () => {
+    // successor_plan_id は UNIQUE。論理削除で握ったままだと後続が永久に埋まる
+    seedPlan({ id: 'succ' });
+    const plan = seedPlan({ id: 'holder', successorPlanId: 'succ' });
+    await deletePlan({ itemId: ITEM_ID, planId: plan.id });
+
+    expect(planStore.find((p) => p.id === 'holder')?.successorPlanId).toBeNull();
+
+    const other = seedPlan({ id: 'other' });
+    const dto = await setPlanSuccessor({
+      itemId: ITEM_ID,
+      planId: other.id,
+      body: { successorPlanId: 'succ' },
+    });
+    expect(dto.successorPlanId).toBe('succ');
   });
 });
