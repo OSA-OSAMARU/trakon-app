@@ -1268,15 +1268,25 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 
 > **#131 状態機械**：実施中 →（確認依頼 `review_requested`）→ 確認待ち →（承認 `approved`）→ 承認済み →（TOSS `tossed`）→ TOSS済み。承認者なしの予定は確認待ちを経ず実施者が直接 approve する。差し戻し（`sent_back`）は承認者→実施者（同一予定内で継続）。**承認とTOSSは分離**され、承認だけでは後続は自動開始しない（進行責任者だけが TOSS できる）。**承認=完了**：後続なしは approve で `status=completed`、後続ありは toss で先行が `status=completed` になる。共通の認可は「現 Ball Holder or ディレクター（override）」。実装の正は `apps/web/server/services/ballActions.ts`。
 
-#### `POST .../plans/:planId/request-review` / `request-review-undo`（#131）
+#### `POST .../plans/:planId/request-review` / `request-review-undo`（#131 / #206）
 
-確認依頼：実施中/差し戻し → 確認待ち（保持者を実施者→承認者へ）。取り消しはその逆。
+確認依頼（画面上は **確認TOSS**）：実施中/差し戻し → 確認待ち（保持者を実施者→承認者へ）。
+取り消し（画面上は **コメントRETURN**）はその逆。
 
+- **リクエスト**：
+  - request-review … `{ note?: string }`（確認してほしい内容。**任意**）
+  - request-review-undo … `{ note: string }`（戻す理由。**必須**。1〜2000 文字）
 - **事前条件**：`status='active'`。request-review は現状態が `in_progress` または `sent_back`、かつ実施者・承認者が設定済み（承認者なしは 422 `NO_APPROVER` → 直接承認へ誘導）。undo は現状態が `review_pending`。
 - **認可**：request-review は現 Ball Holder（実施者）or ディレクター。undo は実施者/承認者/ディレクター。
-- **イベント**：`review_requested` / `review_request_undone`（`source='human'`）。
+- **イベント**：`review_requested` / `review_request_undone`（`source='human'`、`note` を保存）。
+- **通知**（#206）：request-review は**承認者**へ、undo は**実施者**へメールを送る。
+  `note` は本文に載る。送信失敗は `warnings` で返し、操作自体は巻き戻さない。
 - **監査**：`request_review` / `undo_request_review`。
-- **エラー**：409 `INVALID_STATE`、422 `INCOMPLETE_PLAN` / `NO_APPROVER`、403 `FORBIDDEN`。
+- **エラー**：409 `INVALID_STATE`、422 `INCOMPLETE_PLAN` / `NO_APPROVER` / 理由未入力、403 `FORBIDDEN`。
+
+> **なぜ undo の理由は必須か**（#206 / Figma node 45:8）：承認者がボールを戻すのは
+> 「このままでは承認できない」という意思表示であり、理由が無いと実施者は何を直せばよいか
+> 分からない。確認依頼側の `note` は「あると助かる」情報なので任意にしている。
 
 #### `POST .../plans/:planId/approve` / `approve-undo`（#131）
 
@@ -1301,6 +1311,7 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 
 TOSS：承認済み → TOSS済み。進行責任者が後続予定へボールを渡す。
 
+- **リクエスト**：`{ note?: string }`（後続の実施者への申し送り。**任意**、#206）。
 - **事前条件**（#131）：`status='active'` かつ現状態 `approved`、**後続予定必須**（`successorPlanId` あり、かつ後続に実施者設定済み）、進行責任者設定済み。
 - **認可**：現 Ball Holder（進行責任者）or ディレクター。TOSS は**共有リンクからは不可**。
 - **処理**：先行 plan に **FROM=進行責任者 / TO=後続予定の実施者**を履歴として書き込み（§14）、`status='completed'`。`ball_events` に `tossed` を INSERT。

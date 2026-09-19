@@ -2,7 +2,7 @@ import { prisma, type Prisma } from '@trakon/db';
 import { deriveBallHolder, type BallEventType, type BallHolderResult, type PlanState } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
-import { getMailer } from '../lib/mailer.js';
+import { getMailer, type BallHandoffKind } from '../lib/mailer.js';
 import { canProjectRole, resolveMemberProfile, type ProjectRole } from '@trakon/shared';
 import { toPlanDTO, type PlanDTO } from './plans.js';
 
@@ -165,11 +165,16 @@ async function createEvent(input: {
 // -----------------------------------------------------------------------------
 export async function requestReviewPlan(input: {
   itemId: string;
+  projectId: string;
   planId: string;
   currentUserId: string;
   currentMemberId: string;
   role: ProjectRole;
-}): Promise<{ plan: PlanDTO }> {
+  /** 承認者へ添えるメッセージ (#206)。履歴にも残す */
+  note?: string | null;
+  /** 通知メールに載せるリンクの起点。未指定なら通知しない */
+  origin?: string;
+}): Promise<{ plan: PlanDTO; warnings?: string[] }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
     assertActive(plan);
@@ -185,23 +190,42 @@ export async function requestReviewPlan(input: {
     }
     assertBallAction(plan, input.currentMemberId, input.role, 'plan.complete');
 
-    await createEvent({ tx, planId: plan.id, eventType: 'review_requested', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    await createEvent({ tx, planId: plan.id, eventType: 'review_requested', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId, note: input.note });
     await recordAudit({ tx, actorUserId: input.currentUserId, action: 'request_review', planId: plan.id });
     return loadPlanWithIncludes(tx, plan.id, input.itemId);
   });
-  return { plan: toPlanDTO(result) };
+
+  // 通知はコミット後。承認者に「確認の番になった」ことを知らせる (#206)
+  const warnings = input.origin
+    ? await notifyBallHandoff({
+        kind: 'review_requested',
+        projectId: input.projectId,
+        planId: result.id,
+        recipientMemberId: result.approverMemberId,
+        fromMemberName: result.executor?.name ?? '実施者',
+        note: input.note ?? null,
+        origin: input.origin,
+      })
+    : [];
+
+  return { plan: toPlanDTO(result), ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 // -----------------------------------------------------------------------------
-// 確認依頼の取り消し (確認待ち → 実施中)
+// 確認依頼の取り消し = コメントRETURN (確認待ち → 実施中)
 // -----------------------------------------------------------------------------
 export async function undoRequestReviewPlan(input: {
   itemId: string;
+  projectId: string;
   planId: string;
   currentUserId: string;
   currentMemberId: string;
   role: ProjectRole;
-}): Promise<{ plan: PlanDTO }> {
+  /** 戻す理由 (#206)。実施者が何を直せばよいか分かるよう必ず残す */
+  note?: string | null;
+  /** 通知メールに載せるリンクの起点。未指定なら通知しない */
+  origin?: string;
+}): Promise<{ plan: PlanDTO; warnings?: string[] }> {
   const result = await prisma.$transaction(async (tx) => {
     const plan = await loadPlanWithIncludes(tx, input.planId, input.itemId);
     assertActive(plan);
@@ -214,11 +238,25 @@ export async function undoRequestReviewPlan(input: {
     if (input.role !== 'admin' && !involved.includes(input.currentMemberId)) {
       throw new ApiException('FORBIDDEN', 403, 'Only the executor, approver, or admin can undo a review request.');
     }
-    await createEvent({ tx, planId: plan.id, eventType: 'review_request_undone', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    await createEvent({ tx, planId: plan.id, eventType: 'review_request_undone', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId, note: input.note });
     await recordAudit({ tx, actorUserId: input.currentUserId, action: 'undo_request_review', planId: plan.id });
     return loadPlanWithIncludes(tx, plan.id, input.itemId);
   });
-  return { plan: toPlanDTO(result) };
+
+  // 実施者へ「ボールが戻った」ことを知らせる (#206)
+  const warnings = input.origin
+    ? await notifyBallHandoff({
+        kind: 'returned',
+        projectId: input.projectId,
+        planId: result.id,
+        recipientMemberId: result.executorMemberId,
+        fromMemberName: result.approver?.name ?? '承認者',
+        note: input.note ?? null,
+        origin: input.origin,
+      })
+    : [];
+
+  return { plan: toPlanDTO(result), ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 // -----------------------------------------------------------------------------
@@ -402,6 +440,8 @@ export async function tossPlan(input: {
   currentUserId: string;
   currentMemberId: string;
   role: ProjectRole;
+  /** 後続の実施者へ添える申し送り (#206)。履歴にも残す */
+  note?: string | null;
   /** 通知メールに載せるリンクの起点 (#79)。未指定なら通知しない */
   origin?: string;
 }): Promise<TossResult> {
@@ -442,7 +482,7 @@ export async function tossPlan(input: {
         completedAt: new Date(),
       },
     });
-    await createEvent({ tx, planId: plan.id, eventType: 'tossed', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId });
+    await createEvent({ tx, planId: plan.id, eventType: 'tossed', currentMemberId: input.currentMemberId, currentUserId: input.currentUserId, note: input.note });
     await recordAudit({ tx, actorUserId: input.currentUserId, action: 'toss', planId: plan.id });
     return loadPlanWithIncludes(tx, plan.id, input.itemId);
   });
@@ -450,10 +490,14 @@ export async function tossPlan(input: {
   // 通知はコミット後に送る。送信に失敗しても TOSS は巻き戻さない (#79)。
   // 「渡したのに戻された」より「渡ったが通知が届かなかった」方が実害が小さい。
   const warnings = input.origin
-    ? await notifyBallTossed({
+    ? await notifyBallHandoff({
+        kind: 'tossed',
         projectId: input.projectId,
-        successorPlanId: result.successorPlanId,
+        // TOSS は「後続予定」の実施者にボールが渡る
+        planId: result.successorPlanId,
+        recipientMemberId: result.toMemberId,
         fromMemberName: result.progressManager?.name ?? result.fromMember?.name ?? '進行責任者',
+        note: input.note ?? null,
         origin: input.origin,
       })
     : [];
@@ -475,67 +519,86 @@ export async function tossPlan(input: {
  * **TOSS の取り消しでは送らない。** 誤操作の取り消しは日常的に起こる操作で、そのたびに
  * 「取り消されました」が届くと受け手に不要な負担がかかる。取り消しは履歴に残る。
  */
-async function notifyBallTossed(input: {
+/**
+ * ボールを受け取った相手へメールで知らせる (#79 / #206)。
+ *
+ * 3 つの受け渡し (確認TOSS / コメントRETURN / 次工程への TOSS) で共通に使う。
+ * **どの予定の・誰にボールが渡ったか**を呼び出し側が決め、この関数は宛先の解決と
+ * 送信、失敗時の warning 文言だけを持つ。
+ *
+ * 送信失敗で操作自体は巻き戻さない。「渡したのに戻された」より
+ * 「渡ったが通知が届かなかった」方が実害が小さいため。
+ */
+async function notifyBallHandoff(input: {
+  kind: BallHandoffKind;
   projectId: string;
-  successorPlanId: string | null;
+  /** 通知の対象になる予定。TOSS では後続予定、それ以外はこの予定 */
+  planId: string | null;
+  /** 宛先になる参加者 (承認者 / 実施者 / 後続予定の実施者) */
+  recipientMemberId: string | null;
   fromMemberName: string;
+  note: string | null;
   origin: string;
 }): Promise<string[]> {
-  if (!input.successorPlanId) return [];
+  if (!input.planId || !input.recipientMemberId) return [];
 
-  const successor = await prisma.plan.findFirst({
-    where: { id: input.successorPlanId, deletedAt: null },
-    select: {
-      id: true,
-      title: true,
-      dueDate: true,
-      scheduledDate: true,
-      item: { select: { id: true, name: true, project: { select: { name: true } } } },
-      executor: {
-        select: {
-          name: true,
-          email: true,
-          organizationName: true,
-          jobTitle: true,
-          user: {
-            select: {
-              organizationName: true,
-              jobTitle: true,
-              notificationEmail: true,
-              email: true,
-              avatarPath: true,
-            },
+  const [plan, recipient] = await Promise.all([
+    prisma.plan.findFirst({
+      where: { id: input.planId, deletedAt: null },
+      select: {
+        title: true,
+        dueDate: true,
+        scheduledDate: true,
+        item: { select: { id: true, name: true, project: { select: { name: true } } } },
+      },
+    }),
+    prisma.projectMember.findFirst({
+      where: { id: input.recipientMemberId, deletedAt: null },
+      select: {
+        name: true,
+        email: true,
+        organizationName: true,
+        jobTitle: true,
+        user: {
+          select: {
+            organizationName: true,
+            jobTitle: true,
+            notificationEmail: true,
+            email: true,
+            avatarPath: true,
           },
         },
       },
-    },
-  });
-  if (!successor?.executor) return [];
+    }),
+  ]);
+  if (!plan || !recipient) return [];
 
   const to = resolveMemberProfile({
     member: {
-      name: successor.executor.name,
-      organizationName: successor.executor.organizationName,
-      jobTitle: successor.executor.jobTitle,
-      email: successor.executor.email,
+      name: recipient.name,
+      organizationName: recipient.organizationName,
+      jobTitle: recipient.jobTitle,
+      email: recipient.email,
     },
-    user: successor.executor.user,
+    user: recipient.user,
   }).email;
   if (!to) return [];
 
   try {
-    await getMailer().sendBallTossed({
+    await getMailer().sendBallHandoff({
+      kind: input.kind,
       to,
-      projectName: successor.item.project.name,
-      itemName: successor.item.name,
-      planTitle: successor.title,
+      projectName: plan.item.project.name,
+      itemName: plan.item.name,
+      planTitle: plan.title,
       fromName: input.fromMemberName,
-      dueDate: (successor.dueDate ?? successor.scheduledDate).toISOString().slice(0, 10),
-      planUrl: `${input.origin}/projects/${input.projectId}/items/${successor.item.id}`,
+      dueDate: (plan.dueDate ?? plan.scheduledDate).toISOString().slice(0, 10),
+      note: input.note,
+      planUrl: `${input.origin}/projects/${input.projectId}/items/${plan.item.id}`,
     });
   } catch (err) {
-    console.error('[tossPlan] failed to send ball-tossed email:', err);
-    return ['TOSS は完了しましたが、通知メールの送信に失敗しました。'];
+    console.error(`[ballActions] failed to send ${input.kind} email:`, err);
+    return ['操作は完了しましたが、通知メールの送信に失敗しました。'];
   }
   return [];
 }

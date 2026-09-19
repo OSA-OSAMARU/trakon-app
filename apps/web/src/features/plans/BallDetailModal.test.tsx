@@ -483,6 +483,10 @@ describe('BallDetailModal (integration)', () => {
     const btn = await screen.findByRole('button', { name: '次の工程へトス' });
     await user.click(btn);
 
+    // 申し送りを添えるダイアログを挟む (#206)
+    const dialog = await screen.findByRole('dialog', { name: '次の工程へトス' });
+    await user.click(within(dialog).getByRole('button', { name: 'TOSSする' }));
+
     await waitFor(() => expect(tossCalled).toBe(true));
   });
 
@@ -514,9 +518,15 @@ describe('BallDetailModal (integration)', () => {
     const btn = await screen.findByRole('button', { name: '次の工程へトス' });
     await user.click(btn);
 
-    // mutation が呼ばれ、onError でトースト表示 (UI は維持される)
+    // 申し送りを添えるダイアログを挟む (#206)
+    const dialog = await screen.findByRole('dialog', { name: '次の工程へトス' });
+    await user.click(within(dialog).getByRole('button', { name: 'TOSSする' }));
+
+    // mutation が呼ばれ、onError でトースト表示 (UI は維持される)。
+    // 失敗時はダイアログを閉じない — 書いた申し送りを消さないため (#206)
     await waitFor(() => expect(tossCalled).toBe(true));
-    expect(screen.getByText('デザインカンプ作成')).toBeInTheDocument();
+    expect(screen.getAllByText('デザインカンプ作成').length).toBeGreaterThan(0);
+    expect(screen.getByRole('dialog', { name: '次の工程へトス' })).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
@@ -670,6 +680,14 @@ describe('BallDetailModal (integration)', () => {
     // 「差し戻す」ボタンは廃止済み。
     expect(screen.queryByRole('button', { name: '差し戻す' })).not.toBeInTheDocument();
     await user.click(btn);
+
+    // 戻す理由を必ず添えてもらう (#206)
+    const dialog = await screen.findByRole('dialog', { name: 'コメントRETURN' });
+    await user.type(
+      within(dialog).getByLabelText('戻す内容'),
+      '商品写真をもう少し大きくしてください',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'RETURNする' }));
 
     await waitFor(() => expect(undoCalled).toBe(true));
   });

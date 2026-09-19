@@ -8,10 +8,13 @@ import {
 import { requireItemInProject } from '../../middleware/itemAuth.js';
 import { ApiException } from '../../lib/errors.js';
 import {
+  commentReturnBodySchema,
   createPlanBodySchema,
   listPlansQuerySchema,
+  requestReviewBodySchema,
   sendBackBodySchema,
   setSuccessorBodySchema,
+  tossBodySchema,
   updatePlanBodySchema,
 } from '../../schemas/plans.js';
 import {
@@ -132,28 +135,37 @@ export const plansRoute = new Hono()
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
-    const result = await requestReviewPlan({
+    const body = requestReviewBodySchema.parse(await c.req.json().catch(() => ({})));
+    const { warnings, ...data } = await requestReviewPlan({
       itemId: c.get('itemId'),
+      projectId: project.projectId,
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
       role: project.role,
+      note: body?.note ?? null,
+      // 通知メールのリンクに使う (#206)
+      origin: new URL(c.req.url).origin,
     });
-    return c.json({ data: result });
+    return c.json({ data, ...(warnings ? { warnings } : {}) });
   })
 
   .post('/:planId/request-review-undo', requireProjectWritable(), async (c) => {
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
-    const result = await undoRequestReviewPlan({
+    const body = commentReturnBodySchema.parse(await c.req.json().catch(() => ({})));
+    const { warnings, ...data } = await undoRequestReviewPlan({
       itemId: c.get('itemId'),
+      projectId: project.projectId,
       planId,
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
       role: project.role,
+      note: body.note,
+      origin: new URL(c.req.url).origin,
     });
-    return c.json({ data: result });
+    return c.json({ data, ...(warnings ? { warnings } : {}) });
   })
 
   .post('/:planId/approve', requireProjectWritable(), async (c) => {
@@ -221,6 +233,7 @@ export const plansRoute = new Hono()
     const project = c.get('project');
     const planId = c.req.param('planId');
     if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const body = tossBodySchema.parse(await c.req.json().catch(() => ({})));
     const result = await tossPlan({
       itemId,
       projectId: project.projectId,
@@ -228,6 +241,7 @@ export const plansRoute = new Hono()
       currentUserId: c.get('currentUserId'),
       currentMemberId: project.memberId,
       role: project.role,
+      note: body?.note ?? null,
       // 通知メールのリンクに使う (#79)
       origin: new URL(c.req.url).origin,
     });

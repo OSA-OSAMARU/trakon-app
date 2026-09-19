@@ -1,7 +1,7 @@
 import { prisma } from '@trakon/db';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { __setMailerForTest, type BallTossedEmail, type Mailer } from '../../lib/mailer.js';
+import { __setMailerForTest, type BallHandoffEmail, type Mailer } from '../../lib/mailer.js';
 import {
   createItem,
   createMember,
@@ -11,14 +11,14 @@ import {
 import { api } from '../../test/request.js';
 
 // =============================================================================
-// TOSS 時のメール通知 (#79)
+// ボールの受け渡し時のメール通知 (#79 / #206)
 //
 // 【方針】TOSS では新しいボール保持者へ通知する。**TOSS の取り消しでは送らない。**
 // 誤操作の取り消しは日常的に起こる操作で、そのたびに「取り消されました」が届くと
 // 受け手に不要な負担がかかる。取り消しは ball_events に残るので追跡性は失われない。
 // =============================================================================
 
-let sent: BallTossedEmail[] = [];
+let sent: BallHandoffEmail[] = [];
 let ctx: Awaited<ReturnType<typeof setupProjectWithDirector>>;
 let itemId: string;
 let base: string;
@@ -26,7 +26,7 @@ let base: string;
 beforeEach(async () => {
   sent = [];
   const mailer: Partial<Mailer> = {
-    async sendBallTossed(input) {
+    async sendBallHandoff(input) {
       sent.push(input);
     },
   };
@@ -43,11 +43,11 @@ type PlanDTO = { id: string };
 function createPlan(body: Record<string, unknown>) {
   return api<{ data: PlanDTO }>(base, { method: 'POST', token: ctx.token, body });
 }
-function act(planId: string, action: string) {
+function act(planId: string, action: string, body: Record<string, unknown> = {}) {
   return api<{ data: unknown; warnings?: string[] }>(`${base}/${planId}/${action}`, {
     method: 'POST',
     token: ctx.token,
-    body: {},
+    body,
   });
 }
 
@@ -88,6 +88,7 @@ describe('TOSS 通知メール (#79)', () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
+      kind: 'tossed',
       to: 'yokoyama@example.test',
       projectName: ctx.project.name,
       itemName: 'トップページ',
@@ -174,7 +175,7 @@ describe('TOSS 通知メール (#79)', () => {
 
   it('送信に失敗しても TOSS は成功し、warnings で伝える', async () => {
     __setMailerForTest({
-      async sendBallTossed() {
+      async sendBallHandoff() {
         throw new Error('smtp down');
       },
     });
@@ -192,5 +193,110 @@ describe('TOSS 通知メール (#79)', () => {
     // TOSS 自体は巻き戻さない
     const plan = await prisma.plan.findUniqueOrThrow({ where: { id: leadId } });
     expect(plan.status).toBe('completed');
+  });
+});
+
+// =============================================================================
+// 確認TOSS / コメントRETURN の通知 (#206)
+// =============================================================================
+
+describe('受け渡しに添えたメッセージ (#206)', () => {
+  /** 承認者付きの予定を作り、確認待ちの一歩手前まで整える。 */
+  async function setupWithApprover() {
+    const executorUser = await createUser({
+      email: 'executor@example.test',
+      withOrganization: false,
+    });
+    const executor = await createMember({
+      projectId: ctx.project.id,
+      userId: executorUser.id,
+      name: '杉野 遥',
+      email: 'executor@example.test',
+      memberType: 'production',
+    });
+    const approver = await createMember({
+      projectId: ctx.project.id,
+      name: '石原 美咲',
+      email: 'approver@example.test',
+      memberType: 'client',
+    });
+    const plan = await createPlan({
+      title: 'Webデザイン',
+      category: 'design',
+      scheduledDate: '2026-07-21',
+      dueDate: '2026-07-24',
+      executorMemberId: executor.id,
+      approverMemberId: approver.id,
+      progressManagerMemberId: ctx.member.id,
+    });
+    return { planId: plan.body.data.id, executor, approver };
+  }
+
+  it('確認TOSS は承認者へ、添えたメッセージ付きで通知する', async () => {
+    const { planId } = await setupWithApprover();
+
+    const res = await act(planId, 'request-review', {
+      note: 'ファーストビューのコピーと写真のバランスをご確認ください。',
+    });
+
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      kind: 'review_requested',
+      to: 'approver@example.test',
+      planTitle: 'Webデザイン',
+      note: 'ファーストビューのコピーと写真のバランスをご確認ください。',
+    });
+  });
+
+  it('確認TOSS のメッセージは任意', async () => {
+    const { planId } = await setupWithApprover();
+
+    const res = await act(planId, 'request-review');
+
+    expect(res.status).toBe(200);
+    expect(sent[0]).toMatchObject({ kind: 'review_requested', note: null });
+  });
+
+  it('コメントRETURN は実施者へ、戻す理由付きで通知する', async () => {
+    const { planId } = await setupWithApprover();
+    await act(planId, 'request-review');
+    sent.length = 0;
+
+    const res = await act(planId, 'request-review-undo', {
+      note: '商品写真をもう少し大きくしてください。',
+    });
+
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      kind: 'returned',
+      to: 'executor@example.test',
+      note: '商品写真をもう少し大きくしてください。',
+    });
+  });
+
+  it('コメントRETURN は理由が無ければ 422 で弾く', async () => {
+    // 理由が無いと実施者は何を直せばよいか分からない
+    const { planId } = await setupWithApprover();
+    await act(planId, 'request-review');
+    sent.length = 0;
+
+    const res = await act(planId, 'request-review-undo');
+
+    expect(res.status).toBe(422);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('添えたメッセージは進行履歴にも残る', async () => {
+    const { planId } = await setupWithApprover();
+    await act(planId, 'request-review', { note: 'ここを見てください' });
+
+    const events = await prisma.ballEvent.findMany({
+      where: { planId, eventType: 'review_requested' },
+      select: { note: true },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.note).toBe('ここを見てください');
   });
 });

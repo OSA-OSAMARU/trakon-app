@@ -73,13 +73,43 @@ export const listPlansQuerySchema = z.object({
 });
 export type ListPlansQuery = z.infer<typeof listPlansQuerySchema>;
 
-// #131: TOSS 先は後続予定の実施者に固定されるため、TOSS 先の上書きは廃止。
-// 本文は不要だが、既存ルートとの互換のため空オブジェクトを受け付ける。
-export const tossBodySchema = z.object({}).optional();
-export type TossBody = z.infer<typeof tossBodySchema>;
-
 // 差し戻し理由 (#131 §13。履歴として先行/実施側へ引き継ぐ)。
 export const sendBackBodySchema = z
   .object({ note: z.string().max(2000).optional() })
   .optional();
 export type SendBackBody = z.infer<typeof sendBackBodySchema>;
+
+// -----------------------------------------------------------------------------
+// ボールの受け渡しに添えるメッセージ (#206 / Figma node 45:26, 45:8)
+//
+// 渡す側の意図を相手に伝えるための欄。入力された文言は ball_events.note へ残り、
+// 相手へのメール本文にもそのまま載る。履歴に残る＝あとから経緯を追えることが
+// 「ボールの流れを追う」という TRAKON の目的に直結する。
+// -----------------------------------------------------------------------------
+
+/** 確認TOSS (確認依頼)。「確認してほしい内容（任意）」 */
+export const requestReviewBodySchema = z
+  .object({ note: z.string().trim().max(2000).optional() })
+  .optional();
+export type RequestReviewBody = z.infer<typeof requestReviewBodySchema>;
+
+/**
+ * コメントRETURN (確認依頼の取り消し)。「戻す内容 *」
+ *
+ * **理由は必須**。承認者がボールを戻すのは「このままでは承認できない」という
+ * 意思表示であり、理由が無いと実施者は何を直せばよいか分からない (Figma node 45:8)。
+ */
+export const commentReturnBodySchema = z.object({
+  note: z.string().trim().min(1, '戻す内容を入力してください').max(2000),
+});
+export type CommentReturnBody = z.infer<typeof commentReturnBodySchema>;
+
+/**
+ * 次工程への TOSS。「申し送り（任意）」
+ *
+ * #131 で TOSS 先は後続予定の実施者に固定されたため、TOSS 先の上書きは受け取らない。
+ */
+export const tossBodySchema = z
+  .object({ note: z.string().trim().max(2000).optional() })
+  .optional();
+export type TossBody = z.infer<typeof tossBodySchema>;

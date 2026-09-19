@@ -209,7 +209,8 @@ describe('plansApi', () => {
         HttpResponse.json({ data: { plan: stubPlan } }),
       ),
     );
-    const res = await plansApi.undoRequestReview(P, IT, PL);
+    // コメントRETURN は理由が必須 (#206)
+    const res = await plansApi.undoRequestReview(P, IT, PL, '写真を差し替えてください');
     expect(res).toEqual({ plan: stubPlan });
   });
 
