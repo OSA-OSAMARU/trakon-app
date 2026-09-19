@@ -30,6 +30,18 @@ export type CheckoutablePlan = 'personal' | 'team';
 export const billingApi = {
   get: () => apiRequest<OrganizationBilling>('/billing/subscription'),
 
+  /**
+   * 契約状態を Stripe の現在値へ合わせ直す (#209)。
+   *
+   * Webhook が届かない環境 (Preview デプロイなど) や配信が遅れている間に
+   * 「反映待ち」で止まらないようにするための経路。返り値は GET と同じ形。
+   */
+  sync: (checkoutSessionId?: string | null) =>
+    apiRequest<OrganizationBilling>('/billing/sync', {
+      method: 'POST',
+      body: checkoutSessionId ? { checkoutSessionId } : {},
+    }),
+
   checkout: (planCode: CheckoutablePlan) =>
     apiRequest<{ url: string; trialApplied: boolean }>('/billing/checkout-session', {
       method: 'POST',

@@ -378,6 +378,35 @@ SELECT stripe_event_id, event_type, status, error, received_at
 `failed` のものは Stripe 側からの再送で自動的に解消することが多い（処理は冪等）。
 解消しない場合は Stripe ダッシュボードの Webhook 画面から手動で再送する。
 
+### 契約状態の照合（reconcile / #209）
+
+Webhook は「Stripe → TRAKON」の押し出し経路で、これが正であることは変わらない。
+ただし押し出しは**届かないことがある**。
+
+- **Preview デプロイは URL がデプロイごとに変わるため、Webhook を登録できない**
+- 本番でもエンドポイント未登録・一時的な配信失敗・署名シークレットのずれが起きる
+
+このとき契約は Stripe 側で成立しているのに TRAKON 側は Free のまま止まる。
+そこで TRAKON 側から Stripe API へ現在値を**取りに行く**経路を持っている。
+
+```
+POST /api/v1/billing/sync   { "checkoutSessionId": "cs_..." }   ← 組織のオーナー / 管理者のみ
+```
+
+- 実装は `server/services/billing/reconcile.ts`
+- 契約の辿り方は **Checkout Session → 保存済みの契約 ID → 顧客の最新契約** の順
+- 反映は Webhook と同じ `writeSubscriptionSnapshot()` を通るため、更新規則は一本
+- `last_stripe_event_id` / `last_stripe_event_at` は**触らない**
+  （Webhook の処理位置の記録であり、照合でずらすと請求書系イベントの順序判定が狂う）
+
+プラン・お支払い画面は Checkout から戻った直後にこれを自動で叩き、30 秒で打ち切って
+「最新の状態を取得」ボタンへ切り替える。ユーザーからの申告があった場合も、
+まずこのボタンを押してもらうのが最短の復旧手順。
+
+> 照合は PRD SR-BILL-03（success URL への遷移だけを根拠に有料権限を付与しない）に反しない。
+> 権限の根拠は遷移ではなく **Stripe API が返す契約の現在値**で、Webhook が取り直している
+> ものと同一の情報源。遷移は「いま照合する価値がある」という合図として使うだけ。
+
 ### 招待リンクの調査
 
 監査ログから追跡可能：

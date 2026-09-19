@@ -43,6 +43,10 @@ function stubBilling(over: Partial<Billing> = {}) {
     http.get('*/api/v1/billing/subscription', () =>
       HttpResponse.json({ data: { ...defaultBillingResponse, ...over } }),
     ),
+    // Checkout からの復帰時に走る照合 (#209)。既定では GET と同じ状態を返す
+    http.post('*/api/v1/billing/sync', () =>
+      HttpResponse.json({ data: { ...defaultBillingResponse, ...over }, meta: { synced: false } }),
+    ),
     http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
   );
 }
@@ -326,6 +330,25 @@ describe('BillingPage (integration)', () => {
   });
 
   describe('Checkout からの復帰', () => {
+    /** 照合で契約が確認できた後の状態 (Personal のトライアル中)。 */
+    const ACTIVATED = {
+      ...defaultBillingResponse,
+      subscription: {
+        ...defaultBillingResponse.subscription,
+        planCode: 'personal' as const,
+        status: 'trialing' as const,
+        hasStripeCustomer: true,
+      },
+      entitlement: {
+        ...defaultBillingResponse.entitlement,
+        reason: 'trialing' as const,
+        planCode: 'personal' as const,
+        effectivePlanCode: 'personal' as const,
+        limits: { seatLimit: 1, viewerLimit: 0, projectLimit: 10 },
+        message: 'Personal プランの無料トライアル中です。',
+      },
+    };
+
     it('success で戻った直後は「反映待ち」を出す (この遷移だけで有効化しない)', async () => {
       stubBilling();
       renderWithProviders(<BillingPage />, {
@@ -335,31 +358,56 @@ describe('BillingPage (integration)', () => {
       expect(await screen.findByText(/お支払いの確認中です/)).toBeInTheDocument();
     });
 
-    it('Webhook が届くとポーリングで有効化され、反映待ちが消える', async () => {
-      // success URL への到達では有効化せず、Webhook 由来の契約状態だけを根拠にする
+    it('照合で契約が確認できると有効化され、反映待ちが消える (#209)', async () => {
+      // success URL への到達では有効化せず、**Stripe から取り直した契約状態**だけを
+      // 根拠にする。Webhook が届かない環境でもここで止まらないことを保証する。
+      let activated = false;
+      const syncCalls: { checkoutSessionId?: string }[] = [];
+      server.use(
+        http.get('*/api/v1/billing/subscription', () =>
+          HttpResponse.json({ data: defaultBillingResponse }),
+        ),
+        http.post('*/api/v1/billing/sync', async ({ request }) => {
+          syncCalls.push((await request.json()) as { checkoutSessionId?: string });
+          return HttpResponse.json({
+            data: activated ? ACTIVATED : defaultBillingResponse,
+            meta: { synced: activated },
+          });
+        }),
+        http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
+      );
+      renderWithProviders(<BillingPage />, {
+        route: '/settings/billing?checkout=success&session_id=cs_1',
+      });
+
+      // 契約が確認できるまでは Free のまま
+      expect(await screen.findByText(/お支払いの確認中です/)).toBeInTheDocument();
+      expect(screen.getByText('Free プランを利用中です。')).toBeInTheDocument();
+
+      // 照合には Checkout Session ID を渡す (まだ契約 ID を持っていない組織でも辿れる)
+      await waitFor(() => expect(syncCalls.length).toBeGreaterThan(0));
+      expect(syncCalls[0]).toEqual({ checkoutSessionId: 'cs_1' });
+
+      activated = true;
+
+      await waitFor(
+        () => expect(screen.getByText('Personal プランの無料トライアル中です。')).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+      expect(screen.queryByText(/お支払いの確認中です/)).not.toBeInTheDocument();
+    });
+
+    it('照合が続いても確認できないときは手動で取り直せる (#209)', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
       let activated = false;
       server.use(
         http.get('*/api/v1/billing/subscription', () =>
+          HttpResponse.json({ data: defaultBillingResponse }),
+        ),
+        http.post('*/api/v1/billing/sync', () =>
           HttpResponse.json({
-            data: activated
-              ? {
-                  ...defaultBillingResponse,
-                  subscription: {
-                    ...defaultBillingResponse.subscription,
-                    planCode: 'personal',
-                    status: 'trialing',
-                    hasStripeCustomer: true,
-                  },
-                  entitlement: {
-                    ...defaultBillingResponse.entitlement,
-                    reason: 'trialing',
-                    planCode: 'personal',
-                    effectivePlanCode: 'personal',
-                    limits: { seatLimit: 1, viewerLimit: 0, projectLimit: 10 },
-                    message: 'Personal プランの無料トライアル中です。',
-                  },
-                }
-              : defaultBillingResponse,
+            data: activated ? ACTIVATED : defaultBillingResponse,
+            meta: { synced: activated },
           }),
         ),
         http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
@@ -368,18 +416,19 @@ describe('BillingPage (integration)', () => {
         route: '/settings/billing?checkout=success&session_id=cs_1',
       });
 
-      // Webhook 到着前は Free のまま
-      expect(await screen.findByText(/お支払いの確認中です/)).toBeInTheDocument();
-      expect(screen.getByText('Free プランを利用中です。')).toBeInTheDocument();
+      await screen.findByText(/お支払いの確認中です/);
 
-      // Webhook が届いて契約が有効になる
+      // 30 秒で自動の照合は打ち切る。黙って止めず取り直す手段を残す
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await screen.findByText(/お支払いの確認に時間がかかっています/)).toBeInTheDocument();
+
       activated = true;
+      vi.useRealTimers();
+      await userEvent.click(screen.getByRole('button', { name: '最新の状態を取得' }));
 
-      await waitFor(
-        () => expect(screen.getByText('Personal プランの無料トライアル中です。')).toBeInTheDocument(),
-        { timeout: 5000 },
-      );
-      expect(screen.queryByText(/お支払いの確認中です/)).not.toBeInTheDocument();
+      expect(
+        await screen.findByText('Personal プランの無料トライアル中です。'),
+      ).toBeInTheDocument();
     });
 
     it('canceled で戻ると未完了の案内を出す', async () => {

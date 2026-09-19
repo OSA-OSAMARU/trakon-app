@@ -37,7 +37,7 @@ export type BillingNotification =
   | { type: 'subscription_canceled'; organizationId: string };
 
 /** 契約の「現在の真の状態」。Stripe API から取り直したものを詰める。 */
-type SubscriptionSnapshot = {
+export type SubscriptionSnapshot = {
   organizationId: string;
   planCode: BillingPlanCode;
   status: SubscriptionStatus;
@@ -143,14 +143,28 @@ export async function prefetchSubscription(
   });
   if (!organizationId) return null;
 
+  return buildSubscriptionSnapshot(subscription, organizationId, event.type);
+}
+
+/**
+ * Stripe の Subscription をそのまま「現在の真の状態」へ写し取る。
+ *
+ * Webhook (prefetchSubscription) と照合 (reconcile.ts) の両方が使う。
+ * **受信ペイロードではなく Stripe API から取り直したオブジェクト**を渡すこと。
+ */
+export function buildSubscriptionSnapshot(
+  subscription: Stripe.Subscription,
+  organizationId: string,
+  eventType: string,
+): SubscriptionSnapshot {
   const item = subscription.items?.data?.[0];
   const priceId = item?.price?.id ?? null;
 
   return {
     organizationId,
     planCode: planCodeFromPriceId(priceId),
-    status: normalizeStatus(subscription.status, event.type),
-    stripeSubscriptionId: subscriptionId,
+    status: normalizeStatus(subscription.status, eventType),
+    stripeSubscriptionId: subscription.id,
     stripeCustomerId: typeof subscription.customer === 'string' ? subscription.customer : null,
     stripePriceId: priceId,
     currentPeriodStart: toDate(readEpoch(item, subscription, 'current_period_start')),
@@ -241,19 +255,27 @@ async function applyCheckoutCompleted(
   return { status: 'processed', organizationId };
 }
 
-async function applySubscriptionSnapshot(
+/**
+ * スナップショットを billing_subscriptions へ書き込む。
+ *
+ * Webhook からも、Stripe から現在値を取り直す照合 (reconcile.ts) からも呼ぶ。
+ * **契約状態の更新規則をここ 1 箇所に集約する**ため、呼び出し側は
+ * 「どこから来たイベントか」だけを渡し、反映の判断はこの関数が持つ。
+ */
+export async function writeSubscriptionSnapshot(
   tx: Prisma.TransactionClient,
-  event: Stripe.Event,
-  snapshot: SubscriptionSnapshot | null,
-): Promise<WebhookOutcome> {
-  if (!snapshot) return { status: 'skipped', organizationId: null };
-
-  const current = await tx.billingSubscription.findUnique({
-    where: { organizationId: snapshot.organizationId },
-  });
-  if (!current) return { status: 'skipped', organizationId: null };
-
-  const deleted = event.type === 'customer.subscription.deleted';
+  snapshot: SubscriptionSnapshot,
+  meta: {
+    /** 契約が削除された通知か。削除時はプランを据え置く */
+    deleted: boolean;
+    /** 現在の DB 上の値。Prisma のスキーマは文字列なのでここで絞る */
+    current: { planCode: string; pendingPlanCode: string | null; trialUsedAt: Date | null };
+    /** Webhook 起点のときだけ入れる。照合起点では触らない */
+    lastStripeEventId?: string;
+    lastStripeEventAt?: Date;
+  },
+): Promise<{ planCode: BillingPlanCode; promotesPendingPlan: boolean }> {
+  const { current, deleted } = meta;
   const active = snapshot.status === 'active' || snapshot.status === 'trialing';
 
   // 保留中のプラン変更は、契約が有効になった時点で確定する。
@@ -261,11 +283,11 @@ async function applySubscriptionSnapshot(
   const promotesPendingPlan =
     active && current.pendingPlanCode !== null && snapshot.planCode === current.pendingPlanCode;
 
-  const planCode = deleted
-    ? current.planCode
+  const planCode: BillingPlanCode = deleted
+    ? (current.planCode as BillingPlanCode)
     : active
       ? snapshot.planCode
-      : current.planCode;
+      : (current.planCode as BillingPlanCode);
 
   await tx.billingSubscription.update({
     where: { organizationId: snapshot.organizationId },
@@ -292,9 +314,32 @@ async function applySubscriptionSnapshot(
       ...(promotesPendingPlan ? { pendingPlanCode: null, pendingPlanEffectiveAt: null } : {}),
       // 有効化されたら猶予をクリアする
       ...(active ? { gracePeriodEndsAt: null, lastPaymentFailedAt: null } : {}),
-      lastStripeEventId: event.id,
-      lastStripeEventAt: new Date(event.created * 1000),
+      ...(meta.lastStripeEventId ? { lastStripeEventId: meta.lastStripeEventId } : {}),
+      ...(meta.lastStripeEventAt ? { lastStripeEventAt: meta.lastStripeEventAt } : {}),
     },
+  });
+
+  return { planCode, promotesPendingPlan };
+}
+
+async function applySubscriptionSnapshot(
+  tx: Prisma.TransactionClient,
+  event: Stripe.Event,
+  snapshot: SubscriptionSnapshot | null,
+): Promise<WebhookOutcome> {
+  if (!snapshot) return { status: 'skipped', organizationId: null };
+
+  const current = await tx.billingSubscription.findUnique({
+    where: { organizationId: snapshot.organizationId },
+  });
+  if (!current) return { status: 'skipped', organizationId: null };
+
+  const deleted = event.type === 'customer.subscription.deleted';
+  const { planCode, promotesPendingPlan } = await writeSubscriptionSnapshot(tx, snapshot, {
+    deleted,
+    current,
+    lastStripeEventId: event.id,
+    lastStripeEventAt: new Date(event.created * 1000),
   });
 
   const action =

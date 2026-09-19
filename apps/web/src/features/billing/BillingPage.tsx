@@ -40,7 +40,10 @@ import {
 export function BillingPage() {
   const [params, setParams] = useSearchParams();
   const checkoutResult = params.get('checkout');
+  const checkoutSessionId = params.get('session_id');
   const [awaitingWebhook, setAwaitingWebhook] = useState(checkoutResult === 'success');
+  /** 反映待ちが時間切れになったか。手動で取り直す導線を出すために持つ (#209) */
+  const [syncTimedOut, setSyncTimedOut] = useState(false);
   /**
    * プラン一覧の開閉 (Figma node 263:18)。
    * デザインでは「現在のプラン」カードだけが見えていて、比較表は
@@ -60,8 +63,30 @@ export function BillingPage() {
   const query = useQuery({
     queryKey: billingQueryKey.subscription,
     queryFn: () => billingApi.get(),
-    // 反映待ちの間だけポーリングする (Webhook の到着を待つ)
-    refetchInterval: awaitingWebhook ? 2000 : false,
+  });
+
+  /**
+   * Checkout から戻った直後は Stripe へ現在値を取りに行く (#209)。
+   *
+   * Webhook の到着を待つだけだと、Webhook が登録できない環境 (Preview デプロイは
+   * URL がデプロイごとに変わる) や配信が遅れている間、「お支払いの確認中です」の
+   * まま Free で止まり続ける。押し出しを待つのではなく**取りに行く**。
+   *
+   * 権限の根拠は画面遷移ではなく Stripe API が返す契約の現在値なので、
+   * SR-BILL-03 (success URL への遷移だけを根拠にしない) は満たしている。
+   */
+  useQuery({
+    queryKey: ['billing', 'sync', checkoutSessionId] as const,
+    queryFn: async () => {
+      const data = await billingApi.sync(checkoutSessionId);
+      qc.setQueryData(billingQueryKey.subscription, data);
+      return data;
+    },
+    enabled: awaitingWebhook,
+    refetchInterval: 2000,
+    // 失敗しても「確認中」のまま黙らせない。時間切れで手動導線へ切り替える
+    retry: false,
+    gcTime: 0,
   });
 
   const status = query.data?.subscription.status;
@@ -71,6 +96,7 @@ export function BillingPage() {
     if (!awaitingWebhook) return;
     if (status && status !== 'none') {
       setAwaitingWebhook(false);
+      setSyncTimedOut(false);
       const next = new URLSearchParams(params);
       next.delete('checkout');
       next.delete('session_id');
@@ -79,10 +105,14 @@ export function BillingPage() {
     }
   }, [awaitingWebhook, status, params, setParams]);
 
-  // 反映待ちが長引いても永遠に回さない (Webhook 遅延時の保険)
+  // 反映待ちが長引いても永遠に回さない (Stripe 側で契約が成立していない場合の保険)。
+  // 黙って止めると「確認中のまま何も起きない」に戻るので、手動の取り直し導線を出す。
   useEffect(() => {
     if (!awaitingWebhook) return;
-    const timer = setTimeout(() => setAwaitingWebhook(false), 30_000);
+    const timer = setTimeout(() => {
+      setAwaitingWebhook(false);
+      setSyncTimedOut(true);
+    }, 30_000);
     return () => clearTimeout(timer);
   }, [awaitingWebhook]);
 
@@ -114,6 +144,22 @@ export function BillingPage() {
       );
     },
     onError: (e) => toast.error(errorMessage(e, 'プランを変更できませんでした')),
+  });
+
+  /** 時間切れ後に手動で取り直す (#209)。自動ポーリングと同じ照合を 1 回だけ走らせる */
+  const syncMut = useMutation({
+    mutationFn: () => billingApi.sync(checkoutSessionId),
+    onSuccess: (data) => {
+      qc.setQueryData(billingQueryKey.subscription, data);
+      qc.invalidateQueries({ queryKey: projectsQueryKey.all });
+      if (data.subscription.status === 'none') {
+        toast.error('契約がまだ確認できません。お支払いが完了しているかご確認ください。');
+      } else {
+        setSyncTimedOut(false);
+        toast.success('契約状態を更新しました');
+      }
+    },
+    onError: (e) => toast.error(errorMessage(e, '契約状態を取得できませんでした')),
   });
 
   const cancelMut = useMutation({
@@ -175,6 +221,24 @@ export function BillingPage() {
             {awaitingWebhook && (
               <Notice icon={<Loader2 className="size-4 animate-spin" />}>
                 お支払いの確認中です。反映まで少しお待ちください。
+              </Notice>
+            )}
+
+            {/* 時間切れ。黙って諦めず、取り直す手段を渡す (#209) */}
+            {syncTimedOut && (
+              <Notice>
+                <span className="flex flex-wrap items-center gap-2">
+                  お支払いの確認に時間がかかっています。
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => syncMut.mutate()}
+                    disabled={syncMut.isPending}
+                  >
+                    {syncMut.isPending && <Loader2 className="size-4 animate-spin" />}
+                    最新の状態を取得
+                  </Button>
+                </span>
               </Notice>
             )}
 
