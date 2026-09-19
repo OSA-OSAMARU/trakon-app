@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { AlertTriangle, Check, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -46,8 +46,15 @@ export function BillingPage() {
    * デザインでは「現在のプラン」カードだけが見えていて、比較表は
    * 「プランを変更」を押してから出る。ただし未契約 (実効 Free) のときは
    * アップグレード導線が 1 クリック奥に隠れてしまうので最初から開いておく。
+   *
+   * 既定値は契約状態から決まるので、**ユーザーが操作するまでは null** にしておく
+   * (#197)。以前は `plansOpen || 実効Free` で描画を決めていたため、Free のときは
+   * 「プランを変更」を押しても既に開いている表が開くだけで、画面が何も変わらず
+   * 「ボタンが効かない」ように見えていた。
    */
-  const [plansOpen, setPlansOpen] = useState(false);
+  const [plansOpenOverride, setPlansOpenOverride] = useState<boolean | null>(null);
+  /** 開いた瞬間にプラン一覧まで送る。押した結果が画面外だと反応が無いのと同じため */
+  const plansRef = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
 
   const query = useQuery({
@@ -127,6 +134,20 @@ export function BillingPage() {
     onError: (e) => toast.error(errorMessage(e, '解約を取り消せませんでした')),
   });
 
+  const plansOpen =
+    plansOpenOverride ?? query.data?.entitlement.effectivePlanCode === 'free';
+
+  const togglePlans = () => {
+    const next = !plansOpen;
+    setPlansOpenOverride(next);
+    if (next) {
+      // 描画されてからスクロールする
+      requestAnimationFrame(() =>
+        plansRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      );
+    }
+  };
+
   const anyPending =
     checkoutMut.isPending ||
     portalMut.isPending ||
@@ -162,12 +183,14 @@ export function BillingPage() {
               onOpenPortal={() => portalMut.mutate()}
               onCancel={() => cancelMut.mutate()}
               onResume={() => resumeMut.mutate()}
-              onChangePlan={() => setPlansOpen((v) => !v)}
+              onChangePlan={togglePlans}
+              plansOpen={plansOpen}
               disabled={anyPending || awaitingWebhook}
             />
 
-            {(plansOpen || query.data.entitlement.effectivePlanCode === 'free') && (
+            {plansOpen && (
               <PlanComparison
+                ref={plansRef}
                 // 契約プランではなく**実効プラン**で「利用中」を決める。
                 // 解約済みは実効 Free なので、同じプランへ申し込み直せる (§7.6)
                 current={query.data.entitlement.effectivePlanCode}
@@ -222,6 +245,7 @@ function CurrentPlanCard({
   onCancel,
   onResume,
   onChangePlan,
+  plansOpen,
   disabled,
 }: {
   billing: OrganizationBilling;
@@ -229,6 +253,8 @@ function CurrentPlanCard({
   onCancel: () => void;
   onResume: () => void;
   onChangePlan: () => void;
+  /** プラン一覧が開いているか。ボタンの文言を状態に合わせるために受け取る (#197) */
+  plansOpen: boolean;
   disabled: boolean;
 }) {
   const { subscription, entitlement } = billing;
@@ -352,8 +378,11 @@ function CurrentPlanCard({
               決済情報を管理
             </Button>
           )}
-          <Button onClick={onChangePlan} disabled={disabled || !canManage}>
-            プランを変更
+          {/* プラン一覧の開閉は画面内の表示切り替えでしかないので、決済処理中でも
+              権限が無くても押せる (#197)。実際の申し込み・変更は一覧の中の
+              ボタンが担い、そちらで無効化と理由の提示を行う。 */}
+          <Button onClick={onChangePlan} aria-expanded={plansOpen}>
+            {plansOpen ? 'プラン一覧を閉じる' : 'プランを変更'}
           </Button>
         </div>
 
@@ -376,21 +405,18 @@ function UsageTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PlanComparison({
-  current,
-  hasSubscription,
-  canManage,
-  disabled,
-  onSelect,
-}: {
-  current: BillingPlanCode;
-  hasSubscription: boolean;
-  canManage: boolean;
-  disabled: boolean;
-  onSelect: (plan: CheckoutablePlan) => void;
-}) {
+const PlanComparison = forwardRef<
+  HTMLDivElement,
+  {
+    current: BillingPlanCode;
+    hasSubscription: boolean;
+    canManage: boolean;
+    disabled: boolean;
+    onSelect: (plan: CheckoutablePlan) => void;
+  }
+>(function PlanComparison({ current, hasSubscription, canManage, disabled, onSelect }, ref) {
   return (
-    <Card>
+    <Card ref={ref}>
       <CardHeader>
         <CardTitle className="text-heading-section">プランを選ぶ</CardTitle>
       </CardHeader>
@@ -441,7 +467,7 @@ function PlanComparison({
       </CardContent>
     </Card>
   );
-}
+});
 
 /**
  * 上限超過時に維持するプロジェクトを選び直す (FR-BILL-11)。
