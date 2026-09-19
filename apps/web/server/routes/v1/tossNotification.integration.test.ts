@@ -133,7 +133,9 @@ describe('TOSS 通知メール (#79)', () => {
     expect(sent).toHaveLength(1); // 増えない
   });
 
-  it('確認依頼・承認・差し戻しでは送らない (今回の範囲は TOSS のみ)', async () => {
+  it('承認では送らない (ボールの受け渡しではないため)', async () => {
+    // #206 で確認依頼 (確認TOSS) は通知するようになったが、承認はボールが
+    // 進行責任者へ移るだけで「相手に何かを頼む」操作ではないため送らない。
     const approver = await createMember({ projectId: ctx.project.id, memberType: 'client' });
     const plan = await createPlan({
       title: 'デザイン作成',
@@ -146,8 +148,9 @@ describe('TOSS 通知メール (#79)', () => {
     const planId = plan.body.data.id;
 
     await act(planId, 'request-review');
+    sent.length = 0;
+
     await act(planId, 'approve');
-    await act(planId, 'send-back');
 
     expect(sent).toHaveLength(0);
   });
