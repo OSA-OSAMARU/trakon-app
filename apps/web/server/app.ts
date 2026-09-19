@@ -13,6 +13,7 @@ import { organizationsRoute } from './routes/v1/organizations.js';
 import { projectsRoute } from './routes/v1/projects.js';
 import { shareRoute } from './routes/v1/share.js';
 import { stripeWebhookRoute } from './routes/v1/stripeWebhook.js';
+import { adminRoute } from './routes/v1/admin.js';
 
 // Sentry の初期化 (SENTRY_DSN 未設定なら no-op)
 try {
@@ -33,6 +34,8 @@ export function createApp() {
 
   app.route('/api/v1', healthRoute);
   app.route('/api/v1/auth', authRoute);
+  // 運営専用 (#204)。許可リスト外には 404 を返す
+  app.route('/api/v1/admin', adminRoute);
   app.route('/api/v1/billing', billingRoute);
   app.route('/api/v1/projects', projectsRoute);
   app.route('/api/v1/invitations', invitationsRoute);

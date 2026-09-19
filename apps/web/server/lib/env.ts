@@ -34,6 +34,14 @@ const envSchema = z
     STRIPE_JP_TAX_RATE_ID: z.string().min(3).optional(),
     STRIPE_PORTAL_CONFIGURATION_ID: z.string().min(3).optional(),
     SENTRY_ENVIRONMENT: z.string().optional(),
+    /**
+     * 運営管理画面 (#204) を開けるメールアドレス。カンマ区切り。
+     *
+     * DB の列ではなく環境変数で持つ。運営権限は**デプロイ側で管理したい**もので、
+     * アプリのデータ操作から昇格できる経路を作りたくないため。未設定なら
+     * 誰も開けない (安全側に倒す)。
+     */
+    TRAKON_OPERATOR_EMAILS: z.string().optional(),
   })
   .refine((d) => Boolean(d.SUPABASE_SECRET_KEY ?? d.SUPABASE_SERVICE_ROLE_KEY), {
     message:

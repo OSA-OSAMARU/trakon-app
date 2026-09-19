@@ -198,6 +198,28 @@ describe('SidebarLayout', () => {
     expect(await screen.findByText('taro@example.com')).toBeInTheDocument();
   });
 
+  it('運営アカウントにだけ運営管理の導線を出す (#204)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stubEndpoints({ sync: { ...SYNC_OK, isOperator: true } });
+    renderLayout();
+
+    await user.click(await screen.findByRole('button', { name: /タロウ/ }));
+    expect(await screen.findByRole('menuitem', { name: '運営管理' })).toHaveAttribute(
+      'href',
+      '/admin',
+    );
+  });
+
+  it('運営でなければ運営管理の導線を出さない (#204)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stubEndpoints();
+    renderLayout();
+
+    await user.click(await screen.findByRole('button', { name: /タロウ/ }));
+    await screen.findByRole('menuitem', { name: 'マイページ' });
+    expect(screen.queryByRole('menuitem', { name: '運営管理' })).not.toBeInTheDocument();
+  });
+
   it('プロフィール未完了 (session 無し) ならフッターは Skeleton を表示する', async () => {
     getSession.mockResolvedValue({ data: { session: null } });
     stubEndpoints();
