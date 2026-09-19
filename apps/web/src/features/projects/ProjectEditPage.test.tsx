@@ -365,6 +365,44 @@ describe('ProjectEditPage (integration)', () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('制作物を更新しました'));
   });
 
+  it('制作物を予定ごと複製できる (#200)', async () => {
+    const user = setup();
+    let copyCalled = false;
+    let listCalls = 0;
+    server.use(
+      http.get('*/api/v1/projects/p1', () => HttpResponse.json({ data: detail() })),
+      http.get('*/api/v1/projects/p1/items', () => {
+        listCalls += 1;
+        return HttpResponse.json({
+          data:
+            listCalls > 1
+              ? [item(), item({ id: 'it2', name: 'トップページ のコピー', sortOrder: 1 })]
+              : [item()],
+        });
+      }),
+      http.post('*/api/v1/projects/p1/items/it1/copy', () => {
+        copyCalled = true;
+        return HttpResponse.json(
+          { data: item({ id: 'it2', name: 'トップページ のコピー', sortOrder: 1 }) },
+          { status: 201 },
+        );
+      }),
+    );
+    const { toast } = await import('sonner');
+
+    renderEdit();
+    await screen.findByText('トップページ');
+
+    await user.click(screen.getByRole('button', { name: 'トップページ を複製' }));
+
+    await waitFor(() => expect(copyCalled).toBe(true));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('「トップページ のコピー」を作成しました'),
+    );
+    // 再取得でコピーが一覧に出る
+    expect(await screen.findByText('トップページ のコピー')).toBeInTheDocument();
+  });
+
   it('制作物を削除できる (確認 → DELETE → 再取得)', async () => {
     const user = setup();
     let deleteCalled = false;

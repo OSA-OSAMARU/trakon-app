@@ -501,6 +501,32 @@ describe('ItemSchedulePage (integration)', () => {
     expect(options.length).toBeGreaterThan(0);
   });
 
+  it('単一制作物に絞ると「この制作物を複製」から列ごとコピーできる (#200)', async () => {
+    setupReads();
+    let copyCalled = false;
+    server.use(
+      http.post(`*/api/v1/projects/${PROJECT_ID}/items/${ITEM_ID}/copy`, () => {
+        copyCalled = true;
+        return HttpResponse.json(
+          { data: { ...items[0], id: 'item-copy', name: 'トップページ のコピー' } },
+          { status: 201 },
+        );
+      }),
+    );
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderPage();
+
+    await screen.findByText('トップページ');
+    // 「全て」表示では対象が一意に決まらないので出さない
+    expect(screen.queryByRole('button', { name: /この制作物を複製/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: 'トップページ' }));
+
+    await user.click(await screen.findByRole('button', { name: /この制作物を複製/ }));
+    await waitFor(() => expect(copyCalled).toBe(true));
+  });
+
   // ---------------------------------------------------------------------------
   // ズーム操作
   // ---------------------------------------------------------------------------
