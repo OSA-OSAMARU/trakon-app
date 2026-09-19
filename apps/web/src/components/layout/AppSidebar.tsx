@@ -26,6 +26,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/components/ui/utils';
 import { Wordmark } from '@/components/trakon/Wordmark';
+import { formatAppVersion } from '@/lib/appVersion';
 
 export type SidebarProject = { id: string; name: string };
 export type SidebarUser = {
@@ -39,7 +40,7 @@ export type SidebarUser = {
  * ログイン後画面の左サイドバー (Figma node 9:2)。
  *
  * 幅 224px。上から ワードマーク / ダッシュボード / プロジェクト一覧、
- * 下に ユーザー情報を固定で置く。
+ * 下に バージョン表記 / ユーザー情報 を固定で置く。
  * データ取得は行わない表示専用コンポーネント（配線は app/SidebarLayout.tsx）。
  */
 export function AppSidebar({
@@ -89,6 +90,12 @@ export function AppSidebar({
           ))}
         </nav>
       </div>
+
+      {/* いま見ているビルドの識別子 (#195)。問い合わせ時にこの 1 行で対象を特定できる。
+          常時目に入るが読むものではないので、最小の文字サイズと最も淡い文字色で置く。 */}
+      <p className="text-text-tertiary shrink-0 px-6 pb-2 text-label" data-testid="app-version">
+        {formatAppVersion()}
+      </p>
 
       {/* ユーザー情報フッター: 全ページ共通で常時表示 (読込中は Skeleton)。
           アカウント系の導線はここに集約する (Figma node 254:2 のメニュー)。 */}

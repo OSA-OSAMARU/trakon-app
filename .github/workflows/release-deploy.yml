@@ -75,6 +75,10 @@ jobs:
       - name: Build (Vercel)
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          # 画面に出すバージョン表記 (#195)。checkout は tag を指しているが
+          # fetch-depth=1 で tag オブジェクトを引いていないため git describe に頼らず、
+          # ワークフローが知っているタグ名をそのまま渡す。
+          VITE_APP_VERSION: ${{ github.event.inputs.tag || github.event.release.tag_name }}
         run: vercel build --prod --token=$VERCEL_TOKEN
 
       - name: Deploy (Vercel)
