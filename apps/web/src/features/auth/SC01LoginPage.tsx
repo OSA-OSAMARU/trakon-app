@@ -16,6 +16,11 @@ import { useAuthSession } from './useAuthSession';
 import { authApi, type SyncResponse } from './api';
 import { OAuthButtons } from './OAuthButtons';
 import { Wordmark } from '@/components/trakon/Wordmark';
+import {
+  LEGAL_LINKS,
+  LEGAL_LINK_LABEL,
+  LEGAL_LINK_ORDER,
+} from '@/features/legal/legalLinks';
 
 // =============================================================================
 // SC-01 ログイン/サインアップ統合画面
@@ -73,6 +78,26 @@ export function SC01LoginPage() {
         {screen === 'email-sent' && <EmailSent email={params.get('email') ?? ''} goTo={goTo} />}
         {screen === 'create-account' && <CreateAccountForm />}
         {screen === 'password-reset-request' && <PasswordResetRequest goTo={goTo} />}
+
+        {/* 会社情報・法務の導線 (#193)。実体は公式サイト (www.trakon.app) が持ち、
+            アプリ側は入口だけを置く。未ログインで必ず通る画面なので、
+            どの状態 (login / signup / …) でも同じ位置に出す。 */}
+        <nav
+          aria-label="会社情報・法務"
+          className="mt-6 flex flex-wrap justify-center gap-x-3 gap-y-1 text-label leading-relaxed text-muted-foreground"
+        >
+          {LEGAL_LINK_ORDER.map((key) => (
+            <a
+              key={key}
+              href={LEGAL_LINKS[key]}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2"
+            >
+              {LEGAL_LINK_LABEL[key]}
+            </a>
+          ))}
+        </nav>
       </div>
     </div>
   );
@@ -234,7 +259,7 @@ function SignupForm({
               />
               <span>
                 <a
-                  href="/terms"
+                  href={LEGAL_LINKS.terms}
                   target="_blank"
                   rel="noreferrer"
                   className="text-foreground underline underline-offset-2"
@@ -243,7 +268,7 @@ function SignupForm({
                 </a>
                 および
                 <a
-                  href="/privacy"
+                  href={LEGAL_LINKS.privacy}
                   target="_blank"
                   rel="noreferrer"
                   className="text-foreground underline underline-offset-2"
@@ -275,29 +300,6 @@ function SignupForm({
               未完でも押下可能。チェックボックスはメール登録ボタン専用。 */}
           <OAuthButtons />
         </div>
-        <p className="mt-5 text-center text-label leading-relaxed text-muted-foreground">
-          <a href="/terms" target="_blank" rel="noreferrer" className="underline underline-offset-2">
-            利用規約
-          </a>
-          {' ・ '}
-          <a
-            href="/privacy"
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-2"
-          >
-            プライバシーポリシー
-          </a>
-          {' ・ '}
-          <a
-            href="/commerce"
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-2"
-          >
-            特定商取引法に基づく表記
-          </a>
-        </p>
         <div className="mt-4 text-center text-body">
           <button
             type="button"
