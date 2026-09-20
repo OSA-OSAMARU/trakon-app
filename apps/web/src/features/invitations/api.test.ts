@@ -19,13 +19,14 @@ beforeEach(() => {
 });
 
 const stubVerify: InvitationVerify = {
+  scope: 'project',
   project: { id: 'proj-1', name: 'プロジェクト' },
-  invitedMember: {
-    id: 'm-1',
+  organizationName: '制作会社B',
+  invitee: {
     name: '田中',
     email: 'tanaka@example.com',
     organizationName: '株式会社A',
-    memberType: 'production',
+    roleType: 'editor',
   },
   expiresAt: '2026-02-01T00:00:00Z',
 };
@@ -48,8 +49,9 @@ describe('invitationsApi', () => {
     let method = '';
     let url = '';
     const accept: InvitationAccept = {
+      scope: 'project',
       project: { id: 'proj-1', name: 'プロジェクト' },
-      member: { id: 'm-1', memberType: 'production' },
+      members: [{ id: 'm-1', projectId: 'proj-1', roleType: 'editor' }],
     };
     server.use(
       http.post('*/api/v1/invitations/:token/accept', ({ request }) => {

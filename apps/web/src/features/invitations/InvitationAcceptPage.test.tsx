@@ -47,13 +47,28 @@ vi.mock('sonner', () => ({
 import { InvitationAcceptPage } from './InvitationAcceptPage';
 
 const verifyData: InvitationVerify = {
+  scope: 'project',
   project: { id: 'proj-1', name: 'サンプル制作案件' },
-  invitedMember: {
-    id: 'm1',
+  organizationName: '制作会社A',
+  invitee: {
     name: '鈴木 花子',
     email: 'hanako@example.com',
     organizationName: 'Client Co',
-    memberType: 'client',
+    roleType: 'viewer',
+  },
+  expiresAt: '2026-07-01T00:00:00.000Z',
+};
+
+/** メンバー管理から発行される組織単位の招待 (#160)。project は null になる */
+const orgVerifyData: InvitationVerify = {
+  scope: 'org',
+  project: null,
+  organizationName: '河津正和 の組織',
+  invitee: {
+    name: '河津',
+    email: 'hanako@example.com',
+    organizationName: '',
+    roleType: 'editor',
   },
   expiresAt: '2026-07-01T00:00:00.000Z',
 };
@@ -104,7 +119,7 @@ afterEach(() => {
 });
 
 describe('InvitationAcceptPage', () => {
-  it('有効な招待を取得して内容 (プロジェクト名/招待先/種別) を描画する', async () => {
+  it('有効な招待を取得して内容 (プロジェクト名/招待先/権限) を描画する', async () => {
     stubVerify();
     renderWithProviders(<InvitationAcceptPage />);
 
@@ -112,8 +127,27 @@ describe('InvitationAcceptPage', () => {
     expect(screen.getByText('サンプル制作案件')).toBeInTheDocument();
     expect(screen.getByText('hanako@example.com')).toBeInTheDocument();
     expect(screen.getByText('鈴木 花子')).toBeInTheDocument();
-    // memberType=client → 「クライアント」
-    expect(screen.getByText('クライアント')).toBeInTheDocument();
+    // 区分ではなく権限を出す (操作可否の根拠はロールだけ)
+    expect(screen.getByText('閲覧者')).toBeInTheDocument();
+  });
+
+  it('組織単位の招待 (project が null) でも内容を描画する', async () => {
+    // #228: project 前提の実装だと描画中に落ちて画面が真っ白になっていた
+    stubVerify(200, orgVerifyData);
+    renderWithProviders(<InvitationAcceptPage />);
+
+    expect(await screen.findByText('組織への招待')).toBeInTheDocument();
+    expect(screen.getByText('河津正和 の組織')).toBeInTheDocument();
+    expect(screen.getByText('hanako@example.com')).toBeInTheDocument();
+    expect(screen.getByText('編集者')).toBeInTheDocument();
+  });
+
+  it('氏名が空の招待でも描画できる (招待行に氏名が無い場合)', async () => {
+    stubVerify(200, { ...orgVerifyData, invitee: { ...orgVerifyData.invitee, name: '' } });
+    renderWithProviders(<InvitationAcceptPage />);
+
+    expect(await screen.findByText('組織への招待')).toBeInTheDocument();
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 
   it('未認証時は「ログインして承諾」ボタンを表示し、押すと /login?next=... へ遷移する', async () => {
@@ -145,7 +179,11 @@ describe('InvitationAcceptPage', () => {
       http.post('*/api/v1/invitations/:token/accept', () => {
         accepted = true;
         return HttpResponse.json({
-          data: { project: { id: 'proj-1', name: 'サンプル制作案件' }, member: { id: 'm1', memberType: 'client' } },
+          data: {
+            scope: 'project',
+            project: { id: 'proj-1', name: 'サンプル制作案件' },
+            members: [{ id: 'm1', projectId: 'proj-1', roleType: 'viewer' }],
+          },
         });
       }),
     );
@@ -160,6 +198,25 @@ describe('InvitationAcceptPage', () => {
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith('/projects/proj-1/edit', { replace: true }),
     );
+  });
+
+  it('組織単位の招待を受諾するとプロジェクト一覧へ遷移する', async () => {
+    // 紐づくプロジェクトが 0 件のこともあるため、特定のプロジェクトへは送れない
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    getSession.mockResolvedValue({ data: { session: { user: { id: 'u1' } } } });
+    stubVerify(200, orgVerifyData);
+    stubSync();
+    server.use(
+      http.post('*/api/v1/invitations/:token/accept', () =>
+        HttpResponse.json({ data: { scope: 'org', project: null, members: [] } }),
+      ),
+    );
+
+    renderWithProviders(<InvitationAcceptPage />);
+    await user.click(await screen.findByRole('button', { name: '承諾' }));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('組織に参加しました'));
+    expect(navigate).toHaveBeenCalledWith('/projects', { replace: true });
   });
 
   it('accept で ALREADY_MEMBER エラーなら通知して /projects へ遷移する', async () => {
