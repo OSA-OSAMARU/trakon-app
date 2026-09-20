@@ -528,6 +528,33 @@ describe('ItemSchedulePage (integration)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // 表示形式の切り替え (#66)
+  // ---------------------------------------------------------------------------
+  it('カレンダータブで月表示へ切り替わる', async () => {
+    setupReads();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderPage();
+
+    await screen.findByText('トップページ');
+    // 既定は縦型スケジュール
+    expect(screen.getByLabelText('行の高さ')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /カレンダー/ }));
+
+    expect(await screen.findByRole('button', { name: '次の月' })).toBeInTheDocument();
+    // ズームは縦型専用なので月表示では出さない
+    expect(screen.queryByLabelText('行の高さ')).not.toBeInTheDocument();
+  });
+
+  it('?view=calendar で開くと最初から月表示になる (リンクで共有できる)', async () => {
+    setupReads();
+    renderPage(`/projects/${PROJECT_ID}/items/${ITEM_ID}?view=calendar`);
+
+    expect(await screen.findByRole('button', { name: '次の月' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('行の高さ')).not.toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
   // ズーム操作
   // ---------------------------------------------------------------------------
   it('ズームの拡大/縮小ボタンとスライダーで rowHeight 表示が変わる', async () => {
