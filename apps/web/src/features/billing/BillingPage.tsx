@@ -14,6 +14,13 @@ import {
 
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,9 +48,13 @@ export function BillingPage() {
   const [params, setParams] = useSearchParams();
   const checkoutResult = params.get('checkout');
   const checkoutSessionId = params.get('session_id');
-  const [awaitingWebhook, setAwaitingWebhook] = useState(checkoutResult === 'success');
-  /** 反映待ちが時間切れになったか。手動で取り直す導線を出すために持つ (#209) */
-  const [syncTimedOut, setSyncTimedOut] = useState(false);
+  /**
+   * 反映待ちを諦めた待機 (waitToken)。手動で取り直す導線を出すために持つ (#209)。
+   * 待機の種類ごとに持つので、次の待機が始まれば自動で解ける。
+   */
+  const [gaveUpToken, setGaveUpToken] = useState<string | null>(null);
+  /** 確認モーダルで選択中のプラン。押した瞬間に課金を動かさない (#235) */
+  const [confirming, setConfirming] = useState<CheckoutablePlan | null>(null);
   /**
    * プラン一覧の開閉 (Figma node 263:18)。
    * デザインでは「現在のプラン」カードだけが見えていて、比較表は
@@ -65,56 +76,91 @@ export function BillingPage() {
     queryFn: () => billingApi.get(),
   });
 
+  const subscription = query.data?.subscription ?? null;
+
   /**
-   * Checkout から戻った直後は Stripe へ現在値を取りに行く (#209)。
+   * Stripe 側の反映を待っている状態。入口は 2 つある。
+   *
+   * 1. Checkout から戻った直後 (`?checkout=success`)。契約そのものがまだ無い。
+   * 2. 即時適用のプラン変更 (Personal → Team)。追加請求の決済成功を確認するまで
+   *    Team 権限を与えない設計なので、`pendingPlanCode` だけが立っている状態で
+   *    Webhook (invoice.paid / subscription.updated) を待っている (#235)。
+   *
+   * 次回更新時に適用されるダウングレードは待機ではない (日付が決まっていて、
+   * その日まで何も起きないのが正しい) ので `pendingPlanEffectiveAt` で見分ける。
+   *
+   * **サーバーが返した契約状態から導出する。** 変更 API の戻り値を起点にすると、
+   * 画面を離れて戻ってきたときに待機が復元されず、止まったまま気づけない。
+   */
+  const awaitingCheckout =
+    checkoutResult === 'success' && (subscription === null || subscription.status === 'none');
+  const pendingImmediatePlan =
+    subscription !== null &&
+    subscription.pendingPlanCode !== null &&
+    subscription.pendingPlanEffectiveAt === null
+      ? subscription.pendingPlanCode
+      : null;
+
+  const waitToken = awaitingCheckout
+    ? `checkout:${checkoutSessionId ?? '-'}`
+    : pendingImmediatePlan
+      ? `plan:${pendingImmediatePlan}`
+      : null;
+  const waiting = waitToken !== null && waitToken !== gaveUpToken;
+  const timedOut = waitToken !== null && waitToken === gaveUpToken;
+
+  /**
+   * 待っている間は Stripe へ現在値を取りに行く (#209 / #235)。
    *
    * Webhook の到着を待つだけだと、Webhook が登録できない環境 (Preview デプロイは
-   * URL がデプロイごとに変わる) や配信が遅れている間、「お支払いの確認中です」の
-   * まま Free で止まり続ける。押し出しを待つのではなく**取りに行く**。
+   * URL がデプロイごとに変わる) や配信が遅れている間、「確認中です」のまま
+   * 元のプランで止まり続ける。押し出しを待つのではなく**取りに行く**。
    *
    * 権限の根拠は画面遷移ではなく Stripe API が返す契約の現在値なので、
    * SR-BILL-03 (success URL への遷移だけを根拠にしない) は満たしている。
    */
   useQuery({
-    queryKey: ['billing', 'sync', checkoutSessionId] as const,
+    queryKey: ['billing', 'sync', waitToken] as const,
     queryFn: async () => {
       const data = await billingApi.sync(checkoutSessionId);
       qc.setQueryData(billingQueryKey.subscription, data);
       return data;
     },
-    enabled: awaitingWebhook,
-    refetchInterval: 2000,
+    enabled: waiting,
+    refetchInterval: 3000,
     // 失敗しても「確認中」のまま黙らせない。時間切れで手動導線へ切り替える
     retry: false,
     gcTime: 0,
   });
 
-  const status = query.data?.subscription.status;
-
-  // 契約状態が確定したら反映待ちを解除する
+  // 契約が確定したら Checkout の痕跡を片付けて知らせる
   useEffect(() => {
-    if (!awaitingWebhook) return;
-    if (status && status !== 'none') {
-      setAwaitingWebhook(false);
-      setSyncTimedOut(false);
-      const next = new URLSearchParams(params);
-      next.delete('checkout');
-      next.delete('session_id');
-      setParams(next, { replace: true });
-      toast.success('プランが有効になりました');
-    }
-  }, [awaitingWebhook, status, params, setParams]);
+    if (checkoutResult !== 'success') return;
+    if (!subscription || subscription.status === 'none') return;
+    const next = new URLSearchParams(params);
+    next.delete('checkout');
+    next.delete('session_id');
+    setParams(next, { replace: true });
+    toast.success('プランが有効になりました');
+  }, [checkoutResult, subscription, params, setParams]);
 
-  // 反映待ちが長引いても永遠に回さない (Stripe 側で契約が成立していない場合の保険)。
+  // プラン変更が確定した瞬間を知らせる。待機が明けたことが画面上の唯一の合図なので、
+  // 黙って表示が変わるだけだと「いつ反映されたのか」が分からない。
+  const previousPendingPlan = useRef<BillingPlanCode | null>(null);
+  useEffect(() => {
+    if (previousPendingPlan.current !== null && pendingImmediatePlan === null && subscription) {
+      toast.success(`${BILLING_PLANS[subscription.planCode].label} プランへの変更が反映されました`);
+    }
+    previousPendingPlan.current = pendingImmediatePlan;
+  }, [pendingImmediatePlan, subscription]);
+
+  // 反映待ちが長引いても永遠に回さない (Stripe 側で成立していない場合の保険)。
   // 黙って止めると「確認中のまま何も起きない」に戻るので、手動の取り直し導線を出す。
   useEffect(() => {
-    if (!awaitingWebhook) return;
-    const timer = setTimeout(() => {
-      setAwaitingWebhook(false);
-      setSyncTimedOut(true);
-    }, 30_000);
+    if (!waiting || waitToken === null) return;
+    const timer = setTimeout(() => setGaveUpToken(waitToken), 30_000);
     return () => clearTimeout(timer);
-  }, [awaitingWebhook]);
+  }, [waiting, waitToken]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: billingQueryKey.subscription });
@@ -152,10 +198,16 @@ export function BillingPage() {
     onSuccess: (data) => {
       qc.setQueryData(billingQueryKey.subscription, data);
       qc.invalidateQueries({ queryKey: projectsQueryKey.all });
-      if (data.subscription.status === 'none') {
-        toast.error('契約がまだ確認できません。お支払いが完了しているかご確認ください。');
+      // 取り直しても待機条件が解けていないなら、Stripe 側でまだ成立していない。
+      // 「更新しました」と言い切ると、何も変わっていないのに解決した顔になる。
+      const stillWaiting =
+        data.subscription.status === 'none' ||
+        (data.subscription.pendingPlanCode !== null &&
+          data.subscription.pendingPlanEffectiveAt === null);
+      if (stillWaiting) {
+        toast.error('Stripe 側でまだ確認できていません。お支払いが完了しているかご確認ください。');
       } else {
-        setSyncTimedOut(false);
+        setGaveUpToken(null);
         toast.success('契約状態を更新しました');
       }
     },
@@ -201,6 +253,15 @@ export function BillingPage() {
     cancelMut.isPending ||
     resumeMut.isPending;
 
+  const confirmPlanChange = (plan: CheckoutablePlan) => {
+    setConfirming(null);
+    if (hasLiveSubscription(subscription?.status ?? 'none')) {
+      changePlanMut.mutate(plan);
+    } else {
+      checkoutMut.mutate(plan);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -218,14 +279,16 @@ export function BillingPage() {
               <Notice>お申し込みは完了していません。もう一度お試しください。</Notice>
             )}
 
-            {awaitingWebhook && (
+            {waiting && (
               <Notice icon={<Loader2 className="size-4 animate-spin" />}>
-                お支払いの確認中です。反映まで少しお待ちください。
+                {pendingImmediatePlan
+                  ? `${BILLING_PLANS[pendingImmediatePlan].label} プランへの変更を確認中です。お支払いの確認後に反映されます。`
+                  : 'お支払いの確認中です。反映まで少しお待ちください。'}
               </Notice>
             )}
 
-            {/* 時間切れ。黙って諦めず、取り直す手段を渡す (#209) */}
-            {syncTimedOut && (
+            {/* 時間切れ。黙って諦めず、取り直す手段を渡す (#209 / #235) */}
+            {timedOut && (
               <Notice>
                 <span className="flex flex-wrap items-center gap-2">
                   お支払いの確認に時間がかかっています。
@@ -249,7 +312,9 @@ export function BillingPage() {
               onResume={() => resumeMut.mutate()}
               onChangePlan={togglePlans}
               plansOpen={plansOpen}
-              disabled={anyPending || awaitingWebhook}
+              // 反映待ちでも決済情報の管理は塞がない。支払いが通らずに待機が続いて
+              // いる場合、Customer Portal を開くことがまさに復旧手段になるため。
+              disabled={anyPending || awaitingCheckout}
             />
 
             {plansOpen && (
@@ -260,12 +325,18 @@ export function BillingPage() {
                 current={query.data.entitlement.effectivePlanCode}
                 hasSubscription={hasLiveSubscription(query.data.subscription.status)}
                 canManage={query.data.orgRole === 'owner' || query.data.orgRole === 'admin'}
-                disabled={anyPending || awaitingWebhook}
-                onSelect={(plan) =>
-                  hasLiveSubscription(query.data.subscription.status)
-                    ? changePlanMut.mutate(plan)
-                    : checkoutMut.mutate(plan)
-                }
+                // 変更が飛んでいる間に別のプランを重ねて押させない
+                disabled={anyPending || waiting}
+                onSelect={setConfirming}
+              />
+            )}
+
+            {confirming && (
+              <PlanChangeConfirmDialog
+                plan={confirming}
+                billing={query.data}
+                onClose={() => setConfirming(null)}
+                onConfirm={() => confirmPlanChange(confirming)}
               />
             )}
 
@@ -532,6 +603,91 @@ const PlanComparison = forwardRef<
     </Card>
   );
 });
+
+/**
+ * プラン申し込み・変更の確認 (#235)。
+ *
+ * 押した瞬間に課金が動く操作なので、**何がいつ起きるか**を出してから確定させる。
+ * 3 つの経路で結果がまるで違うため、同じ文面にまとめない。
+ *   申し込み       … Stripe の決済ページへ離脱する
+ *   Personal → Team … 即時適用。残期間の差額を日割りで追加請求する (§7.7.1)
+ *   Team → Personal … 次回更新時に適用。返金は無く、上限が下がる (§7.7.2)
+ */
+function PlanChangeConfirmDialog({
+  plan,
+  billing,
+  onClose,
+  onConfirm,
+}: {
+  plan: CheckoutablePlan;
+  billing: OrganizationBilling;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const spec = BILLING_PLANS[plan];
+  const live = hasLiveSubscription(billing.subscription.status);
+  const kind: 'subscribe' | 'upgrade' | 'downgrade' = !live
+    ? 'subscribe'
+    : plan === 'team'
+      ? 'upgrade'
+      : 'downgrade';
+
+  const price = `${spec.monthlyPriceJpyIncTax?.toLocaleString() ?? '—'} 円 / 月 (税込)`;
+  const periodEnd = billing.subscription.currentPeriodEnd;
+
+  const notes: string[] =
+    kind === 'subscribe'
+      ? [
+          `月額 ${price}。`,
+          spec.trialHours
+            ? `初回は ${spec.trialHours} 時間の無料トライアルが付きます (カードの登録は必要です)。`
+            : 'トライアルはありません。',
+          '「進む」を押すと Stripe の決済ページへ移動します。',
+        ]
+      : kind === 'upgrade'
+        ? [
+            `月額 ${price} になります。`,
+            '現在の請求期間の残り日数分の差額を、日割りで追加請求します。返金はありません。',
+            'Team の上限が使えるようになるのは、この追加請求のお支払いが確認できた後です。',
+          ]
+        : [
+            `月額 ${price} になります。`,
+            periodEnd
+              ? `切り替わるのは次回更新日 (${formatDateTime(periodEnd)}) です。それまでは現在のプランのままご利用いただけます。`
+              : '切り替わるのは次回更新日です。それまでは現在のプランのままご利用いただけます。',
+            '日割りの返金はありません。',
+            `変更後の上限は会員アカウント ${limitLabel(spec.seatLimit)} 人 / アクティブプロジェクト ${limitLabel(spec.projectLimit)} 件です。現在これを超えている場合は変更できません。`,
+          ];
+
+  return (
+    <AlertDialog open onOpenChange={(open) => !open && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {kind === 'subscribe'
+              ? `${spec.label} プランに申し込みますか？`
+              : `${spec.label} プランに変更しますか？`}
+          </AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <ul className="grid list-disc gap-1 pl-4 text-left">
+              {notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="flex flex-wrap justify-end gap-2 pt-2">
+          <Button variant="secondary" onClick={onClose}>
+            キャンセル
+          </Button>
+          <Button onClick={onConfirm}>
+            {kind === 'subscribe' ? '決済ページへ進む' : '変更する'}
+          </Button>
+        </div>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 /**
  * 上限超過時に維持するプロジェクトを選び直す (FR-BILL-11)。
