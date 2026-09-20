@@ -136,8 +136,9 @@ pnpm db:generate
 # 2. Supabase ローカルスタックを起動（初回は Docker イメージ取得で数分）
 pnpm dlx supabase start
 #   → 出力される Project URL / Publishable key / Secret key / DB URL を控える
-#   → プロフィール画像用の Storage バケット avatars は supabase/config.toml に
-#     宣言してあるので自動で作られる（既に起動済みなら supabase stop && supabase start）
+#   → Storage バケット avatars（プロフィール画像）と attachments（予定への添付）は
+#     supabase/config.toml に宣言してあるので自動で作られる
+#     （既に起動済みなら supabase stop && supabase start）
 
 # 3. 環境変数ファイルを作成し、上記の値を反映
 cp .env.example apps/web/.env.local

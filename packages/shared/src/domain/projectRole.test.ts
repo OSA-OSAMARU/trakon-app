@@ -50,6 +50,10 @@ describe('PROJECT_ROLE_MATRIX', () => {
     'share_link.create': ['admin'],
     'share_link.revoke': ['admin'],
     'comment.create': ['admin', 'editor', 'viewer'],
+    // 添付 (#65)。閲覧者はクライアント側の担当者であることが多く、
+    // 支給素材を渡すのはむしろ閲覧者側の仕事なので許す
+    'attachment.create': ['admin', 'editor', 'viewer'],
+    'attachment.delete': ['admin', 'editor', 'viewer'],
   };
 
   it.each(PROJECT_ACTIONS)('%s の許可ロールが権限メモと一致する', (action) => {
@@ -132,12 +136,15 @@ describe('allowedProjectActions', () => {
     expect(allowedProjectActions('admin')).toEqual([...PROJECT_ACTIONS]);
   });
 
-  it('閲覧者は閲覧・完了フロー・コメントのみ', () => {
+  it('閲覧者は閲覧・完了フロー・コメント・添付のみ', () => {
     expect(allowedProjectActions('viewer')).toEqual([
       'project.view',
       'plan.complete',
       'share_link.view',
       'comment.create',
+      // 支給素材の受け渡しは閲覧者 (クライアント側) の仕事でもある (#65)
+      'attachment.create',
+      'attachment.delete',
     ]);
   });
 });

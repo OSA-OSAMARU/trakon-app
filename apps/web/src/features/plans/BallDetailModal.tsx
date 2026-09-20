@@ -1,5 +1,6 @@
 import { canProjectRole, PROJECT_ROLE_LABEL } from '@trakon/shared';
 import { BallHandoffDialog, type BallHandoffKind } from './BallHandoffDialog';
+import { PlanAttachments } from './PlanAttachments';
 import type { ScheduleThemeKey } from '@trakon/shared';
 
 import { useMemo, useState } from 'react';
@@ -160,6 +161,8 @@ export function BallDetailModal({
   const canRoleEditPlan = myRole ? canProjectRole(myRole, 'plan.update') : false;
   const canRoleCreatePlan = myRole ? canProjectRole(myRole, 'plan.create') : false;
   const canRoleDeletePlan = myRole ? canProjectRole(myRole, 'plan.delete') : false;
+  // 添付は閲覧者にも許す (#65)。支給素材を渡すのはクライアント側の仕事でもある
+  const canRoleUploadAttachment = myRole ? canProjectRole(myRole, 'attachment.create') : false;
 
   const requestReviewMut = useRequestReviewPlan({ projectId, itemId, planId });
   const undoRequestReviewMut = useUndoRequestReviewPlan({ projectId, itemId, planId });
@@ -621,6 +624,19 @@ export function BallDetailModal({
                         </DetailCard>
                       </Section>
                     )}
+
+                    {/* 添付ファイル (#65)。メッセージが「何をしてほしいか」なら
+                        ここはその対象そのもの (支給素材・確認用の書き出し)。 */}
+                    <Section title="添付ファイル">
+                      <PlanAttachments
+                        projectId={projectId}
+                        itemId={itemId}
+                        planId={planId}
+                        myMemberId={myMember?.id ?? null}
+                        canUpload={canRoleUploadAttachment}
+                        isAdmin={isAdmin}
+                      />
+                    </Section>
 
                     <Section
                       title="最近の履歴"

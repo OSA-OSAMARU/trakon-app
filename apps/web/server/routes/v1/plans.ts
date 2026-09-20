@@ -7,6 +7,12 @@ import {
 } from '../../middleware/projectAuth.js';
 import { requireItemInProject } from '../../middleware/itemAuth.js';
 import { ApiException } from '../../lib/errors.js';
+import { ATTACHMENT_MAX_BYTES } from '../../lib/attachmentStorage.js';
+import {
+  createAttachment,
+  deleteAttachment,
+  listAttachments,
+} from '../../services/attachments.js';
 import {
   commentReturnBodySchema,
   createPlanBodySchema,
@@ -121,6 +127,79 @@ export const plansRoute = new Hono()
     await deletePlan({ itemId, planId });
     return c.body(null, 204);
   })
+
+  // ---------------------------------------------------------------------------
+  // 添付ファイル (#65)
+  // ---------------------------------------------------------------------------
+  .get('/:planId/attachments', async (c) => {
+    const planId = c.req.param('planId');
+    if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+    const data = await listAttachments({ itemId: c.get('itemId'), planId });
+    return c.json({ data });
+  })
+
+  .post(
+    '/:planId/attachments',
+    requireProjectWritable(),
+    requireProjectAction('attachment.create'),
+    async (c) => {
+      const project = c.get('project');
+      const planId = c.req.param('planId');
+      if (!planId) throw new ApiException('BAD_REQUEST', 400, 'planId required');
+
+      // Content-Length で早期に弾く (本文を読み切る前に打ち切る)
+      const declaredLength = Number(c.req.header('content-length') ?? 0);
+      if (declaredLength > ATTACHMENT_MAX_BYTES * 1.1) {
+        throw new ApiException(
+          'ATTACHMENT_TOO_LARGE',
+          413,
+          `ファイルは ${ATTACHMENT_MAX_BYTES / 1024 / 1024}MB 以下にしてください。`,
+        );
+      }
+
+      const form = await c.req.formData();
+      const file = form.get('file');
+      if (!(file instanceof File)) {
+        throw new ApiException('ATTACHMENT_MISSING', 422, 'ファイルを選んでください。');
+      }
+
+      const data = await createAttachment({
+        projectId: project.projectId,
+        itemId: c.get('itemId'),
+        planId,
+        uploaderMemberId: project.memberId,
+        file: {
+          filename: file.name,
+          // ブラウザが判定できないと空で届く。総称型で置く
+          mimeType: file.type || 'application/octet-stream',
+          bytes: new Uint8Array(await file.arrayBuffer()),
+        },
+      });
+      return c.json({ data }, 201);
+    },
+  )
+
+  .delete(
+    '/:planId/attachments/:attachmentId',
+    requireProjectWritable(),
+    requireProjectAction('attachment.delete'),
+    async (c) => {
+      const project = c.get('project');
+      const planId = c.req.param('planId');
+      const attachmentId = c.req.param('attachmentId');
+      if (!planId || !attachmentId) {
+        throw new ApiException('BAD_REQUEST', 400, 'planId and attachmentId required');
+      }
+      await deleteAttachment({
+        itemId: c.get('itemId'),
+        planId,
+        attachmentId,
+        currentMemberId: project.memberId,
+        role: project.role,
+      });
+      return c.body(null, 204);
+    },
+  )
 
   .patch('/:planId/successor', requireProjectWritable(), requireProjectAction('plan.update'), async (c) => {
     const itemId = c.get('itemId');
