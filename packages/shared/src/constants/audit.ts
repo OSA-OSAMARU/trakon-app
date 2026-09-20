@@ -56,6 +56,11 @@ export const AUDIT_ACTIONS_BILLING = [
   'subscription_created',
   'subscription_updated',
   'subscription_canceled',
+  /**
+   * Webhook が届かない環境向けの照合経路 (#209)。
+   * Webhook 起点ではないので extra.source = 'reconcile' を付ける。
+   */
+  'subscription_reconciled',
   'plan_changed',
   'payment_failed',
   'payment_recovered',
