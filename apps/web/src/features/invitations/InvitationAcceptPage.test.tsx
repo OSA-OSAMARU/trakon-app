@@ -13,12 +13,14 @@ import type * as ReactRouterDom from 'react-router-dom';
 const getSession = vi.fn();
 const onAuthStateChange = vi.fn();
 const signOut = vi.fn();
+const signInWithPassword = vi.fn();
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: (...a: unknown[]) => getSession(...a),
       onAuthStateChange: (...a: unknown[]) => onAuthStateChange(...a),
       signOut: (...a: unknown[]) => signOut(...a),
+      signInWithPassword: (...a: unknown[]) => signInWithPassword(...a),
     },
   },
 }));
@@ -115,6 +117,7 @@ beforeEach(() => {
   getSession.mockResolvedValue({ data: { session: null } });
   onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
   signOut.mockResolvedValue({ error: null });
+  signInWithPassword.mockResolvedValue({ data: {}, error: null });
 });
 
 afterEach(() => {
@@ -153,16 +156,20 @@ describe('InvitationAcceptPage', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  // #231: アカウントを持たない人が招待リンクで行き止まりにならないようにする
-  it('未認証時は「新規登録して参加」から /login?screen=signup へ、招待先メール付きで遷移する', async () => {
+  // #231 でアカウントを持たない人の行き止まりを解消し、#233 で登録自体を
+  // この画面に取り込んだ。別画面へ送らないことがこの導線の要点。
+  it('未認証時は「新規登録して参加」でこの画面に登録フォームを開く', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stubVerify();
     renderWithProviders(<InvitationAcceptPage />);
 
     await user.click(await screen.findByRole('button', { name: /新規登録して参加/ }));
-    expect(navigate).toHaveBeenCalledWith(
-      `/login?screen=signup&next=${encodeURIComponent('/invitations/tok-123')}&email=${encodeURIComponent('hanako@example.com')}`,
-    );
+
+    expect(screen.getByLabelText('氏名')).toBeInTheDocument();
+    expect(screen.getByLabelText('パスワード')).toBeInTheDocument();
+    // メールの入力欄は出さない (招待に書かれたアドレスで作るため)
+    expect(screen.queryByLabelText('メールアドレス')).not.toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('未認証時は「ログインして参加」から /login?next=... へ、招待先メール付きで遷移する', async () => {
@@ -194,6 +201,147 @@ describe('InvitationAcceptPage', () => {
     expect(navigate).toHaveBeenCalledWith(
       `/login?next=${encodeURIComponent('/invitations/tok-123')}&email=${encodeURIComponent('hanako@example.com')}`,
     );
+  });
+
+  // #233: 招待メール → 確認メールの 2 通待ちを無くす導線
+  describe('招待からの直接登録', () => {
+    /** 登録フォームを開いて必要項目を埋める */
+    async function fillSignupForm(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: /新規登録して参加/ }));
+      await user.clear(screen.getByLabelText('表示名'));
+      await user.type(screen.getByLabelText('表示名'), 'はなこ');
+      await user.type(screen.getByLabelText('パスワード'), 'abcd1234!');
+      await user.type(screen.getByLabelText('パスワード（確認）'), 'abcd1234!');
+      await user.click(screen.getByLabelText(/利用規約/));
+    }
+
+    it('画面内で登録を終え、確認メールを挟まずに参加まで進む', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      stubVerify(200, orgVerifyData);
+      let body: unknown = null;
+      server.use(
+        http.post('*/api/v1/invitations/:token/signup', async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json(
+            {
+              data: {
+                email: 'hanako@example.com',
+                accepted: { scope: 'org', project: null, members: [] },
+              },
+            },
+            { status: 201 },
+          );
+        }),
+      );
+
+      renderWithProviders(<InvitationAcceptPage />);
+      await fillSignupForm(user);
+      await user.click(screen.getByRole('button', { name: /登録して参加/ }));
+
+      // メールは招待が持っているので送らない
+      await waitFor(() =>
+        expect(body).toEqual({
+          fullName: '河津',
+          displayName: 'はなこ',
+          password: 'abcd1234!',
+        }),
+      );
+      // 作ったパスワードでそのままサインインし、参加先へ送る
+      await waitFor(() =>
+        expect(signInWithPassword).toHaveBeenCalledWith({
+          email: 'hanako@example.com',
+          password: 'abcd1234!',
+        }),
+      );
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith('/projects', { replace: true }),
+      );
+    });
+
+    it('プロジェクトつきの招待なら、そのプロジェクトへ送る', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      stubVerify();
+      server.use(
+        http.post('*/api/v1/invitations/:token/signup', () =>
+          HttpResponse.json(
+            {
+              data: {
+                email: 'hanako@example.com',
+                accepted: {
+                  scope: 'project',
+                  project: { id: 'proj-1', name: 'サンプル制作案件' },
+                  members: [{ id: 'm1', projectId: 'proj-1', roleType: 'viewer' }],
+                },
+              },
+            },
+            { status: 201 },
+          ),
+        ),
+      );
+
+      renderWithProviders(<InvitationAcceptPage />);
+      await fillSignupForm(user);
+      await user.click(screen.getByRole('button', { name: /登録して参加/ }));
+
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith('/projects/proj-1/edit', { replace: true }),
+      );
+    });
+
+    it('規約に同意していなければ送信しない', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      stubVerify();
+      let called = false;
+      server.use(
+        http.post('*/api/v1/invitations/:token/signup', () => {
+          called = true;
+          return HttpResponse.json({ data: {} }, { status: 201 });
+        }),
+      );
+
+      renderWithProviders(<InvitationAcceptPage />);
+      await user.click(await screen.findByRole('button', { name: /新規登録して参加/ }));
+      await user.type(screen.getByLabelText('パスワード'), 'abcd1234!');
+      await user.type(screen.getByLabelText('パスワード（確認）'), 'abcd1234!');
+      await user.click(screen.getByRole('button', { name: /登録して参加/ }));
+
+      expect(
+        await screen.findByText('利用規約とプライバシーポリシーに同意してください'),
+      ).toBeInTheDocument();
+      expect(called).toBe(false);
+    });
+
+    it('既に登録済みのメールならログインへの導線を出す', async () => {
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      stubVerify();
+      server.use(
+        http.post('*/api/v1/invitations/:token/signup', () =>
+          HttpResponse.json(
+            {
+              error: {
+                code: 'EMAIL_ALREADY_REGISTERED',
+                message: 'このメールアドレスは登録済みです。ログインしてから招待を受けてください。',
+              },
+            },
+            { status: 409 },
+          ),
+        ),
+      );
+
+      renderWithProviders(<InvitationAcceptPage />);
+      await fillSignupForm(user);
+      await user.click(screen.getByRole('button', { name: /登録して参加/ }));
+
+      expect(
+        await screen.findByText(
+          'このメールアドレスは登録済みです。ログインしてから招待を受けてください。',
+        ),
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: /ログインして参加/ }));
+      expect(navigate).toHaveBeenCalledWith(
+        `/login?next=${encodeURIComponent('/invitations/tok-123')}&email=${encodeURIComponent('hanako@example.com')}`,
+      );
+    });
   });
 
   it('招待取得に失敗すると「招待を確認できません」を表示する', async () => {

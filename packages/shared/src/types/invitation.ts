@@ -46,3 +46,16 @@ export type InvitationAcceptDTO = {
   /** 受諾で紐づいた参加者行。組織単位で 1 件も無ければ空 */
   members: Array<{ id: string; projectId: string; roleType: ProjectRole }>;
 };
+
+/**
+ * `POST /invitations/:token/accept` を伴う直接登録 (#233)。
+ *
+ * 招待メールを受け取れた時点でそのアドレスの所有は確かめられているので、
+ * 確認メールをもう 1 通送らずにアカウントを作り、そのまま組織に参加させる。
+ */
+export type InvitationSignupDTO = {
+  /** 作成したアカウントのログイン用メール。FE はこれでサインインする */
+  email: string;
+  /** 受諾の結果。scope / project の意味は InvitationAcceptDTO と同じ */
+  accepted: InvitationAcceptDTO;
+};
