@@ -21,17 +21,23 @@ import { api } from '../../test/request.js';
 // =============================================================================
 
 const checkoutCreate = vi.fn();
+const checkoutRetrieve = vi.fn();
 const portalCreate = vi.fn();
 const subscriptionsRetrieve = vi.fn();
+const subscriptionsList = vi.fn();
 const subscriptionsUpdate = vi.fn();
 const scheduleCreate = vi.fn();
 const scheduleUpdate = vi.fn();
 
 function stubStripe() {
   __setStripeForTest({
-    checkout: { sessions: { create: checkoutCreate } },
+    checkout: { sessions: { create: checkoutCreate, retrieve: checkoutRetrieve } },
     billingPortal: { sessions: { create: portalCreate } },
-    subscriptions: { retrieve: subscriptionsRetrieve, update: subscriptionsUpdate },
+    subscriptions: {
+      retrieve: subscriptionsRetrieve,
+      update: subscriptionsUpdate,
+      list: subscriptionsList,
+    },
     subscriptionSchedules: { create: scheduleCreate, update: scheduleUpdate },
   } as unknown as Stripe);
 }
@@ -379,6 +385,129 @@ describe('POST /billing/cancel と /resume', () => {
     const sub = await prisma.billingSubscription.findUniqueOrThrow({ where: { organizationId } });
     expect(sub.cancelAtPeriodEnd).toBe(false);
     expect(sub.canceledAt).toBeNull();
+  });
+});
+
+describe('POST /billing/sync', () => {
+  // Webhook が届かない環境でも契約を反映できるかを、**実 DB で**確かめる (#209)。
+  // ここをモック DB だけで守っていたため、audit_logs の CHECK 制約違反による
+  // 500 (action='subscription_reconciled' が許可値に無い) を取り逃がした。
+  const TEAM_SUBSCRIPTION = {
+    id: 'sub_sync_1',
+    customer: 'cus_sync_1',
+    status: 'active',
+    cancel_at_period_end: false,
+    canceled_at: null,
+    trial_start: null,
+    trial_end: null,
+    default_payment_method: { card: { brand: 'visa', last4: '4242' } },
+  };
+
+  beforeEach(() => {
+    subscriptionsRetrieve.mockResolvedValue({
+      ...TEAM_SUBSCRIPTION,
+      items: {
+        data: [
+          {
+            price: { id: TEST_STRIPE.teamPriceId },
+            current_period_start: 1_760_000_000,
+            current_period_end: 1_762_000_000,
+          },
+        ],
+      },
+    });
+  });
+
+  it('Checkout Session から契約を辿って反映し、監査ログを残す', async () => {
+    checkoutRetrieve.mockResolvedValue({
+      id: 'cs_sync_1',
+      subscription: 'sub_sync_1',
+      customer: 'cus_sync_1',
+      metadata: { organization_id: organizationId },
+    });
+
+    const res = await api<{
+      data: { subscription: { planCode: string; status: string } };
+      meta: { synced: boolean };
+    }>('/api/v1/billing/sync', {
+      method: 'POST',
+      token: ownerToken,
+      body: { checkoutSessionId: 'cs_sync_1' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.meta.synced).toBe(true);
+    expect(res.body.data.subscription).toMatchObject({ planCode: 'team', status: 'active' });
+
+    const sub = await prisma.billingSubscription.findUniqueOrThrow({ where: { organizationId } });
+    expect(sub.planCode).toBe('team');
+    expect(sub.stripeSubscriptionId).toBe('sub_sync_1');
+    // lastStripeEvent* は Webhook の進捗記録なので照合では触らない
+    expect(sub.lastStripeEventId).toBeNull();
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'subscription_reconciled', resourceId: organizationId },
+    });
+    expect(audit).not.toBeNull();
+  });
+
+  it('保存済みの契約 ID だけでも現在値へ合わせ直せる', async () => {
+    await setBillingSubscription({
+      organizationId,
+      stripeCustomerId: 'cus_sync_1',
+      stripeSubscriptionId: 'sub_sync_1',
+    });
+
+    const res = await api<{ meta: { synced: boolean } }>('/api/v1/billing/sync', {
+      method: 'POST',
+      token: ownerToken,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.meta.synced).toBe(true);
+    expect(checkoutRetrieve).not.toHaveBeenCalled();
+  });
+
+  it('別組織の Session ID では反映しない (契約の横取り防止)', async () => {
+    checkoutRetrieve.mockResolvedValue({
+      id: 'cs_other',
+      subscription: 'sub_sync_1',
+      customer: 'cus_sync_1',
+      metadata: { organization_id: '00000000-0000-0000-0000-0000000000ff' },
+    });
+
+    const res = await api<{ meta: { synced: boolean } }>('/api/v1/billing/sync', {
+      method: 'POST',
+      token: ownerToken,
+      body: { checkoutSessionId: 'cs_other' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.meta.synced).toBe(false);
+    const sub = await prisma.billingSubscription.findUniqueOrThrow({ where: { organizationId } });
+    expect(sub.planCode).toBe('free');
+  });
+
+  it('辿れる契約が無ければ Free のまま 200 で返す', async () => {
+    subscriptionsList.mockResolvedValue({ data: [] });
+
+    const res = await api<{ meta: { synced: boolean } }>('/api/v1/billing/sync', {
+      method: 'POST',
+      token: ownerToken,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.meta.synced).toBe(false);
+  });
+
+  it('組織メンバー (非管理者) は 403', async () => {
+    const member = await createUser({ withOrganization: false });
+    await createOrgMember({ organizationId, userId: member.id, isPrimary: true });
+    const token = await signTestJwt({ authUserId: member.authUserId, email: member.email });
+
+    const res = await api('/api/v1/billing/sync', { method: 'POST', token });
+
+    expect(res.status).toBe(403);
   });
 });
 

@@ -796,6 +796,7 @@ PRD SR-AUDIT-01 の全項目のうち、**以下を記録**：
 | `checkout_started` **(v1.2)** | Checkout Session 作成 | `POST /billing/checkout-session` | extra に plan_code・checkout_attempt_id |
 | `trial_started` / `trial_blocked` / `trial_released` **(v1.2)** | トライアル付与／重複判定による拒否／手動解除 | Webhook・運用手順 | `trial_released` は運用者が手動で 1 行記録する |
 | `subscription_created` / `subscription_updated` / `subscription_canceled` **(v1.2)** | 契約の作成・更新・解約 | Stripe Webhook | **actor_user_id = NULL**、extra.source='stripe_webhook' |
+| `subscription_reconciled` **(#209)** | 契約状態を Stripe の現在値へ合わせ直した | `POST /billing/sync` | **actor_user_id = NULL**、extra.source='reconcile'。Webhook が届かない環境向けの照合経路 |
 | `plan_changed` **(v1.2)** | プラン変更の確定 | Webhook（`invoice.paid` 等） | extra に変更前後の plan_code |
 | `payment_failed` / `payment_recovered` **(v1.2)** | 支払い失敗／復旧 | Stripe Webhook | actor_user_id = NULL |
 | `org_member_added` / `org_member_removed` / `org_role_changed` **(v1.2)** | 会員アカウントの追加・除外・組織ロール変更 | 招待受諾／組織メンバー API | 座席の増減を追跡できる |
