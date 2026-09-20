@@ -41,6 +41,16 @@ public = false
 file_size_limit = "10MiB"
 allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
 
+# 予定への添付ファイル (#65)。
+# public = false: PRD §8.2 の「署名付きURL + 短時間有効期限、直リンク禁止」に合わせる。
+# allowed_mime_types は指定しない。添付は制作現場で行き交うファイル (psd / ai / indd /
+# sketch / mov …) で種類が読めず、許可リストにすると日常的に詰まるため。
+# 代わりに配信時へ必ず Content-Disposition: attachment を付け、ブラウザ内で
+# 実行・描画されないようにしている (server/lib/attachmentStorage.ts)。
+[storage.buckets.attachments]
+public = false
+file_size_limit = "20MiB"
+
 [auth]
 enabled = true
 site_url = "http://localhost:5173"

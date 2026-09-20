@@ -85,6 +85,9 @@ export const PROJECT_ACTIONS = [
   'share_link.revoke',
   /** Phase 1 のコメント機能。定義のみ置き、実装は後続 */
   'comment.create',
+  /** 予定への添付ファイル (#65) */
+  'attachment.create',
+  'attachment.delete',
 ] as const;
 
 export type ProjectAction = (typeof PROJECT_ACTIONS)[number];
@@ -126,6 +129,18 @@ export const PROJECT_ROLE_MATRIX: Record<ProjectAction, readonly ProjectRole[]> 
   'share_link.revoke': ['admin'],
 
   'comment.create': ['admin', 'editor', 'viewer'],
+
+  /**
+   * 添付ファイル (#65)。
+   *
+   * 閲覧者にも許す。閲覧者はクライアント側の担当者であることが多く、
+   * 「支給素材を渡す」のはむしろ閲覧者側の仕事。コメントと同じ扱いにする。
+   *
+   * 削除は**自分が入れたファイルだけ**に絞る判定をサービス層で重ねている
+   * (管理者は他人のファイルも消せる)。ロール単体では決まらないため。
+   */
+  'attachment.create': ['admin', 'editor', 'viewer'],
+  'attachment.delete': ['admin', 'editor', 'viewer'],
 };
 
 /** ロールがその操作を許可されているか */

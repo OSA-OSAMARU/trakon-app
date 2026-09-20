@@ -198,6 +198,8 @@ model ProjectMember {
   ballEventsAsActor     BallEvent[]
   shareLinksIssued      ShareLink[]
 
+  attachmentsUploaded Attachment[]
+
   @@unique([projectId, email], map: "uq_pm_project_email")
   @@index([projectId, sortOrder], map: "idx_pm_project_sort")
   @@index([userId], map: "idx_pm_user_id")
@@ -275,6 +277,7 @@ model Plan {
   successor       Plan?          @relation("PlanSuccessor", fields: [successorPlanId], references: [id], onDelete: SetNull, map: "fk_plans_successor_plan_id")
   predecessor     Plan?          @relation("PlanSuccessor")
   ballEvents      BallEvent[]
+  attachments     Attachment[]
 
   @@index([itemId, scheduledDate], map: "idx_plans_item_scheduled")
   @@index([executorMemberId], map: "idx_plans_executor_member")
@@ -313,6 +316,34 @@ model BallEvent {
   @@index([planId, occurredAt(sort: Desc)], map: "idx_be_plan_occurred_desc")
   @@index([source], map: "idx_be_source")
   @@map("ball_events")
+}
+
+// -----------------------------------------------------------------------------
+// attachments — 予定への添付ファイル (#65 / PRD §8.2)
+//
+// 実体は Supabase Storage の非公開バケットに置き、この表はメタデータだけを持つ。
+// 配信は署名付き URL + 短時間有効期限 (直リンク禁止)。
+// -----------------------------------------------------------------------------
+model Attachment {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  planId           String    @map("plan_id") @db.Uuid
+  /// アップロードした参加者。参加者を消しても誰が入れたかは残す (ON DELETE RESTRICT)
+  uploaderMemberId String?   @map("uploader_member_id") @db.Uuid
+  /// Supabase Storage のオブジェクトキー (URL ではない)
+  storageKey       String    @unique(map: "uq_att_storage_key") @map("storage_key")
+  /// 表示・ダウンロード時のファイル名。利用者が付けた名前をそのまま残す
+  filename         String
+  mimeType         String    @map("mime_type")
+  sizeBytes        Int       @map("size_bytes")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
+
+  plan     Plan           @relation(fields: [planId], references: [id], onDelete: Restrict, map: "fk_att_plan_id")
+  uploader ProjectMember? @relation(fields: [uploaderMemberId], references: [id], onDelete: Restrict, map: "fk_att_uploader_member_id")
+
+  @@index([planId, createdAt], map: "idx_att_plan_created")
+  @@map("attachments")
 }
 
 // -----------------------------------------------------------------------------

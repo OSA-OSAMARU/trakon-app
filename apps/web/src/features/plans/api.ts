@@ -205,9 +205,42 @@ export const plansApi = {
     }),
 };
 
+/** 予定への添付ファイル (#65)。実体は Storage、ここはメタデータと署名付き URL。 */
+export type Attachment = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploader: { id: string; name: string } | null;
+  /** ダウンロード用の署名付き URL。発行できなければ null */
+  downloadUrl: string | null;
+  createdAt: string;
+};
+
+export const attachmentsApi = {
+  list: (projectId: string, itemId: string, planId: string) =>
+    apiRequest<Attachment[]>(`${basePath(projectId, itemId)}/${planId}/attachments`),
+  /** multipart で送る。Content-Type はブラウザに任せる (boundary が要るため) */
+  upload: (projectId: string, itemId: string, planId: string, file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return apiRequest<Attachment>(`${basePath(projectId, itemId)}/${planId}/attachments`, {
+      method: 'POST',
+      body,
+    });
+  },
+  remove: (projectId: string, itemId: string, planId: string, attachmentId: string) =>
+    apiRequest<void>(
+      `${basePath(projectId, itemId)}/${planId}/attachments/${attachmentId}`,
+      { method: 'DELETE' },
+    ),
+};
+
 export const plansQueryKey = {
   list: (projectId: string, itemId: string) =>
     ['projects', projectId, 'items', itemId, 'plans'] as const,
+  attachments: (projectId: string, itemId: string, planId: string) =>
+    ['projects', projectId, 'items', itemId, 'plans', planId, 'attachments'] as const,
   detail: (projectId: string, itemId: string, planId: string) =>
     ['projects', projectId, 'items', itemId, 'plans', planId] as const,
   projectList: (projectId: string) => ['projects', projectId, 'plans'] as const,
