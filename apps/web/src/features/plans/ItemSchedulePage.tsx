@@ -2,7 +2,16 @@ import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { addDays, differenceInDays, format, parseISO } from 'date-fns';
-import { Copy, Loader2, Plus, Settings, TriangleAlert, Users } from 'lucide-react';
+import {
+  CalendarDays,
+  Copy,
+  Loader2,
+  Plus,
+  Rows3,
+  Settings,
+  TriangleAlert,
+  Users,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiClientError } from '@/lib/api';
@@ -25,6 +34,8 @@ import { useReschedulePlan, type ReschedulePatch } from './usePlanReschedule';
 import { useSetSuccessor } from './useOptimisticBallAction';
 import { planRange, ROW_HEIGHT_DEFAULT } from './scheduleLayout';
 import { ScheduleBoard, ZoomControl } from './schedule';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CalendarMonthView } from './calendar/CalendarMonthView';
 
 /**
  * SC-06 制作物列スケジュール (/projects/:projectId/items/:itemId)
@@ -48,6 +59,21 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
     params.get('modal') ?? '',
   );
   const [rowHeight, setRowHeight] = useState(ROW_HEIGHT_DEFAULT);
+  /**
+   * 表示形式 (#66)。縦型スケジュールが既定で、カレンダーはタブで切り替える。
+   *
+   * URL に持つのは、月表示で見つけた予定のリンクをそのまま共有できるようにするため。
+   */
+  const view = params.get('view') === 'calendar' ? 'calendar' : 'schedule';
+  const setView = (next: 'schedule' | 'calendar') =>
+    setParams(
+      (sp) => {
+        if (next === 'calendar') sp.set('view', 'calendar');
+        else sp.delete('view');
+        return sp;
+      },
+      { replace: true },
+    );
   // 表示する制作物: 'all' か特定 itemId。初期は全制作物 (#49)。
   // 単一に絞る場合は画面内セレクタで選択する。
   const [viewItemId, setViewItemId] = useState<string>('all');
@@ -165,6 +191,27 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
     () => (viewItemId === 'all' ? items : items.filter((i) => i.id === viewItemId)),
     [items, viewItemId],
   );
+
+  /** 月表示に出す予定。制作物セレクタの絞り込みをそのまま効かせる。 */
+  const visiblePlans = useMemo(
+    () => (viewItemId === 'all' ? plans : plans.filter((p) => p.itemId === viewItemId)),
+    [plans, viewItemId],
+  );
+
+  const itemNameById = useMemo(() => new Map(items.map((i) => [i.id, i.name])), [items]);
+
+  /**
+   * 月表示の初期月。今日がプロジェクト期間内ならその月、外なら期間の開始月。
+   * 期間外の月を最初に出すと「予定が無い」と誤解される。
+   */
+  const initialCalendarMonth = useMemo(() => {
+    if (!project) return new Date();
+    const today = new Date();
+    const start = parseISO(project.startDate);
+    const end = parseISO(project.endDate);
+    if (today >= start && today <= end) return today;
+    return start;
+  }, [project]);
 
   const plansByItem = useMemo(() => {
     const map = new Map<string, Plan[]>();
@@ -291,6 +338,19 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
         )}`}
         actions={
           <>
+            {/* 表示形式の切り替え (#66)。縦型が既定 */}
+            <Tabs value={view} onValueChange={(v) => setView(v as 'schedule' | 'calendar')}>
+              <TabsList>
+                <TabsTrigger value="schedule">
+                  <Rows3 className="size-4" />
+                  スケジュール
+                </TabsTrigger>
+                <TabsTrigger value="calendar">
+                  <CalendarDays className="size-4" />
+                  カレンダー
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
             <Select value={viewItemId} onValueChange={setViewItemId}>
               <SelectTrigger className="h-9 w-44 text-label">
                 <SelectValue placeholder="制作物" />
@@ -360,6 +420,14 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
         <p className="m-8 text-body text-muted-foreground">プロジェクト期間が設定されていません。</p>
       ) : visibleItems.length === 0 ? (
         <p className="m-8 text-body text-muted-foreground">制作物がありません。</p>
+      ) : view === 'calendar' ? (
+        <CalendarMonthView
+          plans={visiblePlans}
+          itemNameById={itemNameById}
+          today={new Date()}
+          initialMonth={initialCalendarMonth}
+          onSelectPlan={(plan) => openDetailModal(plan.id)}
+        />
       ) : (
         <ScheduleBoard
           days={days}
@@ -381,7 +449,8 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
         />
       )}
 
-      {members.length > 0 && days.length > 0 && (
+      {/* ズームは縦型スケジュール専用。月表示には行高の概念が無い */}
+      {view === 'schedule' && members.length > 0 && days.length > 0 && (
         <ZoomControl rowHeight={rowHeight} onChange={setRowHeight} />
       )}
 
