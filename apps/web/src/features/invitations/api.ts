@@ -1,21 +1,13 @@
+import type { InvitationAcceptDTO, InvitationVerifyDTO } from '@trakon/shared';
+
 import { apiRequest } from '@/lib/api';
 
-export type InvitationVerify = {
-  project: { id: string; name: string };
-  invitedMember: {
-    id: string;
-    name: string;
-    email: string;
-    organizationName: string;
-    memberType: 'client' | 'production';
-  };
-  expiresAt: string;
-};
-
-export type InvitationAccept = {
-  project: { id: string; name: string };
-  member: { id: string; memberType: 'client' | 'production' };
-};
+/**
+ * 応答型は BE と同じ定義 (@trakon/shared) を使う。
+ * ここで作り直すと BE の変更に気付けない (#228)。
+ */
+export type InvitationVerify = InvitationVerifyDTO;
+export type InvitationAccept = InvitationAcceptDTO;
 
 export const invitationsApi = {
   verify: (token: string) =>

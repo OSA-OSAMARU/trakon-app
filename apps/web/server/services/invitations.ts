@@ -1,42 +1,19 @@
 import { prisma } from '@trakon/db';
 import { consumesSeat } from '@trakon/shared';
-import type { ProjectRole } from '@trakon/shared';
+import type {
+  InvitationAcceptDTO,
+  InvitationVerifyDTO,
+  ProjectRole,
+} from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import { hashToken } from '../lib/tokens.js';
 import { ensureOrganizationMember } from './organizations.js';
 import { getEntitlement } from './billing/entitlement.js';
 
-/**
- * 招待には 2 つのスコープがある (#160)。
- *   project … 特定プロジェクトへの招待 (従来)。受諾でその参加者行に紐づく
- *   org     … 組織への招待。受諾では組織メンバーになるだけで、プロジェクトへの
- *             割り当ては招待時に選ばれていたものがあればそれに紐づく
- */
-export type InvitationScope = 'project' | 'org';
-
-export type InvitationVerifyDTO = {
-  scope: InvitationScope;
-  /** 組織単位の招待では null */
-  project: { id: string; name: string } | null;
-  organizationName: string;
-  /** 招待の宛先。氏名は参加者行 or 招待行から取る */
-  invitee: {
-    name: string;
-    email: string;
-    organizationName: string;
-    roleType: ProjectRole;
-  };
-  expiresAt: string;
-};
-
-export type InvitationAcceptDTO = {
-  scope: InvitationScope;
-  /** 組織単位の招待では null */
-  project: { id: string; name: string } | null;
-  /** 受諾で紐づいた参加者行 (組織単位で 1 件も無ければ空) */
-  members: Array<{ id: string; projectId: string; roleType: ProjectRole }>;
-};
+// 招待 API の応答型は FE と共有する (@trakon/shared)。
+// ここで再宣言すると FE と二重定義になり、#228 の白画面を再発させる。
+export type { InvitationAcceptDTO, InvitationScope, InvitationVerifyDTO } from '@trakon/shared';
 
 /**
  * 招待を検証して状態を返す。期限切れ・受諾済・失効・未存在は全て 404 集約。

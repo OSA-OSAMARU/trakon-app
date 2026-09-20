@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, Loader2, LogIn } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { PROJECT_ROLE_LABEL } from '@trakon/shared';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuthSession } from '@/features/auth/useAuthSession';
@@ -18,7 +20,10 @@ const dateTimeFmt = new Intl.DateTimeFormat('ja-JP', {
 /**
  * SC-02 招待受諾画面 (/invitations/:token)
  *  - 未認証でも開ける (招待内容を表示)
- *  - ログイン済みなら受諾ボタン → /projects/:id/edit に遷移
+ *  - 招待には 2 つのスコープがある (#160)
+ *      project … プロジェクトへの招待。受諾後はそのプロジェクトへ送る
+ *      org     … 組織への招待 (メンバー管理から発行)。紐づくプロジェクトは
+ *                0 件のこともあるため、受諾後はプロジェクト一覧へ送る
  */
 export function InvitationAcceptPage() {
   const { token } = useParams<{ token: string }>();
@@ -40,6 +45,12 @@ export function InvitationAcceptPage() {
     mutationFn: () => invitationsApi.accept(token!),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['projects'] });
+      // 組織単位の招待では project が null になる (#228)。
+      if (!res.project) {
+        toast.success('組織に参加しました');
+        navigate('/projects', { replace: true });
+        return;
+      }
       toast.success('プロジェクトに参加しました');
       navigate(`/projects/${res.project.id}/edit`, { replace: true });
     },
@@ -90,10 +101,12 @@ export function InvitationAcceptPage() {
         {verifyQuery.data && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-heading-section">プロジェクトへの招待</CardTitle>
+              <CardTitle className="text-heading-section">
+                {verifyQuery.data.scope === 'org' ? '組織への招待' : 'プロジェクトへの招待'}
+              </CardTitle>
               <CardDescription>
                 <span className="font-medium text-foreground">
-                  {verifyQuery.data.project.name}
+                  {verifyQuery.data.project?.name ?? verifyQuery.data.organizationName}
                 </span>{' '}
                 への招待を受け取りました。
               </CardDescription>
@@ -101,15 +114,12 @@ export function InvitationAcceptPage() {
             <CardContent className="space-y-4">
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-body">
                 <dt className="text-muted-foreground">招待先</dt>
-                <dd>{verifyQuery.data.invitedMember.email}</dd>
+                <dd>{verifyQuery.data.invitee.email}</dd>
                 <dt className="text-muted-foreground">氏名</dt>
-                <dd>{verifyQuery.data.invitedMember.name}</dd>
-                <dt className="text-muted-foreground">種別</dt>
-                <dd>
-                  {verifyQuery.data.invitedMember.memberType === 'client'
-                    ? 'クライアント'
-                    : '制作側'}
-                </dd>
+                <dd>{verifyQuery.data.invitee.name || '—'}</dd>
+                {/* 区分ではなく権限を出す。操作可否の根拠はロールだけ (§7.12) */}
+                <dt className="text-muted-foreground">権限</dt>
+                <dd>{PROJECT_ROLE_LABEL[verifyQuery.data.invitee.roleType]}</dd>
                 <dt className="text-muted-foreground">有効期限</dt>
                 <dd>
                   {dateTimeFmt.format(new Date(verifyQuery.data.expiresAt))}
