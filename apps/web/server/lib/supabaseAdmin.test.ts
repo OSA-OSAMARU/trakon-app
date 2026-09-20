@@ -1,126 +1,89 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import type { getSupabaseAdmin as GetSupabaseAdminType } from './supabaseAdmin.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // =============================================================================
-// Mocks
+// findAuthUserByEmail (#233)
+//
+// supabase-js の admin API にメールで引く手段が無いため、GoTrue の admin REST を
+// 直接叩いている。`filter` は**部分一致**なので、取得後に完全一致で絞り直せて
+// いないと別人を拾う。そこを固定する。
 // =============================================================================
-// @supabase/supabase-js の createClient と env.js を差し替える。
-// getSupabaseAdmin() はモジュールレベルの singleton をキャッシュするため、
-// キャッシュ分離が必要なテストでは vi.resetModules() してから動的 import する。
 
-const createClientMock = vi.fn(() => ({ auth: { admin: {} } }));
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: createClientMock,
-}));
+const ORIGINAL_ENV = { ...process.env };
 
-const envState: Record<string, unknown> = {};
-vi.mock('./env.js', () => ({
-  getServerEnv: () => envState,
-}));
-
-const setEnv = (patch: Record<string, unknown>) => {
-  for (const k of Object.keys(envState)) delete envState[k];
-  Object.assign(envState, patch);
-};
-
-const importModule = async (): Promise<{ getSupabaseAdmin: typeof GetSupabaseAdminType }> => {
+beforeEach(() => {
+  process.env.SUPABASE_URL = 'https://example.supabase.co';
+  process.env.SUPABASE_SECRET_KEY = 'sb_secret_test_key_1234567890';
+  process.env.SUPABASE_JWT_AUD = 'authenticated';
+  process.env.APP_ENV = 'test';
   vi.resetModules();
-  return import('./supabaseAdmin.js');
-};
-
-afterEach(() => {
-  vi.clearAllMocks();
-  vi.useRealTimers();
 });
 
-// =============================================================================
-// Tests
-// =============================================================================
-describe('getSupabaseAdmin', () => {
-  it('service-role key で admin client を生成する', async () => {
-    setEnv({
-      SUPABASE_URL: 'https://proj.supabase.co',
-      SUPABASE_SECRET_KEY: 'sb_secret_role_key',
+afterEach(() => {
+  process.env = { ...ORIGINAL_ENV };
+  vi.unstubAllGlobals();
+});
+
+function stubFetch(response: unknown, ok = true) {
+  const fetchMock = vi.fn(async () => ({
+    ok,
+    json: async () => response,
+  }));
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
+async function load() {
+  const mod = await import('./supabaseAdmin.js');
+  return mod.findAuthUserByEmail;
+}
+
+describe('findAuthUserByEmail', () => {
+  it('完全一致したユーザーだけを返す', async () => {
+    const fetchMock = stubFetch({
+      users: [
+        { id: 'other', email: 'not-invitee@example.test' },
+        { id: 'hit', email: 'invitee@example.test' },
+      ],
     });
-    const { getSupabaseAdmin } = await importModule();
+    const findAuthUserByEmail = await load();
 
-    const client = getSupabaseAdmin();
+    const user = await findAuthUserByEmail('invitee@example.test');
+    expect(user).toEqual({ id: 'hit', email: 'invitee@example.test' });
 
-    expect(client).toBeDefined();
-    expect(createClientMock).toHaveBeenCalledTimes(1);
-    const [url, key, opts] = createClientMock.mock.calls[0] as unknown as [
-      string,
-      string,
-      { auth: { persistSession: boolean; autoRefreshToken: boolean }; global: { fetch: typeof fetch } },
-    ];
-    expect(url).toBe('https://proj.supabase.co');
-    expect(key).toBe('sb_secret_role_key');
-    // セッション永続化・自動リフレッシュは無効、fetch はラッパが渡る
-    expect(opts.auth).toMatchObject({ persistSession: false, autoRefreshToken: false });
-    expect(typeof opts.global.fetch).toBe('function');
+    const [url] = fetchMock.mock.calls[0]! as unknown as [string];
+    expect(url).toContain('/auth/v1/admin/users');
+    expect(url).toContain('filter=invitee%40example.test');
   });
 
-  it('複数回呼んでも同じ singleton を返し createClient を再実行しない', async () => {
-    setEnv({
-      SUPABASE_URL: 'https://proj.supabase.co',
-      SUPABASE_SECRET_KEY: 'sb_secret_role_key',
-    });
-    const { getSupabaseAdmin } = await importModule();
+  it('部分一致しかしないユーザーは拾わない', async () => {
+    // `filter` は部分一致なので「別人だが前方一致する」候補が返ってくる
+    stubFetch({ users: [{ id: 'other', email: 'invitee@example.test.jp' }] });
+    const findAuthUserByEmail = await load();
 
-    const a = getSupabaseAdmin();
-    const b = getSupabaseAdmin();
-
-    expect(a).toBe(b);
-    expect(createClientMock).toHaveBeenCalledTimes(1);
+    expect(await findAuthUserByEmail('invitee@example.test')).toBeNull();
   });
 
-  it('fetch ラッパは AbortController の signal を付けて fetch を呼ぶ', async () => {
-    setEnv({
-      SUPABASE_URL: 'https://proj.supabase.co',
-      SUPABASE_SECRET_KEY: 'sb_secret_role_key',
+  it('大文字小文字は区別しない', async () => {
+    stubFetch({ users: [{ id: 'hit', email: 'Invitee@Example.test' }] });
+    const findAuthUserByEmail = await load();
+
+    expect(await findAuthUserByEmail('invitee@example.test')).toEqual({
+      id: 'hit',
+      email: 'Invitee@Example.test',
     });
-    const { getSupabaseAdmin } = await importModule();
-    getSupabaseAdmin();
-
-    const opts = (createClientMock.mock.calls[0] as unknown[])?.[2] as { global: { fetch: typeof fetch } };
-    const wrappedFetch = opts.global.fetch;
-
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response('ok', { status: 200 }));
-
-    const res = await wrappedFetch('https://proj.supabase.co/auth/v1/admin/users', {
-      method: 'GET',
-    });
-
-    expect(res.status).toBe(200);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const passedInit = fetchSpy.mock.calls[0]?.[1] as RequestInit;
-    expect(passedInit.method).toBe('GET');
-    expect(passedInit.signal).toBeInstanceOf(AbortSignal);
-    fetchSpy.mockRestore();
   });
 
-  it('fetch がタイムアウト前に解決すれば signal は abort されない', async () => {
-    setEnv({
-      SUPABASE_URL: 'https://proj.supabase.co',
-      SUPABASE_SECRET_KEY: 'sb_secret_role_key',
-    });
-    const { getSupabaseAdmin } = await importModule();
-    getSupabaseAdmin();
+  it('応答が失敗なら null (呼び出し側が 500 に倒す)', async () => {
+    stubFetch({}, false);
+    const findAuthUserByEmail = await load();
 
-    const opts = (createClientMock.mock.calls[0] as unknown[])?.[2] as { global: { fetch: typeof fetch } };
-    const wrappedFetch = opts.global.fetch;
+    expect(await findAuthUserByEmail('invitee@example.test')).toBeNull();
+  });
 
-    let capturedSignal: AbortSignal | undefined;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
-      capturedSignal = (init as RequestInit | undefined)?.signal ?? undefined;
-      return Promise.resolve(new Response('ok'));
-    });
+  it('該当が無ければ null', async () => {
+    stubFetch({ users: [] });
+    const findAuthUserByEmail = await load();
 
-    await wrappedFetch('https://proj.supabase.co');
-    expect(capturedSignal?.aborted).toBe(false);
-    fetchSpy.mockRestore();
+    expect(await findAuthUserByEmail('invitee@example.test')).toBeNull();
   });
 });

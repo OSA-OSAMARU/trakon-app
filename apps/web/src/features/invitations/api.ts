@@ -1,4 +1,8 @@
-import type { InvitationAcceptDTO, InvitationVerifyDTO } from '@trakon/shared';
+import type {
+  InvitationAcceptDTO,
+  InvitationSignupDTO,
+  InvitationVerifyDTO,
+} from '@trakon/shared';
 
 import { apiRequest } from '@/lib/api';
 
@@ -8,6 +12,13 @@ import { apiRequest } from '@/lib/api';
  */
 export type InvitationVerify = InvitationVerifyDTO;
 export type InvitationAccept = InvitationAcceptDTO;
+export type InvitationSignup = InvitationSignupDTO;
+
+export type InvitationSignupInput = {
+  fullName: string;
+  displayName: string;
+  password: string;
+};
 
 export const invitationsApi = {
   verify: (token: string) =>
@@ -16,5 +27,14 @@ export const invitationsApi = {
     apiRequest<InvitationAccept>(
       `/invitations/${encodeURIComponent(token)}/accept`,
       { method: 'POST' },
+    ),
+  /**
+   * 招待からそのままアカウントを作って参加する (#233)。未認証で呼ぶ。
+   * メールは招待が持っているので送らない。
+   */
+  signup: (token: string, body: InvitationSignupInput) =>
+    apiRequest<InvitationSignup>(
+      `/invitations/${encodeURIComponent(token)}/signup`,
+      { method: 'POST', body },
     ),
 };

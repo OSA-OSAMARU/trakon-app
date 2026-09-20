@@ -1,17 +1,33 @@
 import { z } from 'zod';
 import { JOB_TITLES, withdrawalReasonSchema } from '@trakon/shared';
 
+/** パスワードの強度要件 (SC-01 のプロフィール登録と共通) */
+export const passwordSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters.')
+  .max(128)
+  .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v) && /[^\w\s]/.test(v), {
+    message: 'Password must include letters, digits, and a symbol.',
+  });
+
 export const completeSignupBodySchema = z.object({
   fullName: z.string().trim().min(1).max(100),
   displayName: z.string().trim().min(1).max(50),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters.')
-    .max(128)
-    .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v) && /[^\w\s]/.test(v), {
-      message: 'Password must include letters, digits, and a symbol.',
-    }),
+  password: passwordSchema,
 });
+
+/**
+ * 招待からの直接登録 (#233)。メールは招待が持っているので受け取らない。
+ * 利用者に入力させると招待先と別のアドレスを入れられ、確認していない
+ * アドレスでアカウントが作れてしまう。
+ */
+export const invitationSignupBodySchema = z.object({
+  fullName: z.string().trim().min(1).max(100),
+  displayName: z.string().trim().min(1).max(50),
+  password: passwordSchema,
+});
+
+export type InvitationSignupBody = z.infer<typeof invitationSignupBodySchema>;
 
 export type CompleteSignupBody = z.infer<typeof completeSignupBodySchema>;
 
