@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
+import { resolveAfterAuthPath, safeNextPath, withNextParam } from '@/features/auth/nextPath';
 
 /**
  * OAuth プロバイダ (Supabase) が email 取得に失敗したときのエラー文言。
@@ -22,6 +23,9 @@ function friendlyProviderError(errorDescription: string | null): string {
  * Supabase Auth の Magic-link / OAuth コールバック着地点。
  * Supabase SDK は detectSessionInUrl により URL の fragment を消費して
  * セッションを確立する。ここでは sync 結果を見て次の画面に遷移する。
+ *
+ * `?next=` が付いていればそこへ戻す (#231)。招待リンクから新規登録した人を
+ * 招待の続きに返すための経路で、プロフィール登録が必要な場合も持ち回す。
  */
 export function AuthCallbackPage() {
   const navigate = useNavigate();
@@ -37,6 +41,7 @@ export function AuthCallbackPage() {
   // 原因が UI から一切分からなかった。ここで検出して画面に表示する。
   const providerError = searchParams.get('error');
   const providerErrorDescription = searchParams.get('error_description');
+  const next = safeNextPath(searchParams.get('next'));
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
@@ -62,13 +67,14 @@ export function AuthCallbackPage() {
       return;
     }
     if (data?.requiresProfileCompletion) {
-      navigate('/login?screen=create-account', { replace: true });
+      // プロフィール登録を挟んでも戻り先は落とさない (#231)
+      navigate(withNextParam('/login?screen=create-account', next), { replace: true });
       return;
     }
     if (data && !data.requiresProfileCompletion) {
-      navigate('/dashboard', { replace: true });
+      navigate(resolveAfterAuthPath(next), { replace: true });
     }
-  }, [session, sessionLoading, data, isLoading, error, navigate, isRecovery, providerError]);
+  }, [session, sessionLoading, data, isLoading, error, navigate, isRecovery, providerError, next]);
 
   if (providerError) {
     return (

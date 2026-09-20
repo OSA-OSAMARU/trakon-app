@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, Loader2, LogIn } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, LogIn, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { PROJECT_ROLE_LABEL } from '@trakon/shared';
@@ -9,7 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuthSession } from '@/features/auth/useAuthSession';
 import { useCurrentUser } from '@/features/auth/useCurrentUser';
+import { supabase } from '@/lib/supabase';
 import { ApiClientError } from '@/lib/api';
+import { withNextParam } from '@/features/auth/nextPath';
 import { invitationsApi } from './api';
 
 const dateTimeFmt = new Intl.DateTimeFormat('ja-JP', {
@@ -24,6 +26,12 @@ const dateTimeFmt = new Intl.DateTimeFormat('ja-JP', {
  *      project … プロジェクトへの招待。受諾後はそのプロジェクトへ送る
  *      org     … 組織への招待 (メンバー管理から発行)。紐づくプロジェクトは
  *                0 件のこともあるため、受諾後はプロジェクト一覧へ送る
+ *
+ * 未認証のときは「ログイン」と「新規登録」の両方を出す (#231)。
+ * 招待される人はアカウントを持っていないことの方が多く、ログインしか無いと
+ * そこで行き止まりになっていた。どちらも `?next=` でこの画面に戻ってくるので、
+ * 認証を終えたらそのまま承諾できる。招待先メールは入力欄に引き継ぐ
+ * (別のアドレスで登録すると受諾が 403 になるため)。
  */
 export function InvitationAcceptPage() {
   const { token } = useParams<{ token: string }>();
@@ -67,6 +75,34 @@ export function InvitationAcceptPage() {
       toast.error(err instanceof ApiClientError ? err.message : '受諾に失敗しました');
     },
   });
+
+  const invitee = verifyQuery.data?.invitee ?? null;
+  const loginEmail = userData?.user?.email ?? null;
+  /** 招待先と別のアカウントでログインしている (受諾は 403 になる) */
+  const emailMismatch =
+    !!invitee && !!loginEmail && invitee.email.toLowerCase() !== loginEmail.toLowerCase();
+
+  /**
+   * ログイン / 新規登録へ送る。戻り先にこの招待画面を指定し、
+   * 招待先メールを入力欄の初期値として渡す (#231)。
+   */
+  const goToAuth = (screen: 'login' | 'signup') => {
+    const base = screen === 'signup' ? '/login?screen=signup' : '/login';
+    const path = withNextParam(base, `/invitations/${token}`);
+    const email = invitee?.email;
+    if (!email) {
+      navigate(path);
+      return;
+    }
+    const separator = path.includes('?') ? '&' : '?';
+    navigate(`${path}${separator}email=${encodeURIComponent(email)}`);
+  };
+
+  /** 別アカウントで入り直す。今のセッションを切ってからログインへ送る */
+  const switchAccount = async () => {
+    await supabase.auth.signOut();
+    goToAuth('login');
+  };
 
   if (!token) return <Centered>無効な招待リンクです</Centered>;
 
@@ -132,30 +168,59 @@ export function InvitationAcceptPage() {
                   読み込み中…
                 </Button>
               ) : isAuthenticated && profileReady ? (
-                <Button
-                  className="w-full"
-                  onClick={() => acceptMut.mutate()}
-                  disabled={acceptMut.isPending}
-                >
-                  {acceptMut.isPending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="size-4" />
+                <div className="space-y-3">
+                  {/* ログイン中のアカウントと招待先が違うと受諾は 403 になる。
+                      押してから弾かれるより先に気付けるようにする (#231) */}
+                  {emailMismatch && (
+                    <div className="bg-danger-subtle space-y-2 rounded-md px-4 py-3">
+                      <p className="text-body">
+                        今ログインしているのは{' '}
+                        <span className="font-medium">{loginEmail}</span> です。この招待は{' '}
+                        <span className="font-medium">{verifyQuery.data.invitee.email}</span>{' '}
+                        宛のため、このままでは参加できません。
+                      </p>
+                      <Button
+                        variant="secondary"
+                        className="w-full"
+                        onClick={() => void switchAccount()}
+                      >
+                        <LogIn className="size-4" />
+                        別のアカウントでログイン
+                      </Button>
+                    </div>
                   )}
-                  承諾
-                </Button>
+                  <Button
+                    className="w-full"
+                    onClick={() => acceptMut.mutate()}
+                    disabled={acceptMut.isPending || emailMismatch}
+                  >
+                    {acceptMut.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="size-4" />
+                    )}
+                    承諾
+                  </Button>
+                </div>
               ) : (
-                <Button
-                  className="w-full"
-                  onClick={() =>
-                    navigate(
-                      `/login?next=${encodeURIComponent(`/invitations/${token}`)}`,
-                    )
-                  }
-                >
-                  <LogIn className="size-4" />
-                  ログインして承諾
-                </Button>
+                <div className="space-y-3">
+                  <Button className="w-full" onClick={() => goToAuth('signup')}>
+                    <UserPlus className="size-4" />
+                    新規登録して参加
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => goToAuth('login')}
+                  >
+                    <LogIn className="size-4" />
+                    ログインして参加
+                  </Button>
+                  <p className="text-label text-muted-foreground">
+                    TRAKON のアカウントをお持ちでない方は「新規登録して参加」から、
+                    お持ちの方は「ログインして参加」からお進みください。
+                  </p>
+                </div>
               )}
             </CardContent>
           </Card>

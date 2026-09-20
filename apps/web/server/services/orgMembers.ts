@@ -552,3 +552,76 @@ export async function revokeOrgInvitation(input: {
     }),
   ]);
 }
+
+/**
+ * 招待メールを再送する (#230)。
+ *
+ * 送信済みのトークンは復元できない (DB にはハッシュしか持たない) ので、
+ * **新しいトークンを発行して差し替える**。したがって前のリンクは無効になる。
+ * 期限も送り直した時点から数え直す。
+ *
+ * 監査ログの action は `invitation_created` を再利用し、`extra.resend` で区別する。
+ * 許可値は DB の CHECK 制約と一致していなければならず、値を増やすには
+ * マイグレーションが要る (#227)。再送は「招待を作り直す」ことそのものなので、
+ * 専用の action を足すより既存の値で表すほうが実態に合う。
+ */
+export async function resendOrgInvitation(input: {
+  organizationId: string;
+  invitationId: string;
+  actorUserId: string;
+  origin: string;
+}): Promise<{ expiresAt: string }> {
+  const invitation = await prisma.invitation.findFirst({
+    where: {
+      id: input.invitationId,
+      organizationId: input.organizationId,
+      acceptedAt: null,
+      revokedAt: null,
+    },
+    select: { id: true, email: true },
+  });
+  if (!invitation) throw new ApiException('NOT_FOUND', 404, 'Invitation not found.');
+
+  const [organization, inviter] = await Promise.all([
+    prisma.organization.findUniqueOrThrow({
+      where: { id: input.organizationId },
+      select: { name: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: input.actorUserId },
+      select: { displayName: true },
+    }),
+  ]);
+
+  const { raw, hash } = generateInvitationToken();
+  const expiresAt = defaultInvitationExpiresAt();
+
+  // 送信を先に試す。送れないのにトークンだけ差し替えると、
+  // 手元に残っている前のリンクまで道連れで無効になってしまう。
+  await getMailer().sendInvitation({
+    to: invitation.email,
+    projectName: organization.name,
+    inviterName: inviter?.displayName ?? 'TRAKON',
+    acceptUrl: `${input.origin}/invitations/${raw}`,
+    expiresAt,
+  });
+
+  await prisma.$transaction([
+    prisma.invitation.update({
+      where: { id: invitation.id },
+      data: { tokenHash: hash, expiresAt },
+    }),
+    prisma.auditLog.create({
+      data: {
+        actorUserId: input.actorUserId,
+        action: 'invitation_created',
+        resourceType: 'invitation',
+        resourceId: invitation.id,
+        result: 'success',
+        extra: { scope: 'org', organizationId: input.organizationId, resend: true },
+      },
+    }),
+  ]);
+
+  return { expiresAt: expiresAt.toISOString() };
+}

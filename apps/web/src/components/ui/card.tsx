@@ -2,18 +2,26 @@ import * as React from "react";
 
 import { cn } from "./utils";
 
-function Card({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card"
-      className={cn(
-        "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+/**
+ * forwardRef は必須 (#230)。呼び出し側 (BillingPage のプラン比較など) が
+ * スクロール位置の測定のために ref を渡す。React 18 では素の関数コンポーネントに
+ * 渡された ref はどこにも届かず、黙って効かなくなる。
+ */
+const Card = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
+  function Card({ className, ...props }, ref) {
+    return (
+      <div
+        ref={ref}
+        data-slot="card"
+        className={cn(
+          "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border",
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
+);
 
 function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (

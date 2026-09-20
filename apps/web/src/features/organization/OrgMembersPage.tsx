@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Loader2, MoreHorizontal, Plus } from 'lucide-react';
+import { ChevronRight, FolderOpen, Loader2, MailPlus, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   BILLING_PLANS,
@@ -46,6 +46,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -127,6 +128,20 @@ export function OrgMembersPage() {
       setRemoving(null);
     },
     onError: (e) => toast.error(msg(e, '削除できませんでした')),
+  });
+
+  /**
+   * 招待メールの再送 (#230)。
+   * 届かない・見失われた招待を追える手段がこれしか無い (リンクは DB に残らない)。
+   */
+  const resendMut = useMutation({
+    mutationFn: (m: OrgMember) => orgApi.resendInvitation(m.invitationId!),
+    onSuccess: (_d, m) => {
+      // 期限が延びるので一覧を取り直す
+      qc.invalidateQueries({ queryKey: orgQueryKey.members });
+      toast.success(`${m.email} に招待メールを送り直しました`);
+    },
+    onError: (e) => toast.error(msg(e, '招待メールを送り直せませんでした')),
   });
 
   const membersData = membersQuery.data;
@@ -288,13 +303,36 @@ export function OrgMembersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onSelect={() => setRemoving(m)}
-                              disabled={m.orgRole === 'owner'}
-                              className="text-destructive"
-                            >
-                              {m.status === 'invited' ? '招待を取り消す' : 'メンバーを削除'}
-                            </DropdownMenuItem>
+                            {m.status === 'invited' && (
+                              <DropdownMenuItem
+                                onSelect={() => resendMut.mutate(m)}
+                                disabled={resendMut.isPending}
+                              >
+                                <MailPlus />
+                                招待メールを再送
+                              </DropdownMenuItem>
+                            )}
+                            {m.status === 'active' && m.projectCount > 0 && (
+                              <DropdownMenuItem onSelect={() => setProjectsOf(m)}>
+                                <FolderOpen />
+                                参加プロジェクト
+                              </DropdownMenuItem>
+                            )}
+                            {/* オーナーは自分の組織から締め出されないよう削除できない。
+                                項目を消すとメニューが空になり壊れて見えるので理由を出す */}
+                            {m.orgRole === 'owner' ? (
+                              <DropdownMenuLabel className="font-normal">
+                                オーナーは削除できません
+                              </DropdownMenuLabel>
+                            ) : (
+                              <DropdownMenuItem
+                                onSelect={() => setRemoving(m)}
+                                variant="destructive"
+                              >
+                                <Trash2 />
+                                {m.status === 'invited' ? '招待を取り消す' : 'メンバーを削除'}
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

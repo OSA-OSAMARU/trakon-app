@@ -92,6 +92,57 @@ describe('AuthCallbackPage', () => {
     );
   });
 
+  // #231: 招待リンクから新規登録した人を招待の続きに返すための経路
+  it('?next= があればそこへ遷移する', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: makeSession() } });
+    server.use(
+      http.post('*/api/v1/auth/me/sync', () =>
+        HttpResponse.json({ data: { user: syncedUser, requiresProfileCompletion: false } }),
+      ),
+    );
+    renderWithProviders(<AuthCallbackPage />, {
+      route: `/auth/callback?next=${encodeURIComponent('/invitations/tok-123')}`,
+    });
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith('/invitations/tok-123', { replace: true }),
+    );
+  });
+
+  it('プロフィール未完了でも ?next= を落とさずに持ち回す', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: makeSession() } });
+    server.use(
+      http.post('*/api/v1/auth/me/sync', () =>
+        HttpResponse.json({
+          data: { user: null, requiresProfileCompletion: true, email: 'me@example.com' },
+        }),
+      ),
+    );
+    renderWithProviders(<AuthCallbackPage />, {
+      route: `/auth/callback?next=${encodeURIComponent('/invitations/tok-123')}`,
+    });
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith(
+        `/login?screen=create-account&next=${encodeURIComponent('/invitations/tok-123')}`,
+        { replace: true },
+      ),
+    );
+  });
+
+  it('別サイトを指す ?next= は無視して /dashboard へ遷移する', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: makeSession() } });
+    server.use(
+      http.post('*/api/v1/auth/me/sync', () =>
+        HttpResponse.json({ data: { user: syncedUser, requiresProfileCompletion: false } }),
+      ),
+    );
+    renderWithProviders(<AuthCallbackPage />, {
+      route: `/auth/callback?next=${encodeURIComponent('https://evil.example')}`,
+    });
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith('/dashboard', { replace: true }),
+    );
+  });
+
   it('プロバイダエラー (?error=...) は遷移せずエラーメッセージを表示する', async () => {
     auth.getSession.mockResolvedValue({ data: { session: null } });
     renderWithProviders(<AuthCallbackPage />, {
