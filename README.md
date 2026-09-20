@@ -255,11 +255,14 @@ Playwright による実ブラウザ E2E は将来 Phase へ先送りし、当面
 
 ## デプロイ
 
-| トリガ | 環境 | 内容 |
-|---|---|---|
-| PR 作成 / 更新 | **Preview**（Vercel） | Vercel Git Integration による自動デプロイ |
-| `main` マージ | **Preview のみ** | Production には流れない |
-| **GitHub Release 公開** | **Production** | `release-deploy.yml` が DB マイグレーション + Vercel CLI で本番デプロイ |
+| トリガ | 環境 | URL | 内容 |
+|---|---|---|---|
+| PR 作成 / 更新 | **Preview**（Vercel） | デプロイごとに変わる | Vercel Git Integration による自動デプロイ |
+| `main` マージ | **dev**（Preview 扱い） | `trakon-app-web-git-main-trakon-projects.vercel.app`（**固定**） | Production には流れない。DB は `dev-migrate.yml` が dev DB へ適用 |
+| **GitHub Release 公開** | **Production** | `trakon-app-web.vercel.app` | `release-deploy.yml` が DB マイグレーション + Vercel CLI で本番デプロイ |
+
+**外部サービス（Stripe Webhook など）の宛先には dev の固定 URL を使う。** PR Preview は
+URL が毎回変わり、本番ドメインは Release を公開するまで更新されない。
 
 詳細は [docs/design/06-infrastructure.md](docs/design/06-infrastructure.md)（§6.5.4 デプロイ戦略）を参照。
 
