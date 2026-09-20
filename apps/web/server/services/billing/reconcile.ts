@@ -118,6 +118,15 @@ export async function reconcileSubscription(input: {
       current,
     });
 
+    // 監査ログは**状態が動いたときだけ**。照合は画面からポーリングで呼ばれるため
+    // (反映待ちの間は数秒おき)、毎回書くと「何も変わっていない」記録で監査ログが
+    // 埋まり、本当に変わった瞬間が読み取れなくなる (#235)。
+    const changed =
+      planCode !== current.planCode ||
+      snapshot.status !== current.status ||
+      snapshot.stripeSubscriptionId !== current.stripeSubscriptionId;
+    if (!changed) return;
+
     await tx.auditLog.create({
       data: {
         actorUserId: null,
@@ -127,6 +136,7 @@ export async function reconcileSubscription(input: {
         result: 'success',
         extra: {
           source: 'reconcile',
+          from: { planCode: current.planCode, status: current.status },
           status: snapshot.status,
           planCode,
           subscriptionId: snapshot.stripeSubscriptionId,

@@ -51,6 +51,19 @@ function stubBilling(over: Partial<Billing> = {}) {
   );
 }
 
+/**
+ * プラン一覧のボタンを押し、確認モーダルで確定まで進める (#235)。
+ * 課金が動く操作は押した瞬間には実行されない。
+ */
+async function selectPlan(planCode: 'personal' | 'team', label: string) {
+  const card = await screen.findByTestId(`plan-${planCode}`);
+  await userEvent.click(within(card).getByRole('button', { name: label }));
+  const dialog = await screen.findByRole('alertdialog');
+  await userEvent.click(
+    within(dialog).getByRole('button', { name: label === '申し込む' ? '決済ページへ進む' : '変更する' }),
+  );
+}
+
 /** トースト本文を確かめるケースは Toaster も一緒に描画する (本番は App 直下にある)。 */
 function renderWithToaster(route = '/settings/billing') {
   return renderWithProviders(
@@ -174,8 +187,7 @@ describe('BillingPage (integration)', () => {
       );
       renderWithProviders(<BillingPage />, { route: '/settings/billing' });
 
-      const teamCard = await screen.findByTestId('plan-team');
-      await userEvent.click(within(teamCard).getByRole('button', { name: '申し込む' }));
+      await selectPlan('team', '申し込む');
 
       await waitFor(() =>
         expect(externalRedirect).toHaveBeenCalledWith('https://checkout.test/session'),
@@ -213,8 +225,7 @@ describe('BillingPage (integration)', () => {
 
       // 契約中はプラン一覧が畳まれている (Figma node 263:18)
       await userEvent.click(await screen.findByRole('button', { name: 'プランを変更' }));
-      const teamCard = await screen.findByTestId('plan-team');
-      await userEvent.click(within(teamCard).getByRole('button', { name: 'このプランに変更' }));
+      await selectPlan('team', 'このプランに変更');
 
       await waitFor(() => expect(changedTo).toEqual({ planCode: 'team' }));
       // 決済の確認まで反映されないことを伝える
@@ -240,8 +251,7 @@ describe('BillingPage (integration)', () => {
       );
       renderWithToaster();
 
-      const personalCard = await screen.findByTestId('plan-personal');
-      await userEvent.click(within(personalCard).getByRole('button', { name: 'このプランに変更' }));
+      await selectPlan('personal', 'このプランに変更');
 
       expect(await screen.findByText(/次回更新時に Personal/)).toBeInTheDocument();
     });
@@ -265,8 +275,7 @@ describe('BillingPage (integration)', () => {
 
       // 契約中はプラン一覧が畳まれている (Figma node 263:18)
       await userEvent.click(await screen.findByRole('button', { name: 'プランを変更' }));
-      const teamCard = await screen.findByTestId('plan-team');
-      await userEvent.click(within(teamCard).getByRole('button', { name: 'このプランに変更' }));
+      await selectPlan('team', 'このプランに変更');
 
       expect(await screen.findByText(/上限を超えているため変更できません/)).toBeInTheDocument();
     });
@@ -289,6 +298,254 @@ describe('BillingPage (integration)', () => {
       expect(await screen.findByText('変更予定')).toBeInTheDocument();
       expect(screen.getByText(/visa •••• 4242/)).toBeInTheDocument();
       expect(screen.getByText('次回更新')).toBeInTheDocument();
+    });
+  });
+
+  // ===========================================================================
+  // #235: Personal → Team は「追加請求の決済成功を確認するまで昇格しない」設計。
+  // その確認は Webhook 頼みだったため、Webhook が届かない環境 (Preview デプロイは
+  // URL がデプロイごとに変わり登録できない) ではプラン変更が永久に反映されなかった。
+  // Checkout 復帰と同じく、待っている間は Stripe へ**取りに行く**。
+  // ===========================================================================
+  describe('プラン変更の反映待ち (#235)', () => {
+    /** Personal のまま Team への変更を待っている状態 (pendingPlanEffectiveAt は null) */
+    const PENDING_TEAM = {
+      ...defaultBillingResponse,
+      subscription: {
+        ...defaultBillingResponse.subscription,
+        planCode: 'personal' as const,
+        status: 'active' as const,
+        hasStripeCustomer: true,
+        pendingPlanCode: 'team' as const,
+        pendingPlanEffectiveAt: null,
+      },
+      entitlement: {
+        ...defaultBillingResponse.entitlement,
+        planCode: 'personal' as const,
+        effectivePlanCode: 'personal' as const,
+        limits: { seatLimit: 1, viewerLimit: 5, projectLimit: 10 },
+        message: 'Personal プランを利用中です。',
+      },
+    };
+
+    /** Stripe 側で Team が成立した後 */
+    const APPLIED_TEAM = {
+      ...defaultBillingResponse,
+      subscription: {
+        ...defaultBillingResponse.subscription,
+        planCode: 'team' as const,
+        status: 'active' as const,
+        hasStripeCustomer: true,
+        pendingPlanCode: null,
+        pendingPlanEffectiveAt: null,
+      },
+      entitlement: {
+        ...defaultBillingResponse.entitlement,
+        planCode: 'team' as const,
+        effectivePlanCode: 'team' as const,
+        limits: { seatLimit: 5, viewerLimit: 20, projectLimit: null },
+        message: 'Team プランを利用中です。',
+      },
+    };
+
+    it('変更を待っている状態で画面を開くと、Stripe へ照合しに行って反映される', async () => {
+      // 変更を投げた直後だけでなく、**画面を開き直しても**回復すること。
+      // 待機をミューテーションの結果ではなくサーバーの状態から導いている根拠。
+      let applied = false;
+      let syncCalls = 0;
+      server.use(
+        http.get('*/api/v1/billing/subscription', () => HttpResponse.json({ data: PENDING_TEAM })),
+        http.post('*/api/v1/billing/sync', () => {
+          syncCalls += 1;
+          return HttpResponse.json({
+            data: applied ? APPLIED_TEAM : PENDING_TEAM,
+            meta: { synced: applied },
+          });
+        }),
+        http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
+      );
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      expect(await screen.findByText(/Team プランへの変更を確認中です/)).toBeInTheDocument();
+      // 確認できるまでは Personal のまま (待っている間に権限を先出ししない)
+      expect(screen.getByText('Personal プランを利用中です。')).toBeInTheDocument();
+
+      await waitFor(() => expect(syncCalls).toBeGreaterThan(0));
+
+      applied = true;
+      await waitFor(
+        () => expect(screen.getByText('Team プランを利用中です。')).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+      expect(screen.queryByText(/変更を確認中です/)).not.toBeInTheDocument();
+    });
+
+    it('確認できないまま時間が経ったら、手動で取り直せる', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      let applied = false;
+      server.use(
+        http.get('*/api/v1/billing/subscription', () => HttpResponse.json({ data: PENDING_TEAM })),
+        http.post('*/api/v1/billing/sync', () =>
+          HttpResponse.json({
+            data: applied ? APPLIED_TEAM : PENDING_TEAM,
+            meta: { synced: applied },
+          }),
+        ),
+        http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
+      );
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await screen.findByText(/Team プランへの変更を確認中です/);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await screen.findByText(/お支払いの確認に時間がかかっています/)).toBeInTheDocument();
+
+      applied = true;
+      vi.useRealTimers();
+      await userEvent.click(screen.getByRole('button', { name: '最新の状態を取得' }));
+
+      expect(await screen.findByText('Team プランを利用中です。')).toBeInTheDocument();
+    });
+
+    it('取り直しても変わらなければ、更新できたことにしない', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      server.use(
+        http.get('*/api/v1/billing/subscription', () => HttpResponse.json({ data: PENDING_TEAM })),
+        http.post('*/api/v1/billing/sync', () =>
+          HttpResponse.json({ data: PENDING_TEAM, meta: { synced: false } }),
+        ),
+        http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
+      );
+      renderWithToaster();
+
+      await screen.findByText(/Team プランへの変更を確認中です/);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await screen.findByText(/お支払いの確認に時間がかかっています/);
+
+      vi.useRealTimers();
+      await userEvent.click(screen.getByRole('button', { name: '最新の状態を取得' }));
+
+      expect(await screen.findByText(/まだ確認できていません/)).toBeInTheDocument();
+    });
+
+    it('次回更新時に適用されるダウングレードは待機にしない', async () => {
+      // 日付が決まっていて、その日まで何も起きないのが正しい状態。
+      // ここを待機にすると、更新日まで毎回 Stripe を叩き続けることになる。
+      let syncCalls = 0;
+      server.use(
+        http.get('*/api/v1/billing/subscription', () =>
+          HttpResponse.json({
+            data: {
+              ...defaultBillingResponse,
+              subscription: {
+                ...defaultBillingResponse.subscription,
+                planCode: 'team',
+                status: 'active',
+                hasStripeCustomer: true,
+                currentPeriodEnd: '2026-10-01T00:00:00.000Z',
+                pendingPlanCode: 'personal',
+                pendingPlanEffectiveAt: '2026-10-01T00:00:00.000Z',
+              },
+            },
+          }),
+        ),
+        http.post('*/api/v1/billing/sync', () => {
+          syncCalls += 1;
+          return HttpResponse.json({ data: defaultBillingResponse, meta: { synced: false } });
+        }),
+        http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
+      );
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await screen.findByText('変更予定');
+      expect(screen.queryByText(/変更を確認中です/)).not.toBeInTheDocument();
+      expect(syncCalls).toBe(0);
+    });
+  });
+
+  // ===========================================================================
+  // #235: 課金が動く操作は、押した瞬間ではなく確認してから実行する。
+  // ===========================================================================
+  describe('プラン変更の確認モーダル (#235)', () => {
+    const teamSubscribed = {
+      subscription: {
+        ...defaultBillingResponse.subscription,
+        planCode: 'team' as const,
+        status: 'active' as const,
+        hasStripeCustomer: true,
+        currentPeriodEnd: '2026-10-01T00:00:00.000Z',
+      },
+      entitlement: {
+        ...defaultBillingResponse.entitlement,
+        planCode: 'team' as const,
+        effectivePlanCode: 'team' as const,
+        limits: { seatLimit: 5, viewerLimit: 20, projectLimit: null },
+        message: 'Team プランを利用中です。',
+      },
+    };
+
+    it('押しただけでは API を呼ばず、キャンセルすれば何も起きない', async () => {
+      stubBilling();
+      let called = false;
+      server.use(
+        http.post('*/api/v1/billing/checkout-session', () => {
+          called = true;
+          return HttpResponse.json({ data: { url: 'https://checkout.test/s', trialApplied: true } });
+        }),
+      );
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      const teamCard = await screen.findByTestId('plan-team');
+      await userEvent.click(within(teamCard).getByRole('button', { name: '申し込む' }));
+
+      const dialog = await screen.findByRole('alertdialog');
+      expect(within(dialog).getByText(/決済ページへ移動します/)).toBeInTheDocument();
+      expect(called).toBe(false);
+
+      await userEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(called).toBe(false);
+      expect(externalRedirect).not.toHaveBeenCalled();
+    });
+
+    it('アップグレードは日割りの追加請求と反映時期を先に伝える', async () => {
+      stubBilling({
+        subscription: {
+          ...defaultBillingResponse.subscription,
+          planCode: 'personal',
+          status: 'active',
+          hasStripeCustomer: true,
+        },
+        entitlement: {
+          ...defaultBillingResponse.entitlement,
+          planCode: 'personal',
+          effectivePlanCode: 'personal',
+          limits: { seatLimit: 1, viewerLimit: 5, projectLimit: 10 },
+          message: 'Personal プランを利用中です。',
+        },
+      });
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await userEvent.click(await screen.findByRole('button', { name: 'プランを変更' }));
+      const teamCard = await screen.findByTestId('plan-team');
+      await userEvent.click(within(teamCard).getByRole('button', { name: 'このプランに変更' }));
+
+      const dialog = await screen.findByRole('alertdialog');
+      expect(within(dialog).getByText(/日割りで追加請求/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/お支払いが確認できた後/)).toBeInTheDocument();
+    });
+
+    it('ダウングレードは切り替え日と下がる上限を先に伝える', async () => {
+      stubBilling(teamSubscribed);
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await userEvent.click(await screen.findByRole('button', { name: 'プランを変更' }));
+      const personalCard = await screen.findByTestId('plan-personal');
+      await userEvent.click(within(personalCard).getByRole('button', { name: 'このプランに変更' }));
+
+      const dialog = await screen.findByRole('alertdialog');
+      expect(within(dialog).getByText(/2026\/10\/01/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/返金はありません/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/超えている場合は変更できません/)).toBeInTheDocument();
     });
   });
 
@@ -538,8 +795,7 @@ describe('BillingPage (integration)', () => {
       );
       renderWithProviders(<BillingPage />, { route: '/settings/billing' });
 
-      const teamCard = await screen.findByTestId('plan-team');
-      await userEvent.click(within(teamCard).getByRole('button', { name: '申し込む' }));
+      await selectPlan('team', '申し込む');
 
       await waitFor(() => expect(checkoutCalled).toBe(true));
     });

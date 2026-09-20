@@ -179,6 +179,42 @@ describe('reconcileSubscription', () => {
     expect(result).toEqual({ synced: false, reason: 'stripe_error' });
   });
 
+  it('状態が動いていなければ監査ログを書かない (ポーリングで埋めない)', async () => {
+    // 反映待ちの間、画面は数秒おきにこの照合を呼ぶ (#235)。毎回記録すると
+    // 「何も変わっていない」行で監査ログが埋まり、変わった瞬間が読めなくなる。
+    prismaMock.billingSubscription.findUnique.mockResolvedValue({
+      ...FREE_ROW,
+      planCode: 'personal',
+      status: 'trialing',
+      stripeCustomerId: 'cus_1',
+      stripeSubscriptionId: 'sub_1',
+    });
+
+    const result = await reconcileSubscription({ organizationId: ORG_ID });
+
+    expect(result).toEqual({ synced: true });
+    // 書き込み自体は行う (期間や支払い方法は動きうる)
+    expect(txMock.billingSubscription.update).toHaveBeenCalled();
+    expect(txMock.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('状態が動いたときは、変更前後が分かる監査ログを書く', async () => {
+    prismaMock.billingSubscription.findUnique.mockResolvedValue({
+      ...FREE_ROW,
+      stripeSubscriptionId: 'sub_1',
+    });
+
+    await reconcileSubscription({ organizationId: ORG_ID });
+
+    const logged = txMock.auditLog.create.mock.calls[0]![0].data;
+    expect(logged.action).toBe('subscription_reconciled');
+    expect(logged.extra).toMatchObject({
+      from: { planCode: 'free', status: 'none' },
+      planCode: 'personal',
+      status: 'trialing',
+    });
+  });
+
   it('保留中のプラン変更は契約が有効になった時点で確定する', async () => {
     prismaMock.billingSubscription.findUnique.mockResolvedValue({
       ...FREE_ROW,
