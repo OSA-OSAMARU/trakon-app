@@ -214,12 +214,35 @@ https://dashboard.stripe.com/settings/managed-payments
 **C. Webhook（Event destinations）**
 
 1. 送信先を登録する：`https://<環境のドメイン>/api/v1/stripe/webhook`
+
+   **モードと環境を取り違えないこと。** 送信先は環境ごとに 1 つずつ作る。
+
+   | Stripe のモード | 送信先ドメイン | 備考 |
+   |---|---|---|
+   | サンドボックス（テスト） | `trakon-app-web-git-main-trakon-projects.vercel.app` | dev 環境。`main` マージごとに更新され URL は固定 |
+   | 本番（live） | `trakon-app-web.vercel.app` | **GitHub Release を公開しないと更新されない** |
+
+   PR ごとの Preview URL はデプロイのたびに変わるため送信先にできない。
+   また、**本番ドメインは Release 公開までコードが乗らない**ので、テストモードの
+   送信先を本番ドメインに向けると 404 が返り続ける（#235 で実際に発生し、
+   Stripe 側でエンドポイントが自動的に「無効」にされた）。
+
 2. 購読イベント（設計書 §7.5.2）：
    - `checkout.session.completed`
    - `customer.subscription.created` / `updated` / `deleted` / `trial_will_end`
    - `invoice.paid` / `payment_failed` / `payment_action_required` / `updated`
 3. 署名シークレットを `STRIPE_WEBHOOK_SECRET` に登録する
 4. 支払い失敗時の再試行（スマートリトライ）が **7 日間・最大 4 回**であることを確認する
+
+   > エンドポイントが「無効」になっている場合、配信が失敗し続けて Stripe が自動で
+   > 停止させた可能性が高い。宛先 URL を直したうえで有効化し直す。疎通は署名なしの
+   > POST で確認できる（**400 `STRIPE_SIGNATURE_MISSING` が正常**。404 ならその環境に
+   > コードが乗っていない）:
+   >
+   > ```bash
+   > curl -i -X POST https://<環境のドメイン>/api/v1/stripe/webhook
+   > ```
+
 5. カード決済失敗時の顧客向け自動メールが有効になっていることを確認する
 6. 適格請求書（インボイス制度）の登録番号が登録されていることを確認する
 

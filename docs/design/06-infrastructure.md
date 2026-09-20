@@ -259,8 +259,25 @@ Vercel は1プロジェクトで以下の環境を持つ：
 |---|---|
 | 任意の PR 作成 / 更新 | **Preview デプロイ**（個別 URL 付与、Vercel Git Integration 標準） |
 | PR クローズ | Preview デプロイは Vercel が一定期間後に削除 |
-| `main` ブランチへの merge | **Preview のみ**（Vercel の Production Branch 設定を main 以外に変更、または Ignored Build Step で main からの Production を抑止） |
+| `main` ブランチへの merge | **Preview のみ**（Vercel の Production Branch 設定を main 以外に変更、または Ignored Build Step で main からの Production を抑止）。ただし URL は固定（下記「dev 環境」） |
 | **GitHub Release 公開**（タグ作成） | **GitHub Actions が Vercel CLI 経由で Production デプロイを実行**＋**DB マイグレーションを `prisma migrate deploy` で適用** |
+
+#### 環境と URL（外部サービスの宛先はここから選ぶ）
+
+PR ごとの Preview は URL がデプロイごとに変わるため、**外部サービスからの着信
+（Stripe Webhook など）を受けられない**。Vercel がブランチ単位で発行する固定 URL を
+**dev 環境**として使い、そこを宛先にする。
+
+| 環境 | URL | 更新契機 | Stripe |
+|---|---|---|---|
+| PR Preview | `trakon-app-web-<hash>-trakon-projects.vercel.app` | PR の push ごと（**URL が毎回変わる**） | 着信を受けない |
+| **dev** | `trakon-app-web-git-main-trakon-projects.vercel.app` | **`main` マージごと（URL 固定）** | **サンドボックス（テスト）** |
+| Production | `trakon-app-web.vercel.app` | **GitHub Release 公開時のみ** | 本番（live） |
+
+**Production は Release を公開するまで更新されない。** main にマージしただけの機能は
+本番ドメインには存在せず、その URL を外部サービスの宛先にすると 404 になる
+（#235 の調査で、テストモードの Stripe Webhook が本番ドメインを向いていたため
+実際に発生した）。dev の宛先は **dev の URL**、本番の宛先は**本番の URL**に分ける。
 
 #### Vercel 側の設定
 
