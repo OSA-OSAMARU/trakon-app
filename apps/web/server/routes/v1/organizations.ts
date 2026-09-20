@@ -5,6 +5,7 @@ import { JOB_TITLES, ORG_ROLES, PROJECT_ROLES } from '@trakon/shared';
 import { z } from 'zod';
 
 import { ApiException } from '../../lib/errors.js';
+import { resolveRequestOrigin } from '../../lib/requestOrigin.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { requireOrgBillingRole, requireOrgMember } from '../../middleware/orgAuth.js';
 import { attachCurrentUserId } from '../../middleware/projectAuth.js';
@@ -15,6 +16,7 @@ import {
   createOrgInvitation,
   listMemberProjects,
   listOrgMembers,
+  resendOrgInvitation,
   revokeOrgInvitation,
 } from '../../services/orgMembers.js';
 
@@ -76,7 +78,9 @@ export const organizationsRoute = new Hono()
   .post('/me/invitations', requireOrgBillingRole(), async (c) => {
     const { organizationId } = c.get('organization');
     const body = createOrgInvitationBodySchema.parse(await c.req.json());
-    const origin = new URL(c.req.url).origin;
+    // Vercel のようなプロキシ配下では c.req.url が公開オリジンとは限らない。
+    // 共有リンクと同じ解決規則に揃える (#230)。
+    const origin = resolveRequestOrigin(c);
     const result = await createOrgInvitation({
       organizationId,
       actorUserId: c.get('currentUserId'),
@@ -84,6 +88,23 @@ export const organizationsRoute = new Hono()
       body,
     });
     return c.json({ data: { id: result.invitationId }, ...(result.warnings ? { warnings: result.warnings } : {}) }, 201);
+  })
+
+  /**
+   * 招待メールの再送 (#230)。
+   *
+   * 新しいトークンを発行して送り直すため、**前のリンクは無効になる**。
+   * 届かなかった・見失われた招待を追いかける手段がこれしか無い。
+   */
+  .post('/me/invitations/:invitationId/resend', requireOrgBillingRole(), async (c) => {
+    const { organizationId } = c.get('organization');
+    const result = await resendOrgInvitation({
+      organizationId,
+      invitationId: c.req.param('invitationId'),
+      actorUserId: c.get('currentUserId'),
+      origin: resolveRequestOrigin(c),
+    });
+    return c.json({ data: result });
   })
 
   /** 招待の取り消し = 枠の解放 (#160) */

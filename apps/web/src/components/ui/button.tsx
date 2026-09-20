@@ -75,16 +75,7 @@ const buttonVariants = cva(
   },
 );
 
-function Button({
-  className,
-  variant,
-  size,
-  asChild = false,
-  loading = false,
-  onClick,
-  children,
-  ...props
-}: React.ComponentProps<'button'> &
+type ButtonProps = React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
     /**
@@ -94,7 +85,23 @@ function Button({
      * asChild=true のときは子要素が 1 つに限られるため Spinner は描画しない。
      */
     loading?: boolean;
-  }) {
+  };
+
+/**
+ * **forwardRef は必須** (#230)。
+ *
+ * このアプリは React 18 なので、素の関数コンポーネントに渡された ref は
+ * どこにも届かない。Radix の `<XxxTrigger asChild><Button …>` は Slot 経由で
+ * ref をトリガーの DOM に繋ぐ必要があり、ref が null のままだと
+ * Popper のアンカーが決まらず、開いたメニューが `visibility: hidden` のまま
+ * 画面に出ない ＝ **「⋯ を押しても何も起きない」**状態になる。
+ * jsdom はレイアウトを持たないためテストでは再現しないので、
+ * 下の button.test.tsx で ref が DOM に届くことを直接検証している。
+ */
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant, size, asChild = false, loading = false, onClick, children, ...props },
+  ref,
+) {
   const Comp = asChild ? Slot : 'button';
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -108,6 +115,7 @@ function Button({
 
   return (
     <Comp
+      ref={ref}
       data-slot="button"
       data-loading={loading ? '' : undefined}
       aria-busy={loading || undefined}
@@ -126,6 +134,7 @@ function Button({
       )}
     </Comp>
   );
-}
+});
 
 export { Button, buttonVariants };
+export type { ButtonProps };

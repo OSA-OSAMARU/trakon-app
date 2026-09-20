@@ -15,6 +15,7 @@ import { ApiClientError } from '@/lib/api';
 import { useAuthSession } from './useAuthSession';
 import { authApi, type SyncResponse } from './api';
 import { OAuthButtons } from './OAuthButtons';
+import { resolveAfterAuthPath, safeNextPath, withNextParam } from './nextPath';
 import { Wordmark } from '@/components/trakon/Wordmark';
 import {
   LEGAL_LINKS,
@@ -27,6 +28,11 @@ import {
 // Magic-link 系 5 状態：login / signup / email-sent / create-account /
 //   password-reset-request
 // URL: /login?screen=<state>&email=<email>&next=<next>
+//
+// `next` は認証を終えたあとの戻り先 (#231)。招待リンクから来た人を
+// `/invitations/:token` に戻すために使う。以前は付けるだけで誰も読んでおらず、
+// ログイン後は必ず /dashboard に着地して招待が迷子になっていた。
+// `email` は入力欄の初期値。招待先メールと違うアドレスで登録してしまうのを防ぐ。
 // =============================================================================
 
 type Screen = 'login' | 'signup' | 'email-sent' | 'create-account' | 'password-reset-request';
@@ -52,13 +58,16 @@ export function SC01LoginPage() {
   const screen = readScreen(params);
   const navigate = useNavigate();
   const { isAuthenticated, isLoading: sessionLoading } = useAuthSession();
+  const next = safeNextPath(params.get('next'));
+  const afterAuth = resolveAfterAuthPath(next);
+  const presetEmail = params.get('email') ?? '';
 
-  // 既にログイン済みかつ profile 完了済みなら /dashboard へ
+  // 既にログイン済みかつ profile 完了済みなら戻り先へ
   useEffect(() => {
     if (!sessionLoading && isAuthenticated && screen !== 'create-account') {
-      navigate('/dashboard', { replace: true });
+      navigate(afterAuth, { replace: true });
     }
-  }, [sessionLoading, isAuthenticated, screen, navigate]);
+  }, [sessionLoading, isAuthenticated, screen, navigate, afterAuth]);
 
   const goTo = (next: Screen, extra?: Record<string, string>) => {
     const sp = new URLSearchParams(params);
@@ -73,10 +82,16 @@ export function SC01LoginPage() {
         <h1 className="mb-8 text-center">
           <Wordmark />
         </h1>
-        {screen === 'login' && <LoginForm goTo={goTo} />}
-        {screen === 'signup' && <SignupForm goTo={goTo} />}
-        {screen === 'email-sent' && <EmailSent email={params.get('email') ?? ''} goTo={goTo} />}
-        {screen === 'create-account' && <CreateAccountForm />}
+        {screen === 'login' && (
+          <LoginForm goTo={goTo} next={next} presetEmail={presetEmail} />
+        )}
+        {screen === 'signup' && (
+          <SignupForm goTo={goTo} next={next} presetEmail={presetEmail} />
+        )}
+        {screen === 'email-sent' && (
+          <EmailSent email={presetEmail} goTo={goTo} next={next} />
+        )}
+        {screen === 'create-account' && <CreateAccountForm afterAuth={afterAuth} />}
         {screen === 'password-reset-request' && <PasswordResetRequest goTo={goTo} />}
 
         {/* 会社情報・法務の導線 (#193)。実体は公式サイト (www.trakon.app) が持ち、
@@ -112,11 +127,24 @@ const loginSchema = z.object({
 });
 type LoginInput = z.infer<typeof loginSchema>;
 
-function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, string>) => void }) {
+function LoginForm({
+  goTo,
+  next,
+  presetEmail,
+}: {
+  goTo: (screen: Screen, extra?: Record<string, string>) => void;
+  /** 認証後の戻り先 (#231)。招待リンクから来たときは招待画面に戻す */
+  next: string | null;
+  presetEmail: string;
+}) {
   const navigate = useNavigate();
+  const afterAuth = resolveAfterAuthPath(next);
   const [serverError, setServerError] = useState<string | null>(null);
   const [remember, setRemember] = useState(true);
-  const form = useForm<LoginInput>({ resolver: zodResolver(loginSchema) });
+  const form = useForm<LoginInput>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: presetEmail },
+  });
 
   const onSubmit = async (values: LoginInput) => {
     setServerError(null);
@@ -131,7 +159,7 @@ function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, strin
       setServerError(GENERIC_AUTH_ERROR);
       return;
     }
-    navigate('/dashboard', { replace: true });
+    navigate(afterAuth, { replace: true });
   };
 
   return (
@@ -169,7 +197,7 @@ function LoginForm({ goTo }: { goTo: (next: Screen, extra?: Record<string, strin
           </Button>
         </form>
         <div className="mt-6">
-          <OAuthButtons />
+          <OAuthButtons next={next} />
         </div>
         <div className="mt-6 flex flex-col items-center gap-2 text-body">
           <button
@@ -211,13 +239,18 @@ type SignupWithConsentInput = z.infer<typeof signupWithConsentSchema>;
 
 function SignupForm({
   goTo,
+  next,
+  presetEmail,
 }: {
-  goTo: (next: Screen, extra?: Record<string, string>) => void;
+  goTo: (screen: Screen, extra?: Record<string, string>) => void;
+  /** 認証後の戻り先 (#231)。マジックリンクの着地 URL に引き継ぐ */
+  next: string | null;
+  presetEmail: string;
 }) {
   const [serverError, setServerError] = useState<string | null>(null);
   const form = useForm<SignupWithConsentInput>({
     resolver: zodResolver(signupWithConsentSchema),
-    defaultValues: { agreeToTerms: false },
+    defaultValues: { agreeToTerms: false, email: presetEmail },
   });
   // 規約同意チェックの状態。メール・OAuth いずれの新規登録もこのチェックで解放する。
   const agreed = form.watch('agreeToTerms');
@@ -227,7 +260,9 @@ function SignupForm({
     const { error } = await supabase.auth.signInWithOtp({
       email: values.email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        // 戻り先はメールのリンク側に埋め込む。別タブで開かれると画面の状態は
+        // 引き継がれないため、URL に載せないと招待に戻れない (#231)
+        emailRedirectTo: `${window.location.origin}${withNextParam('/auth/callback', next)}`,
       },
     });
     if (error) {
@@ -298,7 +333,7 @@ function SignupForm({
         <div className="mt-6">
           {/* OAuth は「みなし同意」文言 (OAuthButtons 内) で担保するため、規約チェック
               未完でも押下可能。チェックボックスはメール登録ボタン専用。 */}
-          <OAuthButtons />
+          <OAuthButtons next={next} />
         </div>
         <div className="mt-4 text-center text-body">
           <button
@@ -320,9 +355,12 @@ function SignupForm({
 function EmailSent({
   email,
   goTo,
+  next,
 }: {
   email: string;
-  goTo: (next: Screen, extra?: Record<string, string>) => void;
+  goTo: (screen: Screen, extra?: Record<string, string>) => void;
+  /** 認証後の戻り先 (#231) */
+  next: string | null;
 }) {
   const [cooldown, setCooldown] = useState(60);
   const [resending, setResending] = useState(false);
@@ -338,7 +376,9 @@ function EmailSent({
     setResending(true);
     await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        emailRedirectTo: `${window.location.origin}${withNextParam('/auth/callback', next)}`,
+      },
     });
     setResending(false);
     setCooldown(60);
@@ -398,7 +438,7 @@ const createAccountSchema = z
   });
 type CreateAccountInput = z.infer<typeof createAccountSchema>;
 
-function CreateAccountForm() {
+function CreateAccountForm({ afterAuth }: { afterAuth: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { session, isLoading } = useAuthSession();
@@ -436,7 +476,8 @@ function CreateAccountForm() {
         user,
         requiresProfileCompletion: false,
       });
-      navigate('/dashboard', { replace: true });
+      // 招待リンクから来た人は招待の続きへ戻す (#231)
+      navigate(afterAuth, { replace: true });
     } catch (err) {
       if (err instanceof ApiClientError && err.code === 'SAME_EMAIL_DIFFERENT_PROVIDER') {
         const details = err.details as { primaryAuthMethod?: string } | undefined;

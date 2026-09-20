@@ -58,6 +58,7 @@ const {
   createOrgInvitation,
   listMemberProjects,
   listOrgMembers,
+  resendOrgInvitation,
   revokeOrgInvitation,
 } = await import('./orgMembers.js');
 
@@ -498,5 +499,75 @@ describe('revokeOrgInvitation', () => {
     await expect(
       revokeOrgInvitation({ organizationId: 'org-1', invitationId: 'x', actorUserId: 'u-1' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+  });
+});
+
+describe('resendOrgInvitation', () => {
+  beforeEach(() => {
+    prismaMock.organization.findUniqueOrThrow.mockResolvedValue({ name: '制作会社A' });
+    prismaMock.user.findUnique.mockResolvedValue({ displayName: '佐藤' });
+  });
+
+  it('新しいトークンで送り直し、期限も引き直す', async () => {
+    prismaMock.invitation.findFirst.mockResolvedValue({
+      id: 'inv-1',
+      email: 'hanako@example.com',
+    });
+
+    const res = await resendOrgInvitation({
+      organizationId: 'org-1',
+      invitationId: 'inv-1',
+      actorUserId: 'u-1',
+      origin: 'https://app.test',
+    });
+
+    expect(sendInvitationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'hanako@example.com',
+        projectName: '制作会社A',
+        acceptUrl: expect.stringMatching(/^https:\/\/app\.test\/invitations\/.+/),
+      }),
+    );
+    // トークンのハッシュと期限が差し替わる (＝ 前のリンクは無効になる)
+    const update = prismaMock.invitation.update.mock.calls[0]![0] as {
+      where: { id: string };
+      data: { tokenHash: string; expiresAt: Date };
+    };
+    expect(update.where.id).toBe('inv-1');
+    expect(update.data.tokenHash).toEqual(expect.any(String));
+    expect(update.data.expiresAt.toISOString()).toBe(res.expiresAt);
+  });
+
+  it('送信に失敗したらトークンを差し替えない (手元のリンクを道連れにしない)', async () => {
+    prismaMock.invitation.findFirst.mockResolvedValue({
+      id: 'inv-1',
+      email: 'hanako@example.com',
+    });
+    sendInvitationMock.mockRejectedValue(new Error('smtp down'));
+
+    await expect(
+      resendOrgInvitation({
+        organizationId: 'org-1',
+        invitationId: 'inv-1',
+        actorUserId: 'u-1',
+        origin: 'https://app.test',
+      }),
+    ).rejects.toThrow('smtp down');
+
+    expect(prismaMock.invitation.update).not.toHaveBeenCalled();
+  });
+
+  it('受諾済み・失効済み・他組織の招待は 404', async () => {
+    prismaMock.invitation.findFirst.mockResolvedValue(null);
+
+    await expect(
+      resendOrgInvitation({
+        organizationId: 'org-1',
+        invitationId: 'x',
+        actorUserId: 'u-1',
+        origin: 'https://app.test',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
+    expect(sendInvitationMock).not.toHaveBeenCalled();
   });
 });

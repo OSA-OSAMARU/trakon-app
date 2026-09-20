@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { LEGAL_LINKS } from '@/features/legal/legalLinks';
+import { withNextParam } from './nextPath';
 
 type TrakonProvider = 'google' | 'azure';
 
@@ -14,8 +15,11 @@ type TrakonProvider = 'google' | 'azure';
  * OAuth はボタン押下＝即プロバイダ遷移のため、押下前にチェックさせるのが難しい。
  * 新規ユーザーはそのままプロフィールが自動生成されるため、規約同意はボタン下部の
  * 「みなし同意」文言で担保する (login / signup 両画面に表示される)。
+ *
+ * `next` は認証後の戻り先 (#231)。プロバイダから戻ってくる先は /auth/callback
+ * なので、戻り先はそこまで URL で運ぶ必要がある (画面の状態は残らない)。
  */
-export function OAuthButtons() {
+export function OAuthButtons({ next }: { next?: string | null }) {
   const [busy, setBusy] = useState<TrakonProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +29,7 @@ export function OAuthButtons() {
     const { error: err } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}${withNextParam('/auth/callback', next)}`,
         queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
         // Azure (Microsoft) はスコープを明示しないと email クレームが返らず、Supabase 側が
         // "Error getting user email from external provider" で認証中断する。設計 §6.6.1 の

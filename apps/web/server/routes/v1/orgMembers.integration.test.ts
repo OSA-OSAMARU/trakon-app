@@ -258,6 +258,77 @@ describe('POST /organizations/me/invitations', () => {
   });
 });
 
+describe('POST /organizations/me/invitations/:invitationId/resend — 招待の再送 (#230)', () => {
+  async function invite(email = 'resend@example.test') {
+    const created = await api<{ data: { id: string } }>('/api/v1/organizations/me/invitations', {
+      method: 'POST',
+      token: ownerToken,
+      body: { name: 'B', email, roleType: 'editor' },
+    });
+    return created.body.data.id;
+  }
+
+  it('新しいリンクを送り直し、前のリンクは使えなくなる', async () => {
+    const invitationId = await invite();
+    const firstUrl = sent.at(-1)!.acceptUrl;
+
+    const res = await api<{ data: { expiresAt: string } }>(
+      `/api/v1/organizations/me/invitations/${invitationId}/resend`,
+      { method: 'POST', token: ownerToken },
+    );
+    expect(res.status).toBe(200);
+
+    const secondUrl = sent.at(-1)!.acceptUrl;
+    expect(sent).toHaveLength(2);
+    expect(secondUrl).not.toBe(firstUrl);
+
+    // 新しいリンクは通り、古いリンクは 404 になる
+    const newToken = secondUrl.split('/invitations/')[1]!;
+    const oldToken = firstUrl.split('/invitations/')[1]!;
+    expect((await api(`/api/v1/invitations/${newToken}`)).status).toBe(200);
+    expect((await api(`/api/v1/invitations/${oldToken}`)).status).toBe(404);
+  });
+
+  it('枠を余計に消費しない (招待は 1 件のまま)', async () => {
+    const invitationId = await invite();
+    await api(`/api/v1/organizations/me/invitations/${invitationId}/resend`, {
+      method: 'POST',
+      token: ownerToken,
+    });
+
+    const members = await api<MembersBody>('/api/v1/organizations/me/members', {
+      token: ownerToken,
+    });
+    expect(members.body.data.filter((m) => m.status === 'invited')).toHaveLength(1);
+  });
+
+  it('取り消し済みの招待は再送できない', async () => {
+    const invitationId = await invite();
+    await api(`/api/v1/organizations/me/invitations/${invitationId}`, {
+      method: 'DELETE',
+      token: ownerToken,
+    });
+
+    const res = await api<{ error: { code: string } }>(
+      `/api/v1/organizations/me/invitations/${invitationId}/resend`,
+      { method: 'POST', token: ownerToken },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('他人 (課金権限の無い会員) は再送できない', async () => {
+    const invitationId = await invite();
+    const other = await createUser();
+    const otherToken = await signTestJwt({ authUserId: other.authUserId, email: other.email });
+
+    const res = await api(
+      `/api/v1/organizations/me/invitations/${invitationId}/resend`,
+      { method: 'POST', token: otherToken },
+    );
+    expect([403, 404]).toContain(res.status);
+  });
+});
+
 describe('PATCH /organizations/me/members/:userId — 権限の変更 (#160)', () => {
   /** 組織に属する編集者を 1 名用意し、プロジェクトにも参加させる。 */
   async function seedEditor(projectCount = 1) {

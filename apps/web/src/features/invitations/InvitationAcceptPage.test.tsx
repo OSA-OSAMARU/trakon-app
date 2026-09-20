@@ -12,11 +12,13 @@ import type * as ReactRouterDom from 'react-router-dom';
 // supabase をモックして session を制御する。
 const getSession = vi.fn();
 const onAuthStateChange = vi.fn();
+const signOut = vi.fn();
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: (...a: unknown[]) => getSession(...a),
       onAuthStateChange: (...a: unknown[]) => onAuthStateChange(...a),
+      signOut: (...a: unknown[]) => signOut(...a),
     },
   },
 }));
@@ -112,6 +114,7 @@ beforeEach(() => {
   // 既定: 未認証 (session null)
   getSession.mockResolvedValue({ data: { session: null } });
   onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
+  signOut.mockResolvedValue({ error: null });
 });
 
 afterEach(() => {
@@ -150,15 +153,46 @@ describe('InvitationAcceptPage', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  it('未認証時は「ログインして承諾」ボタンを表示し、押すと /login?next=... へ遷移する', async () => {
+  // #231: アカウントを持たない人が招待リンクで行き止まりにならないようにする
+  it('未認証時は「新規登録して参加」から /login?screen=signup へ、招待先メール付きで遷移する', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stubVerify();
     renderWithProviders(<InvitationAcceptPage />);
 
-    const loginBtn = await screen.findByRole('button', { name: /ログインして承諾/ });
-    await user.click(loginBtn);
+    await user.click(await screen.findByRole('button', { name: /新規登録して参加/ }));
     expect(navigate).toHaveBeenCalledWith(
-      `/login?next=${encodeURIComponent('/invitations/tok-123')}`,
+      `/login?screen=signup&next=${encodeURIComponent('/invitations/tok-123')}&email=${encodeURIComponent('hanako@example.com')}`,
+    );
+  });
+
+  it('未認証時は「ログインして参加」から /login?next=... へ、招待先メール付きで遷移する', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stubVerify();
+    renderWithProviders(<InvitationAcceptPage />);
+
+    await user.click(await screen.findByRole('button', { name: /ログインして参加/ }));
+    expect(navigate).toHaveBeenCalledWith(
+      `/login?next=${encodeURIComponent('/invitations/tok-123')}&email=${encodeURIComponent('hanako@example.com')}`,
+    );
+  });
+
+  // #231: 押してから 403 で弾かれるより、押す前に気付けるほうがよい
+  it('招待先と違うアカウントでログイン中は承諾を止め、入り直しを促す', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    getSession.mockResolvedValue({ data: { session: { user: { id: 'u1' } } } });
+    stubVerify();
+    stubSync({
+      ...SYNC_OK,
+      user: { ...SYNC_OK.user!, email: 'someone-else@example.com' },
+    } as SyncResponse);
+    renderWithProviders(<InvitationAcceptPage />);
+
+    expect(await screen.findByRole('button', { name: '承諾' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /別のアカウントでログイン/ }));
+
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+    expect(navigate).toHaveBeenCalledWith(
+      `/login?next=${encodeURIComponent('/invitations/tok-123')}&email=${encodeURIComponent('hanako@example.com')}`,
     );
   });
 

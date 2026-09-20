@@ -59,4 +59,10 @@ export const orgApi = {
     apiRequest<{ id: string }>('/organizations/me/invitations', { method: 'POST', body }),
   revokeInvitation: (invitationId: string) =>
     apiRequest<void>(`/organizations/me/invitations/${invitationId}`, { method: 'DELETE' }),
+  /** 招待メールを送り直す (#230)。新しいトークンになるので前のリンクは無効になる */
+  resendInvitation: (invitationId: string) =>
+    apiRequest<{ expiresAt: string }>(
+      `/organizations/me/invitations/${invitationId}/resend`,
+      { method: 'POST' },
+    ),
 };

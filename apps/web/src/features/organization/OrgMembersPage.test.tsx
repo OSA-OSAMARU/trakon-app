@@ -347,17 +347,73 @@ describe('OrgMembersPage', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('オーナーは削除メニューが無効', async () => {
+  it('オーナーの行には削除の項目を出さず、理由を出す', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stub();
     renderPage();
     await screen.findByText('佐藤 航');
 
     await user.click(screen.getByRole('button', { name: '佐藤 航 の操作' }));
-    expect(await screen.findByRole('menuitem', { name: 'メンバーを削除' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
+    expect(await screen.findByText('オーナーは削除できません')).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'メンバーを削除' })).not.toBeInTheDocument();
+  });
+
+  // #230: 招待が届かなかったときに追いかける手段がこれしか無い
+  it('招待中の行は「招待メールを再送」で resend POST を送る', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stub();
+    let resent = false;
+    server.use(
+      http.post('*/api/v1/organizations/me/invitations/inv-1/resend', () => {
+        resent = true;
+        return HttpResponse.json({ data: { expiresAt: '2026-03-01T00:00:00Z' } });
+      }),
     );
+
+    renderPage();
+    await screen.findByText('石原 美咲');
+
+    await user.click(screen.getByRole('button', { name: '石原 美咲 の操作' }));
+    await user.click(await screen.findByRole('menuitem', { name: '招待メールを再送' }));
+
+    await waitFor(() => expect(resent).toBe(true));
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith('ishihara@example.jp に招待メールを送り直しました'),
+    );
+  });
+
+  it('再送に失敗したらエラートーストを出す', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stub();
+    server.use(
+      http.post('*/api/v1/organizations/me/invitations/inv-1/resend', () =>
+        HttpResponse.json(
+          { error: { code: 'MAIL_SEND_FAILED', message: 'メールを送信できませんでした' } },
+          { status: 500 },
+        ),
+      ),
+    );
+
+    renderPage();
+    await screen.findByText('石原 美咲');
+
+    await user.click(screen.getByRole('button', { name: '石原 美咲 の操作' }));
+    await user.click(await screen.findByRole('menuitem', { name: '招待メールを再送' }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith('メールを送信できませんでした'),
+    );
+  });
+
+  it('会員の行には再送を出さない (招待中ではないため)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stub();
+    renderPage();
+    await screen.findByText('横山 美咲');
+
+    await user.click(screen.getByRole('button', { name: '横山 美咲 の操作' }));
+    expect(await screen.findByRole('menuitem', { name: 'メンバーを削除' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: '招待メールを再送' })).not.toBeInTheDocument();
   });
 
   it('参加PJ をクリックするとドロワーが開き、ボール保持数が出る', async () => {

@@ -366,3 +366,116 @@ describe('SC01LoginPage — create-account 画面', () => {
     ).toBeInTheDocument();
   });
 });
+
+// -----------------------------------------------------------------------------
+// #231 認証後の戻り先 (?next=)
+//
+// 招待リンクから来た人を招待画面に戻すための経路。以前は next を URL に付けては
+// いたが誰も読んでおらず、ログインを終えると必ず /dashboard に着地していた
+// (＝ 招待が受諾されないまま期限切れになる)。
+// -----------------------------------------------------------------------------
+describe('SC01LoginPage — 認証後の戻り先 (#231)', () => {
+  const NEXT = '/invitations/tok-123';
+  const encoded = encodeURIComponent(NEXT);
+
+  it('ログイン成功で next の画面へ戻る', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(<SC01LoginPage />, { route: `/login?next=${encoded}` });
+
+    await user.type(screen.getByLabelText('メールアドレス'), 'me@example.com');
+    await user.type(screen.getByLabelText('パスワード'), 'secret123');
+    await user.click(screen.getByRole('button', { name: 'ログイン' }));
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(NEXT, { replace: true }));
+  });
+
+  it('招待先メールを入力欄の初期値にする', async () => {
+    renderWithProviders(<SC01LoginPage />, {
+      route: `/login?next=${encoded}&email=${encodeURIComponent('hanako@example.com')}`,
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('メールアドレス')).toHaveValue('hanako@example.com'),
+    );
+  });
+
+  it('マジックリンクの着地 URL に next を載せる (別タブで開かれても戻れるように)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(<SC01LoginPage />, { route: `/login?screen=signup&next=${encoded}` });
+
+    await user.type(screen.getByLabelText('メールアドレス'), 'newbie@example.com');
+    await user.click(screen.getByLabelText(/利用規約/));
+    await user.click(screen.getByRole('button', { name: /認証メールを送る/ }));
+
+    await waitFor(() =>
+      expect(auth.signInWithOtp).toHaveBeenCalledWith({
+        email: 'newbie@example.com',
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encoded}`,
+        },
+      }),
+    );
+  });
+
+  it('OAuth のコールバック URL にも next を載せる', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(<SC01LoginPage />, { route: `/login?next=${encoded}` });
+
+    await user.click(await screen.findByRole('button', { name: /Google で続ける/ }));
+
+    await waitFor(() =>
+      expect(auth.signInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          options: expect.objectContaining({
+            redirectTo: `${window.location.origin}/auth/callback?next=${encoded}`,
+          }),
+        }),
+      ),
+    );
+  });
+
+  it('プロフィール登録を終えても next の画面へ戻る', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: makeSession('u9', 'n@example.com') } });
+    server.use(
+      http.post('*/api/v1/auth/me/complete-signup', () =>
+        HttpResponse.json({
+          data: {
+            id: 'u9',
+            email: 'n@example.com',
+            fullName: '新規 太郎',
+            displayName: 'たろ',
+            primaryAuthMethod: 'password',
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+        }),
+      ),
+    );
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(<SC01LoginPage />, {
+      route: `/login?screen=create-account&next=${encoded}`,
+    });
+
+    await screen.findByText('n@example.com');
+    await user.type(screen.getByLabelText('氏名'), '新規 太郎');
+    await user.type(screen.getByLabelText('表示名'), 'たろ');
+    await user.type(screen.getByLabelText('パスワード'), 'abcd1234!');
+    await user.type(screen.getByLabelText('パスワード（確認）'), 'abcd1234!');
+    await user.click(screen.getByRole('button', { name: '登録' }));
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(NEXT, { replace: true }));
+  });
+
+  it('別サイトを指す next は無視してダッシュボードへ送る', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderWithProviders(<SC01LoginPage />, {
+      route: `/login?next=${encodeURIComponent('https://evil.example/steal')}`,
+    });
+
+    await user.type(screen.getByLabelText('メールアドレス'), 'me@example.com');
+    await user.type(screen.getByLabelText('パスワード'), 'secret123');
+    await user.click(screen.getByRole('button', { name: 'ログイン' }));
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/dashboard', { replace: true }));
+  });
+});

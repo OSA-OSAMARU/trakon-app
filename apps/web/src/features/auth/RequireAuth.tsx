@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 
 import { useCurrentUser } from './useCurrentUser';
+import { withNextParam } from './nextPath';
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -10,13 +11,15 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     return <CenteredSpinner label="読み込み中…" />;
   }
 
+  const next = location.pathname + location.search;
+
   if (!session) {
-    const next = encodeURIComponent(location.pathname + location.search);
-    return <Navigate to={`/login?next=${next}`} replace />;
+    return <Navigate to={withNextParam('/login', next)} replace />;
   }
 
   if (data?.requiresProfileCompletion) {
-    return <Navigate to="/login?screen=create-account" replace />;
+    // プロフィール登録のあと、元々開こうとしていた画面へ戻す (#231)
+    return <Navigate to={withNextParam('/login?screen=create-account', next)} replace />;
   }
 
   return <>{children}</>;
