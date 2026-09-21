@@ -210,39 +210,57 @@ async function downgradeToPersonal(input: {
   }
 
   const stripe = getStripe();
-  const current = await stripe.subscriptions.retrieve(input.subscription.stripeSubscriptionId!);
-  const item = current.items?.data?.[0];
-  if (!item) {
-    throw new ApiException('SUBSCRIPTION_ITEM_NOT_FOUND', 502, 'Subscription item not found.');
+
+  // 次回更新時に切り替える。返金は行わない (§7.7.2)。
+  //
+  // `from_subscription` は現在の契約をそのまま 1 フェーズに写す。
+  // **その写しを自前で組み直してはならない (#244)。**
+  // トライアル中の契約なら写されたフェーズは `trial_end` を持っており、これを
+  // 書き戻さずに上書きすると、Stripe は有料フェーズと解釈してトライアルを
+  // その場で打ち切り、満額の請求書を起こす。つまり「ダウングレードを申し込んだ
+  // だけで課金される」。さらに期間の途中でプランが変わる形になるため、
+  // 本来生じないはずの日割り調整まで次回請求書に乗る。
+  //
+  // ここで行うのは **後ろに Personal のフェーズを足すことだけ**にする。
+  const schedule = await stripe.subscriptionSchedules.create({
+    from_subscription: input.subscription.stripeSubscriptionId!,
+  });
+  const currentPhase = schedule.phases?.[0];
+  if (!currentPhase) {
+    throw new ApiException(
+      'SUBSCRIPTION_ITEM_NOT_FOUND',
+      502,
+      'Subscription schedule has no phase.',
+    );
   }
 
-  const periodEnd = readPeriodEnd(current, item);
+  await stripe.subscriptionSchedules.update(schedule.id, {
+    end_behavior: 'release',
+    phases: [
+      {
+        items: currentPhase.items.map((phaseItem) => ({
+          price: typeof phaseItem.price === 'string' ? phaseItem.price : phaseItem.price.id,
+          quantity: phaseItem.quantity ?? 1,
+        })),
+        start_date: currentPhase.start_date,
+        end_date: currentPhase.end_date,
+        // トライアル中なら必ず引き継ぐ (上のコメント参照)
+        ...(currentPhase.trial_end ? { trial_end: currentPhase.trial_end } : {}),
+      },
+      {
+        items: [{ price: priceIdFor('personal'), quantity: 1 }],
+      },
+    ],
+  });
 
-  // 次回更新時に切り替える。返金は行わない (§7.7.2)
-  await stripe.subscriptionSchedules
-    .create({ from_subscription: input.subscription.stripeSubscriptionId! })
-    .then((schedule) =>
-      stripe.subscriptionSchedules.update(schedule.id, {
-        end_behavior: 'release',
-        phases: [
-          {
-            items: [{ price: item.price.id, quantity: 1 }],
-            start_date: schedule.current_phase?.start_date ?? 'now',
-            end_date: periodEnd ?? undefined,
-          },
-          {
-            items: [{ price: priceIdFor('personal'), quantity: 1 }],
-          },
-        ],
-      }),
-    );
+  const periodEnd = currentPhase.end_date;
 
   await prisma.$transaction([
     prisma.billingSubscription.update({
       where: { organizationId: input.organizationId },
       data: {
         pendingPlanCode: 'personal',
-        pendingPlanEffectiveAt: periodEnd ? new Date(periodEnd * 1000) : null,
+        pendingPlanEffectiveAt: new Date(periodEnd * 1000),
       },
     }),
     prisma.auditLog.create({

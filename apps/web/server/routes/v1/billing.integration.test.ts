@@ -61,7 +61,19 @@ beforeEach(async () => {
   });
   // 二重契約チェック (#241) が引く顧客の契約一覧。既定は「他に契約なし」
   subscriptionsList.mockResolvedValue({ data: [] });
-  scheduleCreate.mockResolvedValue({ id: 'sub_sched_1', current_phase: { start_date: 1_760_000_000 } });
+  // `from_subscription` は現在の契約をそのまま 1 フェーズに写して返す (#244)
+  scheduleCreate.mockResolvedValue({
+    id: 'sub_sched_1',
+    current_phase: { start_date: 1_760_000_000 },
+    phases: [
+      {
+        items: [{ price: { id: TEST_STRIPE.teamPriceId }, quantity: 1 }],
+        start_date: 1_760_000_000,
+        end_date: 1_762_000_000,
+        trial_end: null,
+      },
+    ],
+  });
   scheduleUpdate.mockResolvedValue({ id: 'sub_sched_1' });
   stubStripe();
 
