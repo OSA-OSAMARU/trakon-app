@@ -242,6 +242,37 @@ describe('OrgMembersPage', () => {
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('招待を取り消しました'));
   });
 
+  /**
+   * メニュー → 確認ダイアログ → 実行、のあとも画面を操作できること (#240)。
+   *
+   * Radix の既定ではメニューが開いている間 body の pointer-events が none になる。
+   * 閉じ切る前にダイアログが重なると「元の値」として none を覚えてしまい、
+   * ダイアログを閉じたあとも画面全体がクリックできないまま残る。
+   */
+  it('招待を取り消したあとも画面を操作できる (#240)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stub();
+    let deleted = false;
+    server.use(
+      http.delete('*/api/v1/organizations/me/invitations/inv-1', () => {
+        deleted = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    renderPage();
+    await screen.findByText('石原 美咲');
+
+    await user.click(screen.getByRole('button', { name: '石原 美咲 の操作' }));
+    await user.click(await screen.findByRole('menuitem', { name: '招待を取り消す' }));
+    await user.click(await screen.findByRole('button', { name: '招待を取り消す' }));
+    await waitFor(() => expect(deleted).toBe(true));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+
+    // 画面全体が「触れない」状態で取り残されていないこと
+    await waitFor(() => expect(document.body).not.toHaveStyle({ pointerEvents: 'none' }));
+  });
+
   it('会員を削除すると DELETE /organizations/me/members/:id を送る', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stub();

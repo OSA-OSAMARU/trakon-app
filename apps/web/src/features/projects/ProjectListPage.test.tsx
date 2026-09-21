@@ -187,6 +187,10 @@ describe('ProjectListPage (integration)', () => {
     await user.click(within(dialog).getByRole('button', { name: 'アーカイブする' }));
 
     await waitFor(() => expect(archiveCalled).toBe(true));
+
+    // メニューから開いたダイアログの後始末が漏れて、画面全体が触れないまま
+    // 残らないこと (#240)
+    await waitFor(() => expect(document.body).not.toHaveStyle({ pointerEvents: 'none' }));
   });
 
   it('メンバー (非ディレクター) にはアーカイブ操作が出ない', async () => {
