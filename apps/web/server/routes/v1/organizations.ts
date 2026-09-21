@@ -11,6 +11,7 @@ import { requireOrgBillingRole, requireOrgMember } from '../../middleware/orgAut
 import { attachCurrentUserId } from '../../middleware/projectAuth.js';
 import { retainedProjectsBodySchema } from '../../schemas/billing.js';
 import { setRetainedProjects } from '../../services/billing/freeze.js';
+import { listMemberCandidates } from '../../services/members.js';
 import {
   changeDefaultProjectRole,
   createOrgInvitation,
@@ -65,6 +66,19 @@ export const organizationsRoute = new Hono()
   .get('/me/members', requireOrgBillingRole(), async (c) => {
     const { organizationId } = c.get('organization');
     return c.json({ data: await listOrgMembers(organizationId) });
+  })
+
+  /**
+   * 参加者に選べる組織メンバーの候補 (#238)。
+   *
+   * 一覧 (`/me/members`) は同僚の連絡先まで返すため組織の管理者に限っているが、
+   * 候補は**組織の会員なら誰でも**引ける。プロジェクトを作る人が組織の一般会員
+   * だと、候補が 403 で空になり参加者を 1 人も選べなくなるため。
+   * 返すのは選ぶのに要る項目だけ (氏名・所属名・アイコン・既定の権限)。
+   */
+  .get('/me/members/candidates', async (c) => {
+    const { organizationId } = c.get('organization');
+    return c.json({ data: await listMemberCandidates({ organizationId }) });
   })
 
   /** 参加PJ ドロワー (#160)。ボール保持数つきで返す */

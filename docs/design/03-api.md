@@ -306,6 +306,7 @@ flowchart TB
 | `GET /projects/:projectId` | ❌ | ❌ | ✅ | ✅ | ✅ | |
 | `PATCH /projects/:projectId` | ❌ | ❌ | ❌ | ❌ | ✅ | |
 | `GET /projects/:projectId/members` | ❌ | ❌ | ✅ | ✅ | ✅ | |
+| `GET /projects/:projectId/members/candidates` **(#238)** | ❌ | ❌ | ❌ | ❌ | ✅ | 参加者に追加できる組織メンバー。**このプロジェクトの組織**から引き、既に参加している人を除く。追加できる権限と同じにする（一覧できても追加できない／その逆を作らない） |
 | `POST /projects/:projectId/members` | ❌ | ❌ | ❌ | ❌ | ✅ | |
 | `PATCH /projects/:projectId/members/:memberId` | ❌ | ❌ | ❌ | ❌ | ✅ | |
 | `DELETE /projects/:projectId/members/:memberId` | ❌ | ❌ | ❌ | ❌ | ✅ | |
@@ -352,6 +353,7 @@ flowchart TB
 | `POST /api/v1/billing/plan` | ❌ | ❌ | ✅ | プラン変更（Personal ⇄ Team） |
 | `POST /api/v1/billing/cancel` / `resume` | ❌ | ❌ | ✅ | 解約予約 / 取り消し |
 | `GET /api/v1/organizations/me/members` | ❌ | ❌ | ✅ | 会員アカウント一覧 + **保留中の招待**（座席の内訳）。**#160 で一般会員には非公開にした**（同僚の通知先メール・所属・職種を返すため） |
+| `GET /api/v1/organizations/me/members/candidates` **(#238)** | ❌ | ✅ | ✅ | 参加者に選べる候補（氏名・所属名・アイコン・既定の権限のみ）。**連絡先を含まないので一般会員も引ける**。一覧と同じ認可にすると、組織の一般会員が作ったプロジェクトで参加者を 1 人も選べなくなる |
 | `GET /api/v1/organizations/me/members/:userId/projects` **(#160)** | ❌ | ❌ | ✅ | その人の参加プロジェクトとボール保持数（参加PJ ドロワー） |
 | `PATCH /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織ロール（課金権限）／**既定のプロジェクト権限**の変更。後者は参加中の全プロジェクトへ反映される（#160） |
 | `DELETE /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織からの除外（座席の解放） |
@@ -391,6 +393,7 @@ flowchart TB
 | Projects | GET | `/projects/:projectId` | — | SC-06 ヘッダ |
 | Projects | PATCH | `/projects/:projectId` | — | SC-10 |
 | Members | GET | `/projects/:projectId/members` | UC-02, 03 | SC-06 横軸, SC-11 |
+| Members | GET | `/projects/:projectId/members/candidates` **(#238)** | UC-02, 03 | SC-11 |
 | Members | POST | `/projects/:projectId/members` | UC-02, 03 | SC-04, SC-10 |
 | Members | PATCH | `/projects/:projectId/members/:memberId` | — | SC-11 |
 | Members | DELETE | `/projects/:projectId/members/:memberId` | — | SC-11 |
@@ -435,6 +438,7 @@ flowchart TB
 | Billing | POST | `/billing/cancel` | UC-29 | SC-18 |
 | Billing | POST | `/billing/resume` | UC-29 | SC-18 |
 | Organizations | GET | `/organizations/me/members` | UC-22 | メンバー管理 |
+| Organizations | GET | `/organizations/me/members/candidates` **(#238)** | UC-22 | SC-04 |
 | Organizations | GET | `/organizations/me/members/:userId/projects` **(#160)** | UC-22 | メンバー管理 |
 | Organizations | PATCH | `/organizations/me/members/:userId` | UC-22 | メンバー管理 |
 | Organizations | DELETE | `/organizations/me/members/:userId` | UC-22 | メンバー管理 |
@@ -925,6 +929,41 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
   }>
 }
 ```
+
+---
+
+#### `GET /api/v1/projects/:projectId/members/candidates` **(#238)**
+
+参加者に追加できる組織メンバー。SC-11 の「参加者を追加」ダイアログで使用。
+
+**認可**：プロジェクト管理者（`member.create` と同じ。一覧できても追加できない状態を作らない）。
+
+**組織は「このプロジェクトのもの」を使う**。`/organizations/me/members` はログイン利用者の
+既定組織を返すため、別組織に招かれている人がその組織のプロジェクトを開くと候補がずれる。
+
+**レスポンス（200）**：
+```typescript
+{
+  data: {
+    candidates: Array<{
+      userId: string,
+      name: string,
+      organizationName: string | null,
+      avatarUrl: string | null,          // 署名付き・1 時間有効
+      defaultProjectRole: string,        // 追加時の初期値
+    }>,
+    joinedCount: number,   // 既にこのプロジェクトに居るため外した人数
+    pendingCount: number,  // 未受諾の招待の数（承諾されれば候補になる）
+  }
+}
+```
+
+> `joinedCount` / `pendingCount` は**候補が空になった理由を画面で言い分ける**ために返す。
+> 「まだ誰も居ない（招待して）」「全員参加済み（することは無い）」「承諾待ち」は
+> 利用者の次の一手が変わるため、同じ文面にしてはならない（#238）。
+>
+> メールだけ一致する未紐付けの参加者行がある人も候補から外す。残すと追加時に
+> 409 `MEMBER_EMAIL_TAKEN` になり、選べるのに追加できない状態になる。
 
 ---
 

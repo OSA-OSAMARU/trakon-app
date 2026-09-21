@@ -37,30 +37,26 @@ beforeAll(() => {
   Element.prototype.releasePointerCapture = vi.fn();
 });
 
-/** 参加者の候補になる組織メンバー (#202)。 */
-const ORG_MEMBERS = [
-  {
-    userId: 'u-taro',
-    invitationId: null,
-    status: 'active',
-    name: '山田 太郎',
-    organizationName: 'Acme',
-    email: 'taro@example.com',
-    jobTitle: null,
-    avatarUrl: null,
-    orgRole: 'member',
-    defaultProjectRole: 'editor',
-    projectCount: 0,
-    joinedAt: '2026-06-01T00:00:00.000Z',
-    expiresAt: null,
-  },
-];
+/** 参加者の候補になる組織メンバー (#202 / #238)。 */
+const CANDIDATES = {
+  candidates: [
+    {
+      userId: 'u-taro',
+      name: '山田 太郎',
+      organizationName: 'Acme',
+      avatarUrl: null,
+      defaultProjectRole: 'editor',
+    },
+  ],
+  joinedCount: 0,
+  pendingCount: 0,
+};
 
 beforeEach(() => {
   navigateMock.mockClear();
   server.use(
-    http.get('*/api/v1/organizations/me/members', () =>
-      HttpResponse.json({ data: ORG_MEMBERS }),
+    http.get('*/api/v1/organizations/me/members/candidates', () =>
+      HttpResponse.json({ data: CANDIDATES }),
     ),
   );
 });

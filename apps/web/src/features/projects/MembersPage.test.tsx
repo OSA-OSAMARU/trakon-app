@@ -53,48 +53,35 @@ function renderMembers(route: string) {
 
 const MANAGE = '/projects/p1/members?tab=manage';
 
-/** 参加者の候補になる組織メンバー (#202)。 */
-const ORG_MEMBERS = [
-  {
-    userId: 'u1',
-    invitationId: null,
-    status: 'active',
-    name: '山田 太郎',
-    organizationName: 'Acme',
-    email: 'taro@example.com',
-    jobTitle: null,
-    avatarUrl: null,
-    orgRole: 'owner',
-    defaultProjectRole: 'admin',
-    projectCount: 1,
-    joinedAt: '2026-06-01T00:00:00.000Z',
-    expiresAt: null,
-  },
-  {
-    userId: 'u9',
-    invitationId: null,
-    status: 'active',
-    name: '新規 太郎',
-    organizationName: 'NewCo',
-    email: 'new@example.com',
-    jobTitle: null,
-    avatarUrl: null,
-    orgRole: 'member',
-    defaultProjectRole: 'editor',
-    projectCount: 0,
-    joinedAt: '2026-06-01T00:00:00.000Z',
-    expiresAt: null,
-  },
-];
+/**
+ * 参加者に追加できる候補 (#202 / #238)。
+ * サーバーが「このプロジェクトの組織から、既に居る人を除いて」返すもの。
+ */
+const CANDIDATES = {
+  candidates: [
+    {
+      userId: 'u9',
+      name: '新規 太郎',
+      organizationName: 'NewCo',
+      avatarUrl: null,
+      defaultProjectRole: 'editor',
+    },
+  ],
+  joinedCount: 1,
+  pendingCount: 0,
+};
 
 /** members 一覧 GET をスタブする。招待一覧は既定で空。 */
-function stubMembers(members: ProjectMember[]) {
+function stubMembers(
+  members: ProjectMember[],
+  candidates: typeof CANDIDATES = CANDIDATES,
+) {
   server.use(
+    http.get('*/api/v1/projects/p1/members/candidates', () =>
+      HttpResponse.json({ data: candidates }),
+    ),
     http.get('*/api/v1/projects/p1/members', () => HttpResponse.json({ data: members })),
     http.get('*/api/v1/projects/p1/invitations', () => HttpResponse.json({ data: [] })),
-    http.get('*/api/v1/organizations/me/members', () =>
-      HttpResponse.json({ data: ORG_MEMBERS }),
-    ),
   );
 }
 
@@ -472,6 +459,76 @@ describe('MembersPage 権限ロール (integration)', () => {
       '/settings/members',
     );
     expect(screen.queryByRole('button', { name: /招待を送る/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('追加できる人が居ないときの理由 (#238)', () => {
+  /** 追加ダイアログを開いて中身を返す */
+  async function openAddDialog() {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderMembers(MANAGE);
+    await user.click(await screen.findByRole('button', { name: /参加者を追加/ }));
+    return screen.findByRole('dialog');
+  }
+
+  it('全員が既に参加済みなら、そう言う (招待を促さない)', async () => {
+    stubMembers([member({ id: 'm1', roleType: 'admin' })], {
+      candidates: [],
+      joinedCount: 3,
+      pendingCount: 0,
+    });
+
+    const dialog = await openAddDialog();
+
+    expect(await within(dialog).findByText(/3 名は、全員このプロジェクトに参加済み/)).toBeInTheDocument();
+    // 「まだ居ないので招待して」は誤案内になる
+    expect(within(dialog).queryByText(/先にそちらから招待してください/)).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /追加する/ })).toBeDisabled();
+  });
+
+  it('招待中の人しか居なければ、承諾待ちだと分かる', async () => {
+    stubMembers([member({ id: 'm1', roleType: 'admin' })], {
+      candidates: [],
+      joinedCount: 0,
+      pendingCount: 2,
+    });
+
+    const dialog = await openAddDialog();
+
+    expect(await within(dialog).findByText(/招待中の 2 名は、まだ承諾されていない/)).toBeInTheDocument();
+  });
+
+  it('組織にまだ誰も居なければ、メンバー管理へ送る', async () => {
+    stubMembers([member({ id: 'm1', roleType: 'admin' })], {
+      candidates: [],
+      joinedCount: 0,
+      pendingCount: 0,
+    });
+
+    const dialog = await openAddDialog();
+
+    expect(await within(dialog).findByText(/先にそちらから招待してください/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('link', { name: 'メンバー管理' })).toHaveAttribute(
+      'href',
+      '/settings/members',
+    );
+  });
+
+  it('候補の取得に失敗したら、黙って空にせずエラーを出す', async () => {
+    stubMembers([member({ id: 'm1', roleType: 'admin' })]);
+    server.use(
+      http.get('*/api/v1/projects/p1/members/candidates', () =>
+        HttpResponse.json({ error: { code: 'FORBIDDEN', message: 'x' } }, { status: 403 }),
+      ),
+    );
+
+    const dialog = await openAddDialog();
+
+    expect(
+      await within(dialog).findByText(/追加できるメンバーを取得できませんでした/),
+    ).toBeInTheDocument();
+    // 原因が分からないまま「招待してください」と案内しない
+    expect(within(dialog).queryByText(/先にそちらから招待してください/)).not.toBeInTheDocument();
   });
 });
 

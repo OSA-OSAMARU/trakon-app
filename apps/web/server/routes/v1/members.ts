@@ -14,6 +14,7 @@ import {
 import {
   addMembers,
   deleteMember,
+  listMemberCandidates,
   listMembers,
   reorderMembers,
   updateMember,
@@ -29,6 +30,23 @@ export const membersRoute = new Hono()
     const project = c.get('project');
     const members = await listMembers(project.projectId);
     return c.json({ data: members });
+  })
+
+  /**
+   * 参加者に追加できる組織メンバーの候補 (#238)。
+   *
+   * 組織は**このプロジェクトのもの**を使う。既定組織 (`/organizations/me/members`)
+   * を使うと、別組織に招かれている利用者の画面で候補が空になったり、
+   * 追加できない人が並んだりする。
+   */
+  .get('/candidates', requireProjectMember(), requireProjectAction('member.create'), async (c) => {
+    const project = c.get('project');
+    return c.json({
+      data: await listMemberCandidates({
+        organizationId: project.organizationId,
+        projectId: project.projectId,
+      }),
+    });
   })
 
   .post('/', requireProjectMember(), requireProjectWritable(), requireProjectAction('member.create'), async (c) => {
