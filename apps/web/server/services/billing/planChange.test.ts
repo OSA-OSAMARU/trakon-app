@@ -13,7 +13,7 @@ import { __setStripeForTest } from './stripeClient.js';
 // =============================================================================
 
 const prismaMock = vi.hoisted(() => ({
-  billingSubscription: { findUnique: vi.fn(), update: vi.fn() },
+  billingSubscription: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   organizationMember: { count: vi.fn() },
   invitation: { count: vi.fn() },
   project: { count: vi.fn(), findMany: vi.fn() },
@@ -65,8 +65,12 @@ beforeEach(() => {
     planCode: 'personal',
     status: 'active',
     stripeSubscriptionId: 'sub_1',
+    pendingPlanCode: null,
+    pendingPlanEffectiveAt: null,
   });
   prismaMock.billingSubscription.update.mockReset().mockReturnValue({});
+  // 受付の印を押さえる条件付き更新 (#241)。既定は「押さえられた」
+  prismaMock.billingSubscription.updateMany.mockReset().mockResolvedValue({ count: 1 });
   prismaMock.auditLog.create.mockReset().mockReturnValue({});
   prismaMock.organizationMember.count.mockReset().mockResolvedValue(1);
   prismaMock.invitation.count.mockReset().mockResolvedValue(0);
@@ -224,6 +228,81 @@ describe('changePlan の前提', () => {
       code: 'NO_ACTIVE_SUBSCRIPTION',
       status: 409,
     });
+  });
+});
+
+// =============================================================================
+// 二重の申し込みを受け付けない (#241)
+//
+// Personal → Team は請求書を起こす操作なので、同じ変更が二度通ると余計な請求が
+// 立つ。画面の不具合や二度押しで届いた 2 本目を止める。
+// =============================================================================
+describe('二重の申し込み (#241)', () => {
+  it('同じ変更が受付済みなら、Stripe を呼ばずに 409', async () => {
+    prismaMock.billingSubscription.findUnique.mockResolvedValue({
+      organizationId: 'org-1',
+      planCode: 'personal',
+      status: 'active',
+      stripeSubscriptionId: 'sub_1',
+      pendingPlanCode: 'team',
+      pendingPlanEffectiveAt: null,
+    });
+
+    await expect(changePlan({ ...actor, planCode: 'team' })).rejects.toMatchObject({
+      code: 'PLAN_CHANGE_ALREADY_REQUESTED',
+      status: 409,
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('同時に届いた 2 本目は、印を押さえられず Stripe を呼ばない', async () => {
+    // 読み取り時点ではどちらも保留なしに見える。押さえる更新が 0 件になった方を弾く
+    prismaMock.billingSubscription.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(changePlan({ ...actor, planCode: 'team' })).rejects.toMatchObject({
+      code: 'PLAN_CHANGE_ALREADY_REQUESTED',
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('Stripe を呼ぶ前に、受付の印を条件付きで押さえる', async () => {
+    await changePlan({ ...actor, planCode: 'team' });
+
+    const where = prismaMock.billingSubscription.updateMany.mock.calls[0]![0].where;
+    expect(where).toMatchObject({ organizationId: 'org-1', planCode: 'personal' });
+    // 同じ行き先が保留中のときだけ 0 件になる条件
+    expect(where.OR).toEqual([
+      { pendingPlanCode: null },
+      { pendingPlanCode: { not: 'team' } },
+    ]);
+  });
+
+  it('Stripe が失敗したら印を戻す (二度と申し込めなくしない)', async () => {
+    update.mockRejectedValue(new Error('stripe down'));
+
+    await expect(changePlan({ ...actor, planCode: 'team' })).rejects.toThrow('stripe down');
+
+    const rollback = prismaMock.billingSubscription.updateMany.mock.calls.at(-1)![0];
+    expect(rollback).toMatchObject({
+      where: { organizationId: 'org-1', pendingPlanCode: 'team' },
+      data: { pendingPlanCode: null, pendingPlanEffectiveAt: null },
+    });
+  });
+
+  it('行き先が違う変更なら受け付ける (上書きして良い)', async () => {
+    prismaMock.billingSubscription.findUnique.mockResolvedValue({
+      organizationId: 'org-1',
+      planCode: 'team',
+      status: 'active',
+      stripeSubscriptionId: 'sub_1',
+      // Team 昇格の保留が残ったまま Personal への変更を頼む
+      pendingPlanCode: 'team',
+      pendingPlanEffectiveAt: null,
+    });
+
+    const result = await changePlan({ ...actor, planCode: 'personal' });
+
+    expect(result.pendingPlanCode).toBe('personal');
   });
 });
 

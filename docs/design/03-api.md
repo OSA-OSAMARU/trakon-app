@@ -89,6 +89,9 @@ Phase 0 で必要な REST API（Hono on Vercel Functions）の設計を行う。
 | プロジェクト数上限に到達 | 409 | `PROJECT_LIMIT_REACHED` |
 | 座席（会員アカウント）上限に到達 | 409 | `SEAT_LIMIT_REACHED` |
 | ダウングレード条件を満たさない | 409 | `PLAN_DOWNGRADE_BLOCKED`（超過分を `details` で返す） |
+| 既に契約があるのに申し込もうとした | 409 | `SUBSCRIPTION_ALREADY_ACTIVE`（二重契約の防止 / §7.4.1b） |
+| 同じプラン変更が受付済み | 409 | `PLAN_CHANGE_ALREADY_REQUESTED`（二重請求の防止 / §7.7.1） |
+| 契約状態を Stripe に確認できない | 503 | `SUBSCRIPTION_CHECK_FAILED`（**確認できないときは申し込ませない**） |
 | 契約が閲覧のみ状態（未払い等） | 403 | `SUBSCRIPTION_READ_ONLY` |
 | プロジェクトが凍結中 | 403 | `PROJECT_FROZEN` |
 | 最後の管理者を降格・削除しようとした | 409 | `LAST_ADMIN` |

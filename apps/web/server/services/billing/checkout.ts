@@ -20,10 +20,17 @@
 import { randomUUID } from 'node:crypto';
 
 import { prisma } from '@trakon/db';
-import { TRIAL_PERIOD_DAYS, type BillingPlanCode } from '@trakon/shared';
+import {
+  hasLiveSubscription,
+  TRIAL_PERIOD_DAYS,
+  type BillingPlanCode,
+  type SubscriptionStatus,
+} from '@trakon/shared';
 
 import { getServerEnv } from '../../lib/env.js';
 import { ApiException } from '../../lib/errors.js';
+import { captureServerError } from '../../lib/sentry.js';
+import { reconcileSubscription } from './reconcile.js';
 import { getStripe } from './stripeClient.js';
 import { checkTrialEligibility } from './trialEligibility.js';
 
@@ -49,6 +56,90 @@ function taxRateIds(): string[] {
   return id ? [id] : [];
 }
 
+/**
+ * 二重契約の防止 (#241)。
+ *
+ * 申し込みは「新しい Subscription を作る」操作なので、既に契約がある状態で
+ * もう一度通してしまうと**同じ顧客に 2 本の契約ができ、二重に請求される**。
+ * プラン変更 (`/billing/plan`) は既存の契約を書き換えるだけなので、この危険は無い。
+ *
+ * 見るのは 2 段階。
+ *   1. 手元の契約行。`active` だけでなく **trialing / past_due / incomplete など
+ *      「Stripe 上に生きている契約がある」状態すべて**で止める。トライアル中に
+ *      もう一度申し込めてしまうのが一番危ない (#241)。
+ *   2. 手元が「契約なし」でも Stripe に直接聞く。Webhook が届いていない間は
+ *      手元が Free のままになるため (#209 / #235 で実際に起きた)、ここを手元の
+ *      状態だけで判断すると素通りする。
+ */
+async function assertNoLiveSubscription(input: {
+  organizationId: string;
+  subscription: { stripeSubscriptionId: string | null; stripeCustomerId: string | null; status: string } | null;
+}): Promise<void> {
+  const { subscription } = input;
+
+  if (
+    subscription?.stripeSubscriptionId &&
+    hasLiveSubscription(subscription.status as SubscriptionStatus)
+  ) {
+    throw alreadyActive();
+  }
+
+  if (!subscription?.stripeCustomerId) return;
+
+  const live = await listLiveSubscriptions(subscription.stripeCustomerId);
+  if (live.length === 0) return;
+
+  // 画面は「契約なし」のまま止まっているはず。ここで現在値へ合わせておく (#209)。
+  // 合わせられなくても**申し込みは通さない** — 二重契約より表示のずれの方が軽い。
+  try {
+    await reconcileSubscription({ organizationId: input.organizationId });
+  } catch (err) {
+    console.warn('[stripe] reconcile after duplicate check failed:', err);
+  }
+  throw alreadyActive();
+}
+
+function alreadyActive(): ApiException {
+  return new ApiException(
+    'SUBSCRIPTION_ALREADY_ACTIVE',
+    409,
+    '既に有効な契約があります。プラン変更をご利用ください。',
+  );
+}
+
+/**
+ * 顧客が持っている「生きている契約」を Stripe から引く (#241)。
+ *
+ * 取得に失敗したときは**申し込みを通さない**。ここで通すと、既に契約があっても
+ * 気づけずに 2 本目を作ってしまう。止めても失うのは申し込みの再試行だけで済む。
+ */
+async function listLiveSubscriptions(customerId: string) {
+  let list;
+  try {
+    list = await getStripe().subscriptions.list({ customer: customerId, status: 'all', limit: 20 });
+  } catch (err) {
+    console.warn('[stripe] subscription list failed on duplicate check:', err);
+    throw new ApiException(
+      'SUBSCRIPTION_CHECK_FAILED',
+      503,
+      '契約状態を確認できませんでした。時間をおいてもう一度お試しください。',
+    );
+  }
+
+  const live = list.data.filter((s) => hasLiveSubscription(s.status as SubscriptionStatus));
+
+  // 既に 2 本以上あるなら、どこかで二重契約が起きている。黙って通すと
+  // 請求が二重のまま続くので、気づける形で残す (自動では解約しない)
+  if (live.length > 1) {
+    captureServerError(new Error('duplicate live subscriptions on one customer'), {
+      customerId,
+      subscriptionIds: live.map((s) => s.id),
+    });
+  }
+
+  return live;
+}
+
 export async function createCheckoutSession(input: {
   organizationId: string;
   userId: string;
@@ -63,13 +154,10 @@ export async function createCheckoutSession(input: {
     }),
   ]);
 
-  if (subscription?.stripeSubscriptionId && subscription.status === 'active') {
-    throw new ApiException(
-      'SUBSCRIPTION_ALREADY_ACTIVE',
-      409,
-      '既に有効な契約があります。プラン変更をご利用ください。',
-    );
-  }
+  await assertNoLiveSubscription({
+    organizationId: input.organizationId,
+    subscription,
+  });
 
   const eligibility = await checkTrialEligibility({
     userId: input.userId,

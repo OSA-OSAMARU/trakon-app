@@ -188,6 +188,33 @@ cancel_url  = {APP_URL}/settings/billing?checkout=canceled
 - `payment_method_collection = 'always'`。トライアル開始時点でもカード登録を必須とする
 - トライアル対象外と判定された場合は `trial_period_days` を付与せず、その旨を申込前に画面で明示する
 
+### 7.4.1b. 二重契約の防止（#241）
+
+申し込みは **新しい Subscription を作る** 操作である。既に契約がある状態でもう一度通すと、
+同じ顧客に契約が 2 本でき、**二重に請求される**。プラン変更（§7.7）は既存の契約を書き換える
+だけなので、この危険は無い。
+
+Checkout Session を作る前に、次の順で確かめる。
+
+1. **手元の契約行**。`active` だけでなく `LIVE_SUBSCRIPTION_STATUSES`（trialing / past_due /
+   unpaid / incomplete / paused）すべてで止める。
+   > `status === 'active'` だけを見ていると、**トライアル中にもう 1 本契約できてしまう**。
+2. **Stripe の現在値**。手元が「契約なし」でも顧客 ID があれば `subscriptions.list` で確かめる。
+   Webhook が届かない間は手元が Free のままになるため（#209 / #235 で実際に起きた）、
+   手元の状態だけで判断すると素通りする。見つかったら §7.5b の照合を走らせて画面を現在値へ
+   戻したうえで 409 `SUBSCRIPTION_ALREADY_ACTIVE` を返す。
+
+**確認できないときは通さない**（503 `SUBSCRIPTION_CHECK_FAILED`）。止めて失うのは申し込みの
+再試行だけだが、通して失敗すると請求が二重になる。
+
+1 顧客に生きている契約が 2 本以上見つかった場合は、**自動では解約せず**エラー監視へ報告する。
+どちらを残すかは請求の履歴を見て決める判断であり、自動化すると正しい方を消しうる。
+
+> **残る穴**：先に作ってあった Checkout Session を後から完了させる経路（古いタブなど）は、
+> TRAKON の API を経由しないため事前には止められない。上記の検知でしか気づけない。
+
+---
+
 ### 7.4.2. success URL の扱い（最重要）
 
 **Checkout の success URL へ遷移したことのみをもって有料権限を付与してはならない**（PRD FR-BILL-05 / SR-BILL-03）。
@@ -310,6 +337,17 @@ BE が判定結果を DTO として返し、**FE はそれをそのまま表示�
 - `payment_behavior = 'pending_if_incomplete'` を指定し、追加請求の決済が完了するまで契約を保留状態とする
 - DB には **保留中のプラン変更**として記録するのみ。**追加請求の成功を Webhook（`invoice.paid` または有効状態の契約更新）で確認するまで Team 権限を付与しない**
 - 支払い失敗時は Team 権限を先付けしない
+
+> **二重申し込みの防止（#241）**：同じ行き先への変更が既に保留中なら 409
+> `PLAN_CHANGE_ALREADY_REQUESTED` で弾く。`always_invoice` は **請求書を起こす** 操作なので、
+> 二度通すと余計な請求が立つ。
+>
+> 判定は「読んでから判断する」だけでは足りない。同時に届いた 2 本はどちらも保留なしに見える。
+> `pending_plan_code` を **条件付き更新（UPDATE … WHERE pending_plan_code IS DISTINCT FROM
+> 行き先）で押さえてから** Stripe を呼び、押さえられなかった方を弾く。Stripe 呼び出しが失敗
+> したら押さえた印を元に戻す（戻さないと二度と申し込めなくなる）。
+>
+> 行き先が違う変更は上書きしてよい。保留が残ったまま身動きが取れなくなる状態を作らない。
 
 ### 7.7.2. Team → Personal（次回更新時）
 

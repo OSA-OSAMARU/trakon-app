@@ -17,6 +17,10 @@ const prismaMock = vi.hoisted(() => ({
 }));
 vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
 
+/** 二重契約を見つけたときに呼ぶ照合 (#241)。実体は reconcile.test.ts が見る */
+const reconcileMock = vi.hoisted(() => vi.fn());
+vi.mock('./reconcile.js', () => ({ reconcileSubscription: reconcileMock }));
+
 const envState: Record<string, unknown> = {};
 vi.mock('../../lib/env.js', () => ({ getServerEnv: () => envState }));
 
@@ -34,11 +38,14 @@ const FULL_ENV = {
 
 const checkoutCreate = vi.fn();
 const portalCreate = vi.fn();
+/** 二重契約チェック (#241) が引く顧客の契約一覧 */
+const subscriptionList = vi.fn();
 
 function stubStripe() {
   __setStripeForTest({
     checkout: { sessions: { create: checkoutCreate } },
     billingPortal: { sessions: { create: portalCreate } },
+    subscriptions: { list: subscriptionList },
   } as never);
 }
 
@@ -73,6 +80,8 @@ beforeEach(() => {
   setEnv(FULL_ENV);
   stubStripe();
   checkoutCreate.mockReset().mockResolvedValue({ url: 'https://checkout.stripe.test/s' });
+  subscriptionList.mockReset().mockResolvedValue({ data: [] });
+  reconcileMock.mockReset().mockResolvedValue({ synced: true });
   portalCreate.mockReset().mockResolvedValue({ url: 'https://portal.stripe.test/s' });
   prismaMock.billingSubscription.findUnique.mockReset().mockResolvedValue(null);
   prismaMock.user.findUniqueOrThrow.mockReset().mockResolvedValue({ email: 'owner@example.test' });
@@ -213,6 +222,101 @@ describe('createCheckoutSession', () => {
         status: 409,
       });
       expect(checkoutCreate).not.toHaveBeenCalled();
+    });
+
+    it.each(['trialing', 'past_due', 'incomplete', 'paused'] as const)(
+      '契約が生きていれば申し込ませない — status=%s (#241)',
+      async (status) => {
+        // active しか見ていないと、**トライアル中にもう 1 本契約が作れてしまう**
+        prismaMock.billingSubscription.findUnique.mockResolvedValue({
+          stripeSubscriptionId: 'sub_1',
+          status,
+          stripeCustomerId: 'cus_1',
+        });
+
+        await expect(createCheckoutSession(input)).rejects.toMatchObject({
+          code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+          status: 409,
+        });
+        expect(checkoutCreate).not.toHaveBeenCalled();
+      },
+    );
+
+    it('手元が「契約なし」でも、Stripe に契約があれば申し込ませない (#241)', async () => {
+      // Webhook が届いていない間は手元が Free のままになる (#209 / #235)。
+      // 手元の状態だけで判断すると、ここで 2 本目を作ってしまう
+      prismaMock.billingSubscription.findUnique.mockResolvedValue({
+        stripeSubscriptionId: null,
+        status: 'none',
+        stripeCustomerId: 'cus_1',
+      });
+      subscriptionList.mockResolvedValue({ data: [{ id: 'sub_live', status: 'active' }] });
+
+      await expect(createCheckoutSession(input)).rejects.toMatchObject({
+        code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+        status: 409,
+      });
+      expect(checkoutCreate).not.toHaveBeenCalled();
+      // 画面が「契約なし」のまま止まらないよう、現在値へ合わせ直す
+      expect(reconcileMock).toHaveBeenCalledWith({ organizationId: 'org-1' });
+    });
+
+    it('照合に失敗しても、申し込みは通さない (#241)', async () => {
+      prismaMock.billingSubscription.findUnique.mockResolvedValue({
+        stripeSubscriptionId: null,
+        status: 'none',
+        stripeCustomerId: 'cus_1',
+      });
+      subscriptionList.mockResolvedValue({ data: [{ id: 'sub_live', status: 'trialing' }] });
+      reconcileMock.mockRejectedValue(new Error('reconcile failed'));
+
+      await expect(createCheckoutSession(input)).rejects.toMatchObject({
+        code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+      });
+      expect(checkoutCreate).not.toHaveBeenCalled();
+    });
+
+    it('終了済みの契約しか無ければ申し込める (#241)', async () => {
+      prismaMock.billingSubscription.findUnique.mockResolvedValue({
+        stripeSubscriptionId: 'sub_old',
+        status: 'canceled',
+        stripeCustomerId: 'cus_1',
+      });
+      subscriptionList.mockResolvedValue({
+        data: [
+          { id: 'sub_old', status: 'canceled' },
+          { id: 'sub_older', status: 'incomplete_expired' },
+        ],
+      });
+
+      await expect(createCheckoutSession(input)).resolves.toMatchObject({
+        url: 'https://checkout.stripe.test/s',
+      });
+    });
+
+    it('契約状態を確認できなければ申し込ませない (#241)', async () => {
+      // 通してしまうと二重契約になりうる。止めれば失うのは再試行だけ
+      prismaMock.billingSubscription.findUnique.mockResolvedValue({
+        stripeSubscriptionId: null,
+        status: 'none',
+        stripeCustomerId: 'cus_1',
+      });
+      subscriptionList.mockRejectedValue(new Error('stripe down'));
+
+      await expect(createCheckoutSession(input)).rejects.toMatchObject({
+        code: 'SUBSCRIPTION_CHECK_FAILED',
+        status: 503,
+      });
+      expect(checkoutCreate).not.toHaveBeenCalled();
+    });
+
+    it('顧客がまだ無ければ Stripe には問い合わせない', async () => {
+      prismaMock.billingSubscription.findUnique.mockResolvedValue(null);
+
+      await createCheckoutSession(input);
+
+      expect(subscriptionList).not.toHaveBeenCalled();
+      expect(checkoutCreate).toHaveBeenCalled();
     });
 
     it('Price ID が未設定なら 503 BILLING_NOT_CONFIGURED', async () => {

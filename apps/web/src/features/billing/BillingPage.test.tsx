@@ -465,6 +465,78 @@ describe('BillingPage (integration)', () => {
   // ===========================================================================
   // #235: 課金が動く操作は、押した瞬間ではなく確認してから実行する。
   // ===========================================================================
+  // ===========================================================================
+  // #241: 二重契約の防止。
+  // 申し込みは「新しい契約を作る」操作なので、既に契約がある状態で通すと
+  // 二重に請求される。最後の砦はサーバーだが、画面でも押させない。
+  // ===========================================================================
+  describe('二重の申し込みを防ぐ (#241)', () => {
+    it('受付済みのプランは、もう一度押せない', async () => {
+      stubBilling({
+        subscription: {
+          ...defaultBillingResponse.subscription,
+          planCode: 'personal',
+          status: 'active',
+          hasStripeCustomer: true,
+          pendingPlanCode: 'team',
+          pendingPlanEffectiveAt: null,
+        },
+        entitlement: {
+          ...defaultBillingResponse.entitlement,
+          planCode: 'personal',
+          effectivePlanCode: 'personal',
+          limits: { seatLimit: 1, viewerLimit: 5, projectLimit: 10 },
+          message: 'Personal プランを利用中です。',
+        },
+      });
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      await userEvent.click(await screen.findByRole('button', { name: 'プランを変更' }));
+      const teamCard = await screen.findByTestId('plan-team');
+
+      expect(within(teamCard).getByText('変更を受付済み')).toBeInTheDocument();
+      expect(
+        within(teamCard).queryByRole('button', { name: 'このプランに変更' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('サーバーに「既に契約がある」と言われたら、画面を取り直す', async () => {
+      // 画面が古いまま申し込みを押した場合。契約はサーバーが守るので、
+      // ここでは表示を現在値へ戻して同じ操作を繰り返させない
+      let subscriptionFetches = 0;
+      server.use(
+        http.get('*/api/v1/billing/subscription', () => {
+          subscriptionFetches += 1;
+          return HttpResponse.json({ data: defaultBillingResponse });
+        }),
+        http.post('*/api/v1/billing/checkout-session', () =>
+          HttpResponse.json(
+            {
+              error: {
+                code: 'SUBSCRIPTION_ALREADY_ACTIVE',
+                message: '既に有効な契約があります。プラン変更をご利用ください。',
+              },
+            },
+            { status: 409 },
+          ),
+        ),
+      );
+      renderWithToaster();
+
+      const teamCard = await screen.findByTestId('plan-team');
+      await waitFor(() => expect(subscriptionFetches).toBe(1));
+
+      await userEvent.click(within(teamCard).getByRole('button', { name: '申し込む' }));
+      const dialog = await screen.findByRole('alertdialog');
+      await userEvent.click(within(dialog).getByRole('button', { name: '決済ページへ進む' }));
+
+      expect(await screen.findByText(/既に有効な契約があります/)).toBeInTheDocument();
+      expect(externalRedirect).not.toHaveBeenCalled();
+      // 古い表示のまま同じ操作を繰り返させない
+      await waitFor(() => expect(subscriptionFetches).toBeGreaterThan(1));
+    });
+  });
+
   describe('プラン変更の確認モーダル (#235)', () => {
     const teamSubscribed = {
       subscription: {
