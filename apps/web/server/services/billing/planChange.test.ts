@@ -34,6 +34,8 @@ const scheduleCreate = vi.fn();
 const scheduleUpdate = vi.fn();
 
 const PERIOD_END = Math.floor(new Date('2026-10-01T00:00:00Z').getTime() / 1000);
+const PHASE_START = Math.floor(new Date('2026-09-01T00:00:00Z').getTime() / 1000);
+const TRIAL_END = Math.floor(new Date('2026-09-05T00:00:00Z').getTime() / 1000);
 
 function stubStripe() {
   __setStripeForTest({
@@ -58,7 +60,19 @@ beforeEach(() => {
   update.mockReset().mockResolvedValue({
     items: { data: [{ id: 'si_1', current_period_end: PERIOD_END }] },
   });
-  scheduleCreate.mockReset().mockResolvedValue({ id: 'sub_sched_1', current_phase: { start_date: 1 } });
+  // `from_subscription` は現在の契約をそのまま 1 フェーズに写して返す
+  scheduleCreate.mockReset().mockResolvedValue({
+    id: 'sub_sched_1',
+    current_phase: { start_date: PHASE_START },
+    phases: [
+      {
+        items: [{ price: { id: 'price_team' }, quantity: 1 }],
+        start_date: PHASE_START,
+        end_date: PERIOD_END,
+        trial_end: null,
+      },
+    ],
+  });
   scheduleUpdate.mockReset().mockResolvedValue({});
   prismaMock.billingSubscription.findUnique.mockReset().mockResolvedValue({
     organizationId: 'org-1',
@@ -151,6 +165,67 @@ describe('Team → Personal (次回更新時)', () => {
     expect(phases[0].end_date).toBe(PERIOD_END);
     expect(phases[1].items).toEqual([{ price: 'price_personal', quantity: 1 }]);
     expect(result).toEqual({ appliedImmediately: false, pendingPlanCode: 'personal' });
+  });
+
+  // 写しを自前で組み直すと、Stripe はトライアル指定の無いフェーズを有料と解釈し、
+  // トライアルをその場で打ち切って満額の請求書を起こす (#244)。
+  // 「ダウングレードを申し込んだだけで課金される」ので、写しはそのまま渡す。
+  it('トライアル中でも、トライアルを打ち切らない (#244)', async () => {
+    scheduleCreate.mockResolvedValue({
+      id: 'sub_sched_1',
+      current_phase: { start_date: PHASE_START },
+      phases: [
+        {
+          items: [{ price: { id: 'price_team' }, quantity: 1 }],
+          start_date: PHASE_START,
+          end_date: TRIAL_END,
+          trial_end: TRIAL_END,
+        },
+      ],
+    });
+
+    await changePlan({ ...actor, planCode: 'personal' });
+
+    const phases = scheduleUpdate.mock.calls[0]![1].phases;
+    expect(phases[0].trial_end).toBe(TRIAL_END);
+    expect(phases[0].start_date).toBe(PHASE_START);
+    expect(phases[0].end_date).toBe(TRIAL_END);
+  });
+
+  it('トライアル中でなければ trial_end は付けない', async () => {
+    await changePlan({ ...actor, planCode: 'personal' });
+
+    expect(scheduleUpdate.mock.calls[0]![1].phases[0]).not.toHaveProperty('trial_end');
+  });
+
+  it('トライアル終了時刻を適用予定として記録する (#244)', async () => {
+    scheduleCreate.mockResolvedValue({
+      id: 'sub_sched_1',
+      current_phase: { start_date: PHASE_START },
+      phases: [
+        {
+          items: [{ price: { id: 'price_team' }, quantity: 1 }],
+          start_date: PHASE_START,
+          end_date: TRIAL_END,
+          trial_end: TRIAL_END,
+        },
+      ],
+    });
+
+    await changePlan({ ...actor, planCode: 'personal' });
+
+    expect(subscriptionUpdateData().pendingPlanEffectiveAt).toEqual(
+      new Date('2026-09-05T00:00:00Z'),
+    );
+  });
+
+  it('フェーズが取れなければ 502 (契約を書き換えない)', async () => {
+    scheduleCreate.mockResolvedValue({ id: 'sub_sched_1', phases: [] });
+
+    await expect(changePlan({ ...actor, planCode: 'personal' })).rejects.toMatchObject({
+      status: 502,
+    });
+    expect(scheduleUpdate).not.toHaveBeenCalled();
   });
 
   it('適用時刻を保留として記録する', async () => {

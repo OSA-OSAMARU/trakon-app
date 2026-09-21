@@ -460,6 +460,72 @@ describe('BillingPage (integration)', () => {
       expect(screen.queryByText(/変更を確認中です/)).not.toBeInTheDocument();
       expect(syncCalls).toBe(0);
     });
+
+    // #244: 適用予定を過ぎたということは、Stripe 側では切り替わっているはず。
+    // ここを待機に含めないと、Webhook が 1 通落ちただけで
+    // 「変更予定（過去の日付）」のまま永久に固まる。
+    it('適用予定を過ぎても切り替わっていなければ、取りに行って反映する (#244)', async () => {
+      const OVERDUE = {
+        ...defaultBillingResponse,
+        subscription: {
+          ...defaultBillingResponse.subscription,
+          planCode: 'team' as const,
+          status: 'active' as const,
+          hasStripeCustomer: true,
+          pendingPlanCode: 'personal' as const,
+          pendingPlanEffectiveAt: '2020-01-01T00:00:00.000Z',
+        },
+        entitlement: {
+          ...defaultBillingResponse.entitlement,
+          planCode: 'team' as const,
+          effectivePlanCode: 'team' as const,
+          limits: { seatLimit: 5, viewerLimit: 20, projectLimit: null },
+          message: 'Team プランを利用中です。',
+        },
+      };
+      const APPLIED_PERSONAL = {
+        ...defaultBillingResponse,
+        subscription: {
+          ...defaultBillingResponse.subscription,
+          planCode: 'personal' as const,
+          status: 'active' as const,
+          hasStripeCustomer: true,
+          pendingPlanCode: null,
+          pendingPlanEffectiveAt: null,
+        },
+        entitlement: {
+          ...defaultBillingResponse.entitlement,
+          planCode: 'personal' as const,
+          effectivePlanCode: 'personal' as const,
+          limits: { seatLimit: 1, viewerLimit: 5, projectLimit: 10 },
+          message: 'Personal プランを利用中です。',
+        },
+      };
+
+      let applied = false;
+      let syncCalls = 0;
+      server.use(
+        http.get('*/api/v1/billing/subscription', () => HttpResponse.json({ data: OVERDUE })),
+        http.post('*/api/v1/billing/sync', () => {
+          syncCalls += 1;
+          return HttpResponse.json({
+            data: applied ? APPLIED_PERSONAL : OVERDUE,
+            meta: { synced: applied },
+          });
+        }),
+        http.get('*/api/v1/projects', () => HttpResponse.json({ data: [] })),
+      );
+      renderWithProviders(<BillingPage />, { route: '/settings/billing' });
+
+      expect(await screen.findByText(/Personal プランへの切り替えを反映しています/)).toBeInTheDocument();
+      await waitFor(() => expect(syncCalls).toBeGreaterThan(0));
+
+      applied = true;
+      await waitFor(
+        () => expect(screen.getByText('Personal プランを利用中です。')).toBeInTheDocument(),
+        { timeout: 5000 },
+      );
+    });
   });
 
   // ===========================================================================

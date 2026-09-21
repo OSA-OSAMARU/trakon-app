@@ -101,10 +101,27 @@ export function BillingPage() {
       ? subscription.pendingPlanCode
       : null;
 
+  /**
+   * 3. 予約ダウングレードの適用予定時刻を過ぎたのに、まだ切り替わっていない (#244)。
+   *
+   * Stripe 側では予定どおり切り替わっているはずなので、TRAKON が受け取り損ねた
+   * ということ。これを待機に含めないと、Webhook が 1 通落ちただけで
+   * 「変更予定（過去の日付）」のまま永久に固まる。取りに行けば自己修復する。
+   */
+  const overduePendingPlan =
+    subscription !== null &&
+    subscription.pendingPlanCode !== null &&
+    subscription.pendingPlanEffectiveAt !== null &&
+    new Date(subscription.pendingPlanEffectiveAt).getTime() <= Date.now()
+      ? subscription.pendingPlanCode
+      : null;
+
+  const pendingSyncPlan = pendingImmediatePlan ?? overduePendingPlan;
+
   const waitToken = awaitingCheckout
     ? `checkout:${checkoutSessionId ?? '-'}`
-    : pendingImmediatePlan
-      ? `plan:${pendingImmediatePlan}`
+    : pendingSyncPlan
+      ? `plan:${pendingSyncPlan}`
       : null;
   const waiting = waitToken !== null && waitToken !== gaveUpToken;
   const timedOut = waitToken !== null && waitToken === gaveUpToken;
@@ -148,11 +165,11 @@ export function BillingPage() {
   // 黙って表示が変わるだけだと「いつ反映されたのか」が分からない。
   const previousPendingPlan = useRef<BillingPlanCode | null>(null);
   useEffect(() => {
-    if (previousPendingPlan.current !== null && pendingImmediatePlan === null && subscription) {
+    if (previousPendingPlan.current !== null && pendingSyncPlan === null && subscription) {
       toast.success(`${BILLING_PLANS[subscription.planCode].label} プランへの変更が反映されました`);
     }
-    previousPendingPlan.current = pendingImmediatePlan;
-  }, [pendingImmediatePlan, subscription]);
+    previousPendingPlan.current = pendingSyncPlan;
+  }, [pendingSyncPlan, subscription]);
 
   // 反映待ちが長引いても永遠に回さない (Stripe 側で成立していない場合の保険)。
   // 黙って止めると「確認中のまま何も起きない」に戻るので、手動の取り直し導線を出す。
@@ -213,10 +230,12 @@ export function BillingPage() {
       qc.invalidateQueries({ queryKey: projectsQueryKey.all });
       // 取り直しても待機条件が解けていないなら、Stripe 側でまだ成立していない。
       // 「更新しました」と言い切ると、何も変わっていないのに解決した顔になる。
+      // 予定時刻を過ぎた予約変更も「まだ解けていない」側 (#244)
       const stillWaiting =
         data.subscription.status === 'none' ||
         (data.subscription.pendingPlanCode !== null &&
-          data.subscription.pendingPlanEffectiveAt === null);
+          (data.subscription.pendingPlanEffectiveAt === null ||
+            new Date(data.subscription.pendingPlanEffectiveAt).getTime() <= Date.now()));
       if (stillWaiting) {
         toast.error('Stripe 側でまだ確認できていません。お支払いが完了しているかご確認ください。');
       } else {
@@ -296,7 +315,9 @@ export function BillingPage() {
               <Notice icon={<Loader2 className="size-4 animate-spin" />}>
                 {pendingImmediatePlan
                   ? `${BILLING_PLANS[pendingImmediatePlan].label} プランへの変更を確認中です。お支払いの確認後に反映されます。`
-                  : 'お支払いの確認中です。反映まで少しお待ちください。'}
+                  : overduePendingPlan
+                    ? `${BILLING_PLANS[overduePendingPlan].label} プランへの切り替えを反映しています。`
+                    : 'お支払いの確認中です。反映まで少しお待ちください。'}
               </Notice>
             )}
 
