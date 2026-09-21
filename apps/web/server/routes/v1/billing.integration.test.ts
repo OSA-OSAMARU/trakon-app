@@ -59,6 +59,8 @@ beforeEach(async () => {
     id: 'sub_1',
     items: { data: [{ id: 'si_1', current_period_end: 1_762_000_000 }] },
   });
+  // 二重契約チェック (#241) が引く顧客の契約一覧。既定は「他に契約なし」
+  subscriptionsList.mockResolvedValue({ data: [] });
   scheduleCreate.mockResolvedValue({ id: 'sub_sched_1', current_phase: { start_date: 1_760_000_000 } });
   scheduleUpdate.mockResolvedValue({ id: 'sub_sched_1' });
   stubStripe();
@@ -210,6 +212,76 @@ describe('POST /billing/checkout-session', () => {
       expect(res.body.error.code).toBe('SUBSCRIPTION_ALREADY_ACTIVE');
     });
 
+    it('トライアル中は申し込ませない (二重契約の防止 / #241)', async () => {
+      await setBillingSubscription({
+        organizationId,
+        status: 'trialing',
+        planCode: 'personal',
+        stripeSubscriptionId: 'sub_1',
+      });
+
+      const res = await api<{ error: { code: string } }>('/api/v1/billing/checkout-session', {
+        method: 'POST',
+        token: ownerToken,
+        body: { planCode: 'personal' },
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('SUBSCRIPTION_ALREADY_ACTIVE');
+      expect(checkoutCreate).not.toHaveBeenCalled();
+    });
+
+    it('手元が Free でも Stripe に契約があれば申し込ませず、状態を合わせ直す (#241)', async () => {
+      // Webhook が届いていない状態。契約行は Free のまま、顧客 ID だけある
+      await setBillingSubscription({ organizationId, stripeCustomerId: 'cus_existing' });
+      subscriptionsList.mockResolvedValue({ data: [{ id: 'sub_live', status: 'active' }] });
+      subscriptionsRetrieve.mockResolvedValue({
+        id: 'sub_live',
+        status: 'active',
+        customer: 'cus_existing',
+        items: {
+          data: [
+            {
+              id: 'si_1',
+              price: { id: TEST_STRIPE.personalPriceId },
+              current_period_end: 1_762_000_000,
+            },
+          ],
+        },
+      });
+
+      const res = await api<{ error: { code: string } }>('/api/v1/billing/checkout-session', {
+        method: 'POST',
+        token: ownerToken,
+        body: { planCode: 'personal' },
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('SUBSCRIPTION_ALREADY_ACTIVE');
+      expect(checkoutCreate).not.toHaveBeenCalled();
+      // 画面が「契約なし」のまま止まらないよう、現在値へ合わせ直してある
+      const after = await prisma.billingSubscription.findUniqueOrThrow({
+        where: { organizationId },
+      });
+      expect(after.stripeSubscriptionId).toBe('sub_live');
+      expect(after.status).toBe('active');
+    });
+
+    it('契約状態を確認できなければ申し込ませない (#241)', async () => {
+      await setBillingSubscription({ organizationId, stripeCustomerId: 'cus_existing' });
+      subscriptionsList.mockRejectedValue(new Error('stripe down'));
+
+      const res = await api<{ error: { code: string } }>('/api/v1/billing/checkout-session', {
+        method: 'POST',
+        token: ownerToken,
+        body: { planCode: 'personal' },
+      });
+
+      expect(res.status).toBe(503);
+      expect(res.body.error.code).toBe('SUBSCRIPTION_CHECK_FAILED');
+      expect(checkoutCreate).not.toHaveBeenCalled();
+    });
+
     it('組織メンバー (非管理者) は 403', async () => {
       const member = await createUser({ withOrganization: false });
       await createOrgMember({ organizationId, userId: member.id, isPrimary: true });
@@ -283,6 +355,26 @@ describe('POST /billing/plan — Personal → Team', () => {
     const sub = await prisma.billingSubscription.findUniqueOrThrow({ where: { organizationId } });
     expect(sub.planCode).toBe('personal');
     expect(sub.pendingPlanCode).toBe('team');
+  });
+
+  it('同じ変更をもう一度送っても、Stripe を二度呼ばない (#241)', async () => {
+    // always_invoice は請求書を起こす操作。二度通すと余計な請求が立つ
+    const first = await api('/api/v1/billing/plan', {
+      method: 'POST',
+      token: ownerToken,
+      body: { planCode: 'team' },
+    });
+    expect(first.status).toBe(200);
+
+    const second = await api<{ error: { code: string } }>('/api/v1/billing/plan', {
+      method: 'POST',
+      token: ownerToken,
+      body: { planCode: 'team' },
+    });
+
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('PLAN_CHANGE_ALREADY_REQUESTED');
+    expect(subscriptionsUpdate).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -70,10 +70,55 @@ export async function changePlan(input: {
   if (subscription.planCode === input.planCode) {
     throw new ApiException('PLAN_UNCHANGED', 409, '既に同じプランをご利用中です。');
   }
+  if (subscription.pendingPlanCode === input.planCode) {
+    throw alreadyRequested(subscription.pendingPlanEffectiveAt);
+  }
 
-  return input.planCode === 'team'
-    ? upgradeToTeam({ ...input, subscription })
-    : downgradeToPersonal({ ...input, subscription });
+  // 同じ変更が二重に届いても Stripe を二度呼ばないようにする (#241)。
+  //
+  // Personal → Team は `proration_behavior: 'always_invoice'` で**請求書を起こす**
+  // 操作なので、二度通すと余計な請求が立つ。受付の印 (pending_plan_code) を
+  // **条件付き更新で押さえてから** Stripe を呼び、押さえられなかった方は弾く。
+  // 単純な読み取り→判定では、同時に届いた 2 本がどちらも素通りする。
+  const claimed = await prisma.billingSubscription.updateMany({
+    where: {
+      organizationId: input.organizationId,
+      // 押さえている間にプランが昇格していたら、その変更はもう意味が無い
+      planCode: subscription.planCode,
+      // 別の変更が保留中なら上書きしてよい (行き先を変えただけ)。
+      // 同じ行き先が保留中の場合だけ 0 件になる
+      OR: [{ pendingPlanCode: null }, { pendingPlanCode: { not: input.planCode } }],
+    },
+    data: { pendingPlanCode: input.planCode, pendingPlanEffectiveAt: null },
+  });
+  if (claimed.count === 0) throw alreadyRequested(subscription.pendingPlanEffectiveAt);
+
+  try {
+    return input.planCode === 'team'
+      ? await upgradeToTeam({ ...input, subscription })
+      : await downgradeToPersonal({ ...input, subscription });
+  } catch (err) {
+    // Stripe 側は変わっていないので、押さえた印を元に戻す。
+    // 戻さないと「受付済み」のまま二度と申し込めなくなる
+    await prisma.billingSubscription.updateMany({
+      where: { organizationId: input.organizationId, pendingPlanCode: input.planCode },
+      data: {
+        pendingPlanCode: subscription.pendingPlanCode,
+        pendingPlanEffectiveAt: subscription.pendingPlanEffectiveAt,
+      },
+    });
+    throw err;
+  }
+}
+
+function alreadyRequested(effectiveAt: Date | null): ApiException {
+  return new ApiException(
+    'PLAN_CHANGE_ALREADY_REQUESTED',
+    409,
+    effectiveAt
+      ? '次回更新時のプラン変更を既に受け付けています。'
+      : 'プラン変更を受け付け済みです。お支払いの確認後に反映されます。',
+  );
 }
 
 /** Personal → Team。即時変更・日割り差額請求。権限は決済成功の確認後に付与する。 */

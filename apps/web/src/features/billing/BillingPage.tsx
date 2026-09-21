@@ -170,7 +170,12 @@ export function BillingPage() {
   const checkoutMut = useMutation({
     mutationFn: (planCode: CheckoutablePlan) => billingApi.checkout(planCode),
     onSuccess: (data) => externalRedirect(data.url),
-    onError: (e) => toast.error(errorMessage(e, 'お申し込みを開始できませんでした')),
+    onError: (e) => {
+      // 「既に契約がある」はこの画面が古いということ。二重契約はサーバーが
+      // 止めてくれているので、表示だけ現在値へ戻す (#241)
+      if (e instanceof ApiClientError && e.code === 'SUBSCRIPTION_ALREADY_ACTIVE') invalidate();
+      toast.error(errorMessage(e, 'お申し込みを開始できませんでした'));
+    },
   });
 
   const portalMut = useMutation({
@@ -189,7 +194,15 @@ export function BillingPage() {
           : '次回更新時に Personal プランへ変更されます。',
       );
     },
-    onError: (e) => toast.error(errorMessage(e, 'プランを変更できませんでした')),
+    onError: (e) => {
+      if (
+        e instanceof ApiClientError &&
+        (e.code === 'PLAN_CHANGE_ALREADY_REQUESTED' || e.code === 'PLAN_UNCHANGED')
+      ) {
+        invalidate();
+      }
+      toast.error(errorMessage(e, 'プランを変更できませんでした'));
+    },
   });
 
   /** 時間切れ後に手動で取り直す (#209)。自動ポーリングと同じ照合を 1 回だけ走らせる */
@@ -325,6 +338,8 @@ export function BillingPage() {
                 current={query.data.entitlement.effectivePlanCode}
                 hasSubscription={hasLiveSubscription(query.data.subscription.status)}
                 canManage={query.data.orgRole === 'owner' || query.data.orgRole === 'admin'}
+                // 受付済みの変更をもう一度押させない (サーバーも 409 で弾く #241)
+                pending={query.data.subscription.pendingPlanCode}
                 // 変更が飛んでいる間に別のプランを重ねて押させない
                 disabled={anyPending || waiting}
                 onSelect={setConfirming}
@@ -547,9 +562,11 @@ const PlanComparison = forwardRef<
     hasSubscription: boolean;
     canManage: boolean;
     disabled: boolean;
+    /** 受付済みで反映待ちのプラン。同じプランをもう一度押させない (#241) */
+    pending: BillingPlanCode | null;
     onSelect: (plan: CheckoutablePlan) => void;
   }
->(function PlanComparison({ current, hasSubscription, canManage, disabled, onSelect }, ref) {
+>(function PlanComparison({ current, hasSubscription, canManage, disabled, pending, onSelect }, ref) {
   return (
     <Card ref={ref}>
       <CardHeader>
@@ -559,6 +576,7 @@ const PlanComparison = forwardRef<
         {SELECTABLE_BILLING_PLAN_CODES.map((code) => {
           const spec = BILLING_PLANS[code];
           const isCurrent = code === current;
+          const isPending = code === pending;
           return (
             <div
               key={code}
@@ -567,11 +585,13 @@ const PlanComparison = forwardRef<
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium">{spec.label}</span>
-                {isCurrent && (
+                {isCurrent ? (
                   <Badge variant="secondary">
                     <Check className="size-3" />
                     利用中
                   </Badge>
+                ) : (
+                  isPending && <Badge variant="outline">変更を受付済み</Badge>
                 )}
               </div>
               <p className="text-heading-page font-semibold">
@@ -587,7 +607,7 @@ const PlanComparison = forwardRef<
                   {spec.trialHours ? `無料トライアル ${spec.trialHours} 時間` : 'トライアルなし'}
                 </li>
               </ul>
-              {code !== 'free' && !isCurrent && (
+              {code !== 'free' && !isCurrent && !isPending && (
                 <Button
                   size="sm"
                   onClick={() => onSelect(code as CheckoutablePlan)}
