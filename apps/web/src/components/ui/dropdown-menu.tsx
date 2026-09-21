@@ -11,7 +11,23 @@ import { cn } from './utils';
  * Figma の「⋯」メニュー (サイドバーのプロジェクト行 node 18:4 / カード右上 node 11:5) で使う。
  */
 
-const DropdownMenu = DropdownMenuPrimitive.Root;
+/**
+ * `modal` は既定で **false** にしている (#240)。
+ *
+ * Radix の既定 (modal=true) では、メニューが開いている間 `document.body` の
+ * `pointer-events` を `none` にする。ここからダイアログを開くと、まだ閉じ切って
+ * いないメニューの上にダイアログが重なり、ダイアログ側は「元の値」として `none` を
+ * 覚えてしまう。閉じたときにそれを書き戻すので、**画面全体がクリックできなくなる**。
+ *
+ * 行の「⋯」メニューに外側の操作を塞ぐ必要は無いので、塞がない側を既定にする。
+ * (スクロールロックと外側クリックの吸い込みも無くなる)
+ */
+function DropdownMenu({
+  modal = false,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  return <DropdownMenuPrimitive.Root modal={modal} {...props} />;
+}
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
