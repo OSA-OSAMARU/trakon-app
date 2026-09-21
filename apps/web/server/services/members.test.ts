@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type {
+  listMemberCandidates as ListMemberCandidatesType,
   listMembers as ListMembersType,
   addMembers as AddMembersType,
   updateMember as UpdateMemberType,
@@ -32,12 +33,24 @@ type MockOrgMember = {
   userId: string;
   defaultProjectRole: string;
   deletedAt: Date | null;
-  user: { id: string; displayName: string; email: string; deletedAt: Date | null };
+  user: {
+    id: string;
+    displayName: string;
+    email: string;
+    deletedAt: Date | null;
+    // 候補一覧 (#238) が読む列
+    fullName?: string;
+    organizationName?: string | null;
+    avatarPath?: string | null;
+  };
 };
 
 // メンバーストア (id -> 行)。各テストで afterEach に全消去する。
 const memberStore: Record<string, MockMember> = {};
 const orgMemberStore: Record<string, MockOrgMember> = {};
+
+/** invitation.count が返す値 (#238)。各テストで上書きする */
+let pendingInvitationCount = 0;
 
 let nextId = 1;
 const newId = (prefix: string) => `${prefix}-${nextId++}`;
@@ -126,17 +139,29 @@ const prismaMock = {
   },
   // 組織メンバー (#202)。参加者はここに居る人からしか選べない。
   organizationMember: {
+    // addMembers は userId を絞って引き、listMemberCandidates (#238) は
+    // 組織の全員を引く。where の形が違うので両方受ける。
     findMany: vi.fn(
       async (args: {
-        where: { organizationId: string; userId: { in: string[] }; deletedAt: null };
+        where: {
+          organizationId: string;
+          userId?: { in: string[] };
+          deletedAt: null;
+          user?: { deletedAt: null };
+        };
       }) =>
         Object.values(orgMemberStore).filter(
           (om) =>
             om.organizationId === args.where.organizationId &&
-            args.where.userId.in.includes(om.userId) &&
-            om.deletedAt === null,
+            (args.where.userId === undefined || args.where.userId.in.includes(om.userId)) &&
+            om.deletedAt === null &&
+            (args.where.user === undefined || om.user.deletedAt === null),
         ),
     ),
+  },
+  // 未受諾の招待 (#238)。候補が空の理由を出すために数だけ使う
+  invitation: {
+    count: vi.fn(async () => pendingInvitationCount),
   },
   // members.ts はコールバック形式 ($transaction(fn)) のみ使用。
   $transaction: vi.fn(async (arg: unknown) => {
@@ -152,18 +177,22 @@ vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
 // Tests
 // =============================================================================
 
+let listMemberCandidates: typeof ListMemberCandidatesType;
 let listMembers: typeof ListMembersType;
 let addMembers: typeof AddMembersType;
 let updateMember: typeof UpdateMemberType;
 let deleteMember: typeof DeleteMemberType;
 
 beforeAll(async () => {
-  ({ listMembers, addMembers, updateMember, deleteMember } = await import('./members.js'));
+  ({ listMemberCandidates, listMembers, addMembers, updateMember, deleteMember } = await import(
+    './members.js'
+  ));
 });
 
 afterEach(() => {
   for (const k of Object.keys(memberStore)) delete memberStore[k];
   for (const k of Object.keys(orgMemberStore)) delete orgMemberStore[k];
+  pendingInvitationCount = 0;
   vi.clearAllMocks();
 });
 
@@ -443,5 +472,98 @@ describe('deleteMember', () => {
       deleteMember({ memberId: 'm-self', projectId: 'p-1', currentUserId: 'u-self' }),
     ).rejects.toMatchObject({ code: 'CANNOT_REMOVE_SELF', status: 409 });
     expect(prismaMock.projectMember.delete).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// listMemberCandidates (#238)
+//
+// 「参加者を追加」で選べる人。ここが空になると追加ボタンが押せなくなるので、
+// **誰を外すか**と、外した理由が数で分かることを固定する。
+// =============================================================================
+describe('listMemberCandidates', () => {
+  it('組織メンバーを候補として返す (既定の権限つき)', async () => {
+    seedOrgMember({ userId: 'u-1', defaultProjectRole: 'viewer' });
+
+    const res = await listMemberCandidates({ organizationId: ORG_ID });
+
+    expect(res.candidates).toEqual([
+      expect.objectContaining({ userId: 'u-1', defaultProjectRole: 'viewer' }),
+    ]);
+    expect(res.joinedCount).toBe(0);
+  });
+
+  it('別組織のメンバーは混ざらない', async () => {
+    seedOrgMember({ userId: 'u-1' });
+    seedOrgMember({ userId: 'u-other', organizationId: 'org-2' });
+
+    const res = await listMemberCandidates({ organizationId: ORG_ID });
+
+    expect(res.candidates.map((c) => c.userId)).toEqual(['u-1']);
+  });
+
+  it('既にそのプロジェクトに居る人は外し、外した人数を返す', async () => {
+    seedOrgMember({ userId: 'u-in' });
+    seedOrgMember({ userId: 'u-out' });
+    seedMember({ projectId: 'p-1', userId: 'u-in' });
+
+    const res = await listMemberCandidates({ organizationId: ORG_ID, projectId: 'p-1' });
+
+    expect(res.candidates.map((c) => c.userId)).toEqual(['u-out']);
+    expect(res.joinedCount).toBe(1);
+  });
+
+  it('メールだけ一致する未紐付けの参加者が居る人も外す (追加すると 409 になるため)', async () => {
+    seedOrgMember({ userId: 'u-1' });
+    seedMember({ projectId: 'p-1', userId: null, email: 'U-1@X.test' });
+
+    const res = await listMemberCandidates({ organizationId: ORG_ID, projectId: 'p-1' });
+
+    expect(res.candidates).toHaveLength(0);
+    expect(res.joinedCount).toBe(1);
+  });
+
+  it('退会したアカウントは候補に出さない', async () => {
+    seedOrgMember({
+      userId: 'u-gone',
+      user: {
+        id: 'u-gone',
+        displayName: 'Gone',
+        email: 'gone@x.test',
+        deletedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    });
+
+    const res = await listMemberCandidates({ organizationId: ORG_ID });
+
+    expect(res.candidates).toHaveLength(0);
+  });
+
+  it('未受諾の招待は候補に出さず、人数だけ返す', async () => {
+    pendingInvitationCount = 2;
+
+    const res = await listMemberCandidates({ organizationId: ORG_ID });
+
+    expect(res.candidates).toHaveLength(0);
+    expect(res.pendingCount).toBe(2);
+  });
+
+  it('表示名は氏名を優先する (未設定なら表示名)', async () => {
+    seedOrgMember({
+      userId: 'u-1',
+      user: {
+        id: 'u-1',
+        fullName: '山田 太郎',
+        displayName: 'taro',
+        organizationName: 'Acme',
+        email: 'taro@x.test',
+        avatarPath: null,
+        deletedAt: null,
+      },
+    });
+
+    const res = await listMemberCandidates({ organizationId: ORG_ID });
+
+    expect(res.candidates[0]).toMatchObject({ name: '山田 太郎', organizationName: 'Acme' });
   });
 });

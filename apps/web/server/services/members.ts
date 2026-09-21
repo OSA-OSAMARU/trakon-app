@@ -349,3 +349,113 @@ export async function deleteMember(input: {
   // plans 連動 (MEMBER_HAS_ACTIVE_PLANS) は Sub-Phase 0.3 で plans 追加後に実装
   await prisma.projectMember.delete({ where: { id: input.memberId } });
 }
+
+// -----------------------------------------------------------------------------
+// 参加者の候補 (#238)
+// -----------------------------------------------------------------------------
+
+export type MemberCandidateDTO = {
+  userId: string;
+  name: string;
+  organizationName: string | null;
+  avatarUrl: string | null;
+  /** 組織で決められている既定の権限。追加ダイアログの初期値に使う */
+  defaultProjectRole: ProjectRole;
+};
+
+/**
+ * 候補が空のときに**理由まで**返す (#238)。
+ *
+ * 「追加できる人が居ない」には別々の原因があり、画面では区別がつかない:
+ *   - 組織にアカウントがまだ自分しか居ない       → 招待してもらう
+ *   - 居るが全員このプロジェクトに参加済み       → することは無い
+ *   - 招待したが誰もまだ承諾していない           → 承諾を待つ
+ * 数を返して呼び出し側が言い分けられるようにする。
+ */
+export type MemberCandidatesDTO = {
+  candidates: MemberCandidateDTO[];
+  /** 既にこのプロジェクトに居るため候補から外した組織メンバーの数 */
+  joinedCount: number;
+  /** 未受諾の招待の数。承諾されれば候補になる */
+  pendingCount: number;
+};
+
+/**
+ * プロジェクトに追加できる組織メンバーを返す (#238)。
+ *
+ * **組織は呼び出し側が渡す**。プロジェクトの参加者を選ぶときは
+ * 「そのプロジェクトが属する組織」でなければならず、ログイン利用者の既定組織
+ * (`/organizations/me/members`) とは一致しないことがある (別組織に招かれている場合)。
+ *
+ * 返すのは選ぶのに要る項目だけで、メール・職種は含めない。一覧 (`listOrgMembers`)
+ * は同僚の連絡先まで返すため組織の管理者に限定しているが、候補選択は
+ * プロジェクトの管理者ができないと参加者を増やせなくなる。
+ */
+export async function listMemberCandidates(input: {
+  organizationId: string;
+  /** 指定すると、そのプロジェクトに既に居る人を候補から外す */
+  projectId?: string;
+}): Promise<MemberCandidatesDTO> {
+  const [orgMembers, pendingCount, existing] = await Promise.all([
+    prisma.organizationMember.findMany({
+      where: {
+        organizationId: input.organizationId,
+        deletedAt: null,
+        user: { deletedAt: null },
+      },
+      orderBy: [{ joinedAt: 'asc' }],
+      select: {
+        userId: true,
+        defaultProjectRole: true,
+        user: {
+          select: {
+            fullName: true,
+            displayName: true,
+            organizationName: true,
+            email: true,
+            avatarPath: true,
+          },
+        },
+      },
+    }),
+    prisma.invitation.count({
+      where: {
+        organizationId: input.organizationId,
+        acceptedAt: null,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    }),
+    input.projectId
+      ? prisma.projectMember.findMany({
+          where: { projectId: input.projectId, deletedAt: null },
+          select: { userId: true, email: true },
+        })
+      : Promise.resolve([] as { userId: string | null; email: string | null }[]),
+  ]);
+
+  const takenUserIds = new Set(existing.flatMap((m) => (m.userId ? [m.userId] : [])));
+  // アカウント紐付け前の参加者行がメールで残っている場合も「既に居る」扱い。
+  // ここで残すと追加時に MEMBER_EMAIL_TAKEN で弾かれ、選べるのに追加できなくなる。
+  const takenEmails = new Set(existing.flatMap((m) => (m.email ? [m.email.toLowerCase()] : [])));
+
+  const selectable = orgMembers.filter(
+    (m) => !takenUserIds.has(m.userId) && !takenEmails.has(m.user.email.toLowerCase()),
+  );
+
+  const signed = await signAvatarUrls(
+    selectable.map((m) => m.user.avatarPath).filter((p): p is string => !!p),
+  );
+
+  return {
+    candidates: selectable.map((m) => ({
+      userId: m.userId,
+      name: m.user.fullName || m.user.displayName,
+      organizationName: m.user.organizationName || null,
+      avatarUrl: m.user.avatarPath ? (signed.get(m.user.avatarPath) ?? null) : null,
+      defaultProjectRole: m.defaultProjectRole as ProjectRole,
+    })),
+    joinedCount: orgMembers.length - selectable.length,
+    pendingCount,
+  };
+}

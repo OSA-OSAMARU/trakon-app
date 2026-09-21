@@ -22,6 +22,25 @@ export type OrgMember = {
   expiresAt: string | null;
 };
 
+/**
+ * 参加者に選べる候補 (#238)。
+ * 一覧 (`OrgMember`) と違い連絡先を含まない — 選ぶのに要る項目だけ。
+ */
+export type MemberCandidate = {
+  userId: string;
+  name: string;
+  organizationName: string | null;
+  avatarUrl: string | null;
+  /** 組織で決められている既定の権限。追加時の初期値に使う */
+  defaultProjectRole: ProjectRole;
+};
+
+export type MemberCandidates = {
+  candidates: MemberCandidate[];
+  joinedCount: number;
+  pendingCount: number;
+};
+
 export type MemberProject = {
   projectId: string;
   projectName: string;
@@ -41,11 +60,14 @@ export type CreateOrgInvitationInput = {
 
 export const orgQueryKey = {
   members: ['organization', 'members'] as const,
+  candidates: ['organization', 'members', 'candidates'] as const,
   memberProjects: (userId: string) => ['organization', 'members', userId, 'projects'] as const,
 };
 
 export const orgApi = {
   listMembers: () => apiRequest<OrgMember[]>('/organizations/me/members'),
+  /** 参加者に選べる候補。組織の会員なら誰でも引ける (#238) */
+  listCandidates: () => apiRequest<MemberCandidates>('/organizations/me/members/candidates'),
   listMemberProjects: (userId: string) =>
     apiRequest<MemberProject[]>(`/organizations/me/members/${userId}/projects`),
   changeRole: (userId: string, defaultProjectRole: ProjectRole) =>

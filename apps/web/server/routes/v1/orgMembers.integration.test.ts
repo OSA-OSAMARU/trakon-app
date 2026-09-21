@@ -130,6 +130,36 @@ describe('GET /organizations/me/members', () => {
   });
 });
 
+describe('GET /organizations/me/members/candidates (#238)', () => {
+  it('一般の会員でも候補は引ける (プロジェクト作成時に参加者を選べなくなるため)', async () => {
+    const member = await createUser({ withOrganization: false });
+    await prisma.organizationMember.create({
+      data: { organizationId, userId: member.id, orgRole: 'member' },
+    });
+    const token = await signTestJwt({ authUserId: member.authUserId, email: member.email });
+
+    const res = await api<{
+      data: { candidates: Array<{ userId: string; name: string; defaultProjectRole: string }> };
+    }>('/api/v1/organizations/me/members/candidates', { token });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.candidates.map((c) => c.userId)).toEqual(
+      expect.arrayContaining([owner.id, member.id]),
+    );
+  });
+
+  it('候補には連絡先を含めない (一覧との違い)', async () => {
+    const res = await api<{ data: { candidates: Array<Record<string, unknown>> } }>(
+      '/api/v1/organizations/me/members/candidates',
+      { token: ownerToken },
+    );
+
+    const me = res.body.data.candidates[0]!;
+    expect(me).not.toHaveProperty('email');
+    expect(me).not.toHaveProperty('jobTitle');
+  });
+});
+
 describe('POST /organizations/me/invitations', () => {
   it('プロジェクト未選択でも招待でき、メールが飛ぶ', async () => {
     const res = await api<{ data: { id: string } }>('/api/v1/organizations/me/invitations', {

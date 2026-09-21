@@ -63,8 +63,8 @@ import { cn } from '@/components/ui/utils';
 import { moveItem, useDragReorder } from '@/lib/reorder';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { NoOrgMembersHint, OrgMemberSelect } from '@/features/organization/OrgMemberSelect';
-import { useSelectableOrgMembers } from '@/features/organization/useOrgMembers';
+import { MemberSelect, NoCandidatesHint } from '@/features/organization/OrgMemberSelect';
+import type { MemberCandidate } from '@/features/organization/api';
 import { membersApi, membersQueryKey, type ProjectMember } from './membersApi';
 import { invitationsApi, invitationsQueryKey } from './invitationsApi';
 
@@ -382,12 +382,7 @@ function ManageTab({ projectId }: { projectId: string }) {
         )}
       </CardContent>
 
-      <AddMembersDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        projectId={projectId}
-        existingUserIds={members.flatMap((m) => (m.userId ? [m.userId] : []))}
-      />
+      <AddMembersDialog open={addOpen} onClose={() => setAddOpen(false)} projectId={projectId} />
 
       <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
         <AlertDialogContent>
@@ -418,6 +413,9 @@ function ManageTab({ projectId }: { projectId: string }) {
 // -----------------------------------------------------------------------------
 // 参加者追加ダイアログ
 // -----------------------------------------------------------------------------
+/** 取得前の既定値。毎回新しい配列を作って useEffect を空回しさせないため */
+const NO_CANDIDATES: MemberCandidate[] = [];
+
 const addSchema = z.object({
   // 値はセレクトから来るので形式は問わない。UUID としての妥当性はサーバーが見る
   userId: z.string().min(1, 'メンバーを選択してください'),
@@ -440,16 +438,22 @@ function AddMembersDialog({
   open,
   onClose,
   projectId,
-  existingUserIds,
 }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
-  /** 既にこのプロジェクトに居る人。候補から外す */
-  existingUserIds: string[];
 }) {
   const qc = useQueryClient();
-  const { members: orgMembers, isLoading: orgLoading } = useSelectableOrgMembers();
+  // 候補はサーバーが絞る (#238)。**このプロジェクトの組織**から引き、既にこの
+  // プロジェクトに居る人を除いたものが返る。除いた人数も受け取り、候補が
+  // 空のときは理由を出す。
+  const candidatesQuery = useQuery({
+    queryKey: membersQueryKey.candidates(projectId),
+    queryFn: () => membersApi.candidates(projectId),
+    enabled: open,
+  });
+  const selectable = candidatesQuery.data?.candidates ?? NO_CANDIDATES;
+
   const form = useForm<AddValues>({
     resolver: zodResolver(addSchema),
     defaultValues: { userId: '', memberType: 'production', roleType: 'editor' },
@@ -460,15 +464,14 @@ function AddMembersDialog({
   // 選んだ相手の既定ロールを初期値にする。組織で「この人は閲覧者」と決めてあるなら
   // プロジェクトでもそこから始めるのが自然 (その場で変更もできる)。
   useEffect(() => {
-    const picked = orgMembers.find((m) => m.userId === selectedUserId);
+    const picked = selectable.find((m) => m.userId === selectedUserId);
     if (picked) form.setValue('roleType', picked.defaultProjectRole);
-  }, [selectedUserId, orgMembers, form]);
-
-  const selectable = orgMembers.filter((m) => !existingUserIds.includes(m.userId));
+  }, [selectedUserId, selectable, form]);
 
   const addMut = useMutation({
     mutationFn: (v: AddValues) => membersApi.add(projectId, { members: [v] }),
     onSuccess: () => {
+      // list は candidates を含む前方一致なので、候補も一緒に取り直される
       qc.invalidateQueries({ queryKey: membersQueryKey.list(projectId) });
       toast.success('参加者を追加しました');
       form.reset();
@@ -494,8 +497,18 @@ function AddMembersDialog({
             メンバー管理に登録済みのメンバーから選んで、このプロジェクトに追加します。
           </DialogDescription>
         </DialogHeader>
-        {!orgLoading && selectable.length === 0 ? (
-          <NoOrgMembersHint className="text-text-secondary text-body" />
+        {!candidatesQuery.data && !candidatesQuery.error ? (
+          <p className="text-text-tertiary text-body">読み込み中…</p>
+        ) : candidatesQuery.error ? (
+          <p className="text-body text-destructive">
+            追加できるメンバーを取得できませんでした。時間をおいてお試しください。
+          </p>
+        ) : selectable.length === 0 ? (
+          <NoCandidatesHint
+            joinedCount={candidatesQuery.data?.joinedCount ?? 0}
+            pendingCount={candidatesQuery.data?.pendingCount ?? 0}
+            className="text-text-secondary text-body"
+          />
         ) : (
           <form
             onSubmit={form.handleSubmit((v) => addMut.mutate(v))}
@@ -503,10 +516,10 @@ function AddMembersDialog({
             id="add-member-form"
           >
             <Field label="メンバー" error={form.formState.errors.userId?.message}>
-              <OrgMemberSelect
+              <MemberSelect
                 label="メンバー"
+                options={selectable}
                 value={selectedUserId}
-                exclude={existingUserIds}
                 onChange={(v) => form.setValue('userId', v, { shouldValidate: true })}
               />
             </Field>

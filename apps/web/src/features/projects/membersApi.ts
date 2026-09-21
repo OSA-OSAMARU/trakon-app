@@ -1,6 +1,7 @@
 import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 
 import { apiRequest } from '@/lib/api';
+import type { MemberCandidate } from '@/features/organization/api';
 
 export type ProjectMember = {
   id: string;
@@ -34,6 +35,18 @@ export type AddMembersInput = {
   }>;
 };
 
+/**
+ * 参加者に追加できる候補と、**候補が空になった理由** (#238)。
+ * 数が分かると「招待して」なのか「全員もう入っている」なのかを画面で言い分けられる。
+ */
+export type MemberCandidates = {
+  candidates: MemberCandidate[];
+  /** 既にこのプロジェクトに居るため候補から外れた組織メンバーの数 */
+  joinedCount: number;
+  /** 未受諾の招待の数。承諾されれば候補になる */
+  pendingCount: number;
+};
+
 export type UpdateMemberInput = Partial<{
   name: string;
   organizationName: string;
@@ -46,6 +59,8 @@ export type UpdateMemberInput = Partial<{
 export const membersApi = {
   list: (projectId: string) =>
     apiRequest<ProjectMember[]>(`/projects/${projectId}/members`),
+  candidates: (projectId: string) =>
+    apiRequest<MemberCandidates>(`/projects/${projectId}/members/candidates`),
   add: (projectId: string, body: AddMembersInput) =>
     apiRequest<ProjectMember[]>(`/projects/${projectId}/members`, {
       method: 'POST',
@@ -69,4 +84,5 @@ export const membersApi = {
 
 export const membersQueryKey = {
   list: (projectId: string) => ['projects', projectId, 'members'] as const,
+  candidates: (projectId: string) => ['projects', projectId, 'members', 'candidates'] as const,
 };

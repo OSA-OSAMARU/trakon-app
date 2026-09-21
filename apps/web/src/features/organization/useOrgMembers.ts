@@ -1,32 +1,34 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
 
-import { orgApi, orgQueryKey, type OrgMember } from './api';
+import { orgApi, orgQueryKey, type MemberCandidate } from './api';
 
 /**
- * 組織メンバー一覧 (#202)。
+ * 参加者に選べる組織メンバー (#202 / #238)。
  *
- * プロジェクト参加者はここから選ぶ。招待中 (未受諾) の人はまだアカウントが
- * 無く `userId` を持たないため、選択肢には出さない。
+ * 候補はサーバーが絞る。招待中 (未受諾) の人はまだアカウントが無いので出てこない。
+ * 候補が空のときに理由を言い分けられるよう、除外された人数も一緒に受け取る。
  */
 export function useSelectableOrgMembers() {
   const query = useQuery({
-    queryKey: orgQueryKey.members,
-    queryFn: () => orgApi.listMembers(),
+    queryKey: orgQueryKey.candidates,
+    queryFn: () => orgApi.listCandidates(),
     staleTime: 30_000,
   });
 
-  const members = useMemo(
-    () => (query.data ?? []).filter((m): m is OrgMember & { userId: string } => !!m.userId),
-    [query.data],
-  );
+  const members = query.data?.candidates ?? [];
+  const byUserId = new Map(members.map((m) => [m.userId, m]));
 
-  const byUserId = useMemo(() => new Map(members.map((m) => [m.userId, m])), [members]);
-
-  return { members, byUserId, isLoading: query.isLoading, error: query.error };
+  return {
+    members,
+    byUserId,
+    pendingCount: query.data?.pendingCount ?? 0,
+    joinedCount: query.data?.joinedCount ?? 0,
+    isLoading: query.isLoading,
+    error: query.error,
+  };
 }
 
 /** 選択肢に出す表示名。所属があれば添える。 */
-export function orgMemberLabel(m: Pick<OrgMember, 'name' | 'organizationName'>): string {
+export function orgMemberLabel(m: Pick<MemberCandidate, 'name' | 'organizationName'>): string {
   return m.organizationName ? `${m.name} / ${m.organizationName}` : m.name;
 }
