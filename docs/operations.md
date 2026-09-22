@@ -276,7 +276,8 @@ stripe trigger customer.subscription.updated
 1. `main` に PR をマージ → Vercel が自動で **Preview** デプロイ（dev 環境）
 2. QA が Preview URL で受け入れ確認
 3. **`apps/web/package.json` の `version` を上げる PR を出してマージする**（例: `1.0.0` → `1.1.0`）
-4. GitHub で **Release** を作成。タグは `v` + その version（例: `v1.1.0`）
+4. GitHub で **Release** を作成。タグは **その version そのもの**（例: `1.1.0`）
+   - 既存リリース（`1.0.1` … `1.1.0`）に合わせて **`v` は付けない**。`v1.1.0` でも通るが、揃えておく
    - **「Set as a pre-release」にはチェックを入れない。** 入れるとワークフローが丸ごとスキップされ、デプロイもマイグレーションも走らない
 5. `release-deploy.yml` が自動起動：
    1. **タグと `apps/web/package.json` の version の一致を検証**（ずれていればここで停止）
@@ -288,7 +289,8 @@ stripe trigger customer.subscription.updated
 > **バージョン表記の仕組み（#195 / #248）**
 > semver の正は **`apps/web/package.json` の `version`** 一箇所。画面左下には
 > リリース版なら `v1.1.0`、それ以外のビルドは `v1.1.0-dev+517e233`（version +
-> ビルド元コミット）が出る。タグと package.json がずれたまま本番へ出ないよう、
+> ビルド元コミット）が出る（表示上の `v` はアプリ側で付けるもので、タグの
+> `v` の有無とは無関係）。タグと package.json がずれたまま本番へ出ないよう、
 > 手順 5-1 の検証でリリースを止める。**先に package.json を上げてからタグを切る。**
 
 ### 3.2 ロールバック
