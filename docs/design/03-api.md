@@ -1014,11 +1014,27 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 
 #### `DELETE /api/v1/projects/:projectId/members/:memberId`
 
-参加者削除。Phase 0 では物理削除（参照整合性のため、進行中ボールがある場合は 409）。
+参加者削除。Phase 0 では物理削除。
+
+`project_members` は 8 本の FK から **ON DELETE RESTRICT** で参照されている
+（`projects.progress_manager_member_id` / `plans` の 5 役割 / `ball_events.actor_member_id` /
+`attachments.uploader_member_id` / `share_links.issued_by_member_id`）。
+そのまま DELETE すると Prisma が P2003 を投げて 500 になるため、
+**消せない理由を先に数えて 409 で返す**（`services/members.ts` の `assertMemberDeletable`）。
+
+理由は 2 種類に分かれ、利用者の取れる手が違う。**付け替えられない側を先に判定する**
+（逆にすると「担当を外してください」と案内した末にもう一度弾かれる）。
+
+| コード | 参照元 | 利用者が取れる手 |
+|---|---|---|
+| `MEMBER_HAS_ACTIVE_PLANS` | 予定の 5 役割（from / to / 実行 / 承認 / 進行）、プロジェクトの進行責任者 | 担当を別の参加者へ付け替えれば削除できる |
+| `MEMBER_HAS_HISTORY` | ボール操作履歴・添付ファイル・共有リンク | **付け替えられない**（追記のみの記録で、誰がやったかを書き換えると記録の意味が無くなる）。Phase 0 では削除できない。恒久的な退出は FR-AUTH-09 の一時非表示（Phase 1）で扱う |
+
+どちらも件数を `details` に載せ、メッセージにも出す（画面には「何件直せばいいのか」が要る）。
 
 **認可**：プロジェクトディレクター。
 
-**エラー**：409 (`MEMBER_HAS_ACTIVE_PLANS`)、403、404。
+**エラー**：409 (`MEMBER_HAS_ACTIVE_PLANS` / `MEMBER_HAS_HISTORY` / `CANNOT_REMOVE_SELF` / `LAST_ADMIN`)、403、404。
 
 ---
 
@@ -1695,3 +1711,4 @@ export function deriveBallHolder(plan: PlanLike, latestEvent?: BallEventLike | n
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | OAuth start/callback EP 追加 / complete-signup 追加 / GET /users/me/dashboard 追加 / PATCH .../successor 追加 / POST .../toss に toMemberId 追加 / POST .../complete に自動連鎖追加 / GET .../plans レスポンスに category, successorPlanId, source 追加 / 認可マトリクス更新 / deriveBallHolder の BallEvent に source 追加 / §3.10 論点 12〜14 追加。 |
 | 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | Ball Action を状態機械へ刷新：§3.6.8 に request-review(-undo)/approve(-undo)/send-back/toss(-undo)/complete(-undo エイリアス) を定義、toss は「進行責任者・承認済み・後続必須」で FROM/TO を履歴記録、自動連鎖 TOSS は #117 廃止。§3.6.7 PlanDTO に executor/approver/progressManager と ballState 6値、POST/PATCH に役割項目とロックルール。§3.6.10 共有アクセスを request-review/approve/send-back に置換（旧 toss/complete 廃止、閲覧専用撤回）。§3.4 認可マトリクス・§3.5 EP 一覧・§3.8 deriveBallHolder 仕様表・監査アクションを更新。§3.10 論点 12〜13 改訂。 |
 | 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §3.2.4 認可方式をロール軸へ改訂し §3.2.4b 課金エラー方針・§3.2.4c Webhook の認可例外を新設／§3.3.3 に `requireProjectAction` / `requireProjectWritable` / `requireOrgMember` / `requireOrgRole` を追加し `requireProjectDirector` を廃止／§3.4 認可マトリクスをロール列で全面改訂（TOSS は管理者のみ、予定作成・編集は閲覧者不可）／§3.4b・§3.5 に billing / organizations / invitations 作成系を追加／§3.9 に Enterprise と組織統制を持ち越しとして明記。 |
+| 2026-09-22 | **#246 反映**（参加者削除の 409 化） | §3.6.5 `DELETE /members/:memberId` を改訂。FK (ON DELETE RESTRICT) 違反がそのまま 500 になっていた問題に対し、削除可否を事前判定して 409 で返す仕様を明文化。`MEMBER_HAS_ACTIVE_PLANS`（付け替えれば消せる）と `MEMBER_HAS_HISTORY`（履歴のため付け替え不能）を区別し、後者を先に判定する。 |

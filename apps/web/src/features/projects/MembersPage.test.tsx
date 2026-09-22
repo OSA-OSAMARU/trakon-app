@@ -18,6 +18,16 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
+// 削除できない理由はトーストにしか出ない。サーバーの文面がそのまま届くかを見る。
+const toastSuccess = vi.fn();
+const toastError = vi.fn();
+vi.mock('sonner', () => ({
+  toast: {
+    success: (...a: unknown[]) => toastSuccess(...a),
+    error: (...a: unknown[]) => toastError(...a),
+  },
+}));
+
 // Radix UI が jsdom に無い API を呼ぶため shim する。
 beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -314,6 +324,38 @@ describe('MembersPage 管理タブ (integration)', () => {
     await waitFor(() => expect(deleteCalled).toBe(true));
     // 再取得後、一覧から消える。
     await waitFor(() => expect(screen.queryByText('山田 太郎')).not.toBeInTheDocument());
+  });
+
+  it('削除できない参加者は理由をそのまま出し、一覧から消さない', async () => {
+    stubMembers([member()]);
+    server.use(
+      http.delete('*/api/v1/projects/p1/members/m1', () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: 'MEMBER_HAS_ACTIVE_PLANS',
+              message:
+                'この参加者は 予定 3 件の担当 に設定されているため削除できません。担当を別の参加者へ変更してから、もう一度お試しください。',
+            },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    renderMembers(MANAGE);
+
+    await screen.findByText('山田 太郎');
+    await user.click(screen.getByRole('button', { name: '削除' }));
+    const alert = await screen.findByRole('alertdialog');
+    await user.click(within(alert).getByRole('button', { name: '削除' }));
+
+    // 「削除に失敗しました」ではなく、何件直せばいいのかが出ること
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(expect.stringContaining('予定 3 件の担当')),
+    );
+    expect(screen.getByText('山田 太郎')).toBeInTheDocument();
   });
 });
 
