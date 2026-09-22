@@ -275,11 +275,21 @@ stripe trigger customer.subscription.updated
 
 1. `main` に PR をマージ → Vercel が自動で **Preview** デプロイ（dev 環境）
 2. QA が Preview URL で受け入れ確認
-3. GitHub で **Release** を作成（`v0.1.0` などのタグ）
-4. `release-deploy.yml` が自動起動：
-   1. `prisma migrate deploy`（本番 DB へマイグレーション適用）
-   2. `vercel deploy --prod`
-5. デプロイ後、`/api/v1/healthz` が 200 を返すことを Better Stack で確認
+3. **`apps/web/package.json` の `version` を上げる PR を出してマージする**（例: `1.0.0` → `1.1.0`）
+4. GitHub で **Release** を作成。タグは `v` + その version（例: `v1.1.0`）
+   - **「Set as a pre-release」にはチェックを入れない。** 入れるとワークフローが丸ごとスキップされ、デプロイもマイグレーションも走らない
+5. `release-deploy.yml` が自動起動：
+   1. **タグと `apps/web/package.json` の version の一致を検証**（ずれていればここで停止）
+   2. `prisma migrate deploy`（本番 DB へマイグレーション適用）
+   3. `vercel deploy --prod`
+6. デプロイ後、`/api/v1/healthz` が 200 を返すことを Better Stack で確認
+7. 画面左下のバージョン表記が新しいタグ（`v1.1.0`）になっていることを確認
+
+> **バージョン表記の仕組み（#195 / #248）**
+> semver の正は **`apps/web/package.json` の `version`** 一箇所。画面左下には
+> リリース版なら `v1.1.0`、それ以外のビルドは `v1.1.0-dev+517e233`（version +
+> ビルド元コミット）が出る。タグと package.json がずれたまま本番へ出ないよう、
+> 手順 5-1 の検証でリリースを止める。**先に package.json を上げてからタグを切る。**
 
 ### 3.2 ロールバック
 

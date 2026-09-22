@@ -50,6 +50,25 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
+      # 画面に出すバージョン表記はこのタグをそのまま使う (#195 / #248)。
+      # タグと apps/web/package.json の version がずれると、画面が名乗る番号と
+      # リポジトリが名乗る番号が食い違う。ここで落として気づけるようにする。
+      # install より前に置いて、ずれていたら早く落とす。
+      - name: Verify release tag matches package version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::リリースタグ '$TAG' が semver (vX.Y.Z) ではありません。"
+            exit 1
+          fi
+          PKG=$(node -p "require('./apps/web/package.json').version")
+          if [[ "$TAG" != "v$PKG" ]]; then
+            echo "::error::リリースタグ '$TAG' と apps/web/package.json の version '$PKG' が一致しません。package.json の version を ${TAG#v} に更新してからリリースし直してください。"
+            exit 1
+          fi
+          echo "✅ $TAG = apps/web/package.json@$PKG"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
