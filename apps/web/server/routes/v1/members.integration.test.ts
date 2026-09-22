@@ -5,8 +5,11 @@ import { prisma } from '@trakon/db';
 import { api } from '../../test/request.js';
 import {
   addProjectMemberWithRole,
+  createBallEvent,
+  createItem,
   createMember,
   createOrgMember,
+  createPlan,
   createOutsider,
   createProjectWithAdmin,
   createUser,
@@ -250,6 +253,83 @@ describe('members routes (integration)', () => {
       );
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('MEMBER_EMAIL_TAKEN');
+    });
+
+    // -------------------------------------------------------------------------
+    // 削除可否の判定 (§3.6.5)。
+    // project_members は ON DELETE RESTRICT で参照されているため、素通しすると
+    // Prisma P2003 → 500 になる。**実 DB で 409 になり、行が残ること**を固定する。
+    // -------------------------------------------------------------------------
+    it('予定の担当になっている参加者の削除は 409 MEMBER_HAS_ACTIVE_PLANS', async () => {
+      const { token, project } = await setupProjectWithDirector();
+      const target = await createMember({
+        projectId: project.id,
+        userId: null,
+        memberType: 'production',
+      });
+      const item = await createItem({ projectId: project.id });
+      await createPlan({ itemId: item.id, toMemberId: target.id });
+
+      const res = await api<{ error: { code: string; message: string; details?: unknown } }>(
+        `/api/v1/projects/${project.id}/members/${target.id}`,
+        { method: 'DELETE', token },
+      );
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('MEMBER_HAS_ACTIVE_PLANS');
+      expect(res.body.error.message).toContain('予定 1 件の担当');
+      // 弾いたあと行が消えていないこと (500 で落ちていた頃との差)
+      expect(await prisma.projectMember.count({ where: { id: target.id } })).toBe(1);
+    });
+
+    it('プロジェクトの進行責任者の削除は 409 MEMBER_HAS_ACTIVE_PLANS', async () => {
+      const { token, project } = await setupProjectWithDirector();
+      const target = await createMember({
+        projectId: project.id,
+        userId: null,
+        memberType: 'production',
+      });
+      await prisma.project.update({
+        where: { id: project.id },
+        data: { progressManagerMemberId: target.id },
+      });
+
+      const res = await api<{ error: { code: string; message: string } }>(
+        `/api/v1/projects/${project.id}/members/${target.id}`,
+        { method: 'DELETE', token },
+      );
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('MEMBER_HAS_ACTIVE_PLANS');
+      expect(res.body.error.message).toContain('プロジェクトの進行責任者');
+    });
+
+    it('ボールの操作履歴が残っている参加者の削除は 409 MEMBER_HAS_HISTORY', async () => {
+      const { token, project } = await setupProjectWithDirector();
+      // ボールを操作できるのはアカウント紐付き参加者だけ (ck_be_actor_consistency)
+      const { member: target, user: targetUser } = await addProjectMemberWithRole({
+        projectId: project.id,
+        roleType: 'editor',
+      });
+      const item = await createItem({ projectId: project.id });
+      // 予定側は誰も担当していない。履歴だけで弾かれることを見る
+      const plan = await createPlan({ itemId: item.id });
+      await createBallEvent({
+        planId: plan.id,
+        eventType: 'tossed',
+        actorMemberId: target.id,
+        actorUserId: targetUser.id,
+      });
+
+      const res = await api<{ error: { code: string; message: string } }>(
+        `/api/v1/projects/${project.id}/members/${target.id}`,
+        { method: 'DELETE', token },
+      );
+
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('MEMBER_HAS_HISTORY');
+      expect(res.body.error.message).toContain('ボールの操作履歴 1 件');
+      expect(await prisma.projectMember.count({ where: { id: target.id } })).toBe(1);
     });
 
     it('ディレクター本人の自己削除は 409 CANNOT_REMOVE_SELF', async () => {

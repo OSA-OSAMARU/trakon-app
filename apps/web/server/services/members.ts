@@ -346,8 +346,92 @@ export async function deleteMember(input: {
     await assertNotLastAdmin(input.projectId, input.memberId);
   }
 
-  // plans 連動 (MEMBER_HAS_ACTIVE_PLANS) は Sub-Phase 0.3 で plans 追加後に実装
-  await prisma.projectMember.delete({ where: { id: input.memberId } });
+  await assertMemberDeletable(input.memberId);
+
+  try {
+    await prisma.projectMember.delete({ where: { id: input.memberId } });
+  } catch (e) {
+    // assertMemberDeletable と delete の間に予定が作られた場合の取りこぼし。
+    // ここを素通りさせると 500 に落ちるので、同じ 409 に寄せる。
+    if (!isForeignKeyViolation(e)) throw e;
+    throw new ApiException(
+      'MEMBER_HAS_ACTIVE_PLANS',
+      409,
+      'この参加者は予定などから参照されているため削除できません。担当を別の参加者へ変更してから、もう一度お試しください。',
+    );
+  }
+}
+
+/** Prisma の外部キー制約違反 (P2003)。型を引くためだけに @prisma/client を import しない。 */
+function isForeignKeyViolation(e: unknown): boolean {
+  return (
+    typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'P2003'
+  );
+}
+
+/**
+ * 参加者を物理削除できるか検査する (#246 / §3.6.5)。
+ *
+ * `project_members` は 8 本の FK から **ON DELETE RESTRICT** で参照されている。
+ * 検査せずに delete すると Prisma が P2003 を投げ、error ミドルウェアはこれを
+ * 知らないので 500 になる。画面に出るのは理由の無い「削除に失敗しました」だけで、
+ * 利用者には何を直せばいいのか分からない。**消せない理由を先に数えて 409 で返す。**
+ *
+ * 理由は 2 種類あり、利用者の取れる手が違う:
+ *   - 付け替えれば消せる … 予定の役割 (from/to/実行/承認/進行) と
+ *     プロジェクトの進行責任者
+ *   - 付け替えられない   … ボール操作履歴・添付・共有リンク。追記のみの記録で、
+ *     誰がやったかを書き換えると記録の意味が無くなる
+ *
+ * **付け替えられない側を先に判定する。** 逆にすると「担当を外してください」と
+ * 案内した末にもう一度弾かれる、という最悪の案内になる。
+ */
+async function assertMemberDeletable(memberId: string): Promise<void> {
+  const [ballEventCount, attachmentCount, shareLinkCount, planCount, projectPmCount] =
+    await Promise.all([
+      prisma.ballEvent.count({ where: { actorMemberId: memberId } }),
+      prisma.attachment.count({ where: { uploaderMemberId: memberId } }),
+      prisma.shareLink.count({ where: { issuedByMemberId: memberId } }),
+      prisma.plan.count({
+        where: {
+          OR: [
+            { fromMemberId: memberId },
+            { toMemberId: memberId },
+            { executorMemberId: memberId },
+            { approverMemberId: memberId },
+            { progressManagerMemberId: memberId },
+          ],
+        },
+      }),
+      prisma.project.count({ where: { progressManagerMemberId: memberId } }),
+    ]);
+
+  if (ballEventCount + attachmentCount + shareLinkCount > 0) {
+    const parts = [
+      ballEventCount > 0 ? `ボールの操作履歴 ${ballEventCount} 件` : null,
+      attachmentCount > 0 ? `添付ファイル ${attachmentCount} 件` : null,
+      shareLinkCount > 0 ? `共有リンク ${shareLinkCount} 件` : null,
+    ].filter((p): p is string => p !== null);
+    throw new ApiException(
+      'MEMBER_HAS_HISTORY',
+      409,
+      `この参加者には ${parts.join('・')} が残っているため削除できません。記録を残すため、削除ではなく予定の担当から外してご利用ください。`,
+      { ballEventCount, attachmentCount, shareLinkCount },
+    );
+  }
+
+  if (planCount + projectPmCount > 0) {
+    const parts = [
+      planCount > 0 ? `予定 ${planCount} 件の担当` : null,
+      projectPmCount > 0 ? 'プロジェクトの進行責任者' : null,
+    ].filter((p): p is string => p !== null);
+    throw new ApiException(
+      'MEMBER_HAS_ACTIVE_PLANS',
+      409,
+      `この参加者は ${parts.join('・')} に設定されているため削除できません。担当を別の参加者へ変更してから、もう一度お試しください。`,
+      { planCount, isProjectProgressManager: projectPmCount > 0 },
+    );
+  }
 }
 
 // -----------------------------------------------------------------------------

@@ -389,7 +389,8 @@ function ManageTab({ projectId }: { projectId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>「{removing?.name}」をプロジェクトから外しますか？</AlertDialogTitle>
             <AlertDialogDescription>
-              担当ボールがある場合は再アサインを検討してください。
+              予定の担当になっている場合や操作履歴が残っている場合は削除できません。
+              先に担当を別の参加者へ変更してください。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

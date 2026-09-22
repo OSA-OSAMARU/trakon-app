@@ -52,6 +52,15 @@ const orgMemberStore: Record<string, MockOrgMember> = {};
 /** invitation.count が返す値 (#238)。各テストで上書きする */
 let pendingInvitationCount = 0;
 
+/** deleteMember の削除可否判定が数える参照の件数。既定は全部 0 (= 削除できる)。 */
+const blockingCounts = {
+  ballEvent: 0,
+  attachment: 0,
+  shareLink: 0,
+  plan: 0,
+  projectProgressManager: 0,
+};
+
 let nextId = 1;
 const newId = (prefix: string) => `${prefix}-${nextId++}`;
 
@@ -163,6 +172,12 @@ const prismaMock = {
   invitation: {
     count: vi.fn(async () => pendingInvitationCount),
   },
+  // deleteMember の削除可否判定。既定は 0 件 (= 消せる) で、必要なテストだけ上書きする
+  ballEvent: { count: vi.fn(async () => blockingCounts.ballEvent) },
+  attachment: { count: vi.fn(async () => blockingCounts.attachment) },
+  shareLink: { count: vi.fn(async () => blockingCounts.shareLink) },
+  plan: { count: vi.fn(async () => blockingCounts.plan) },
+  project: { count: vi.fn(async () => blockingCounts.projectProgressManager) },
   // members.ts はコールバック形式 ($transaction(fn)) のみ使用。
   $transaction: vi.fn(async (arg: unknown) => {
     return (arg as (tx: unknown) => Promise<unknown>)({
@@ -193,6 +208,9 @@ afterEach(() => {
   for (const k of Object.keys(memberStore)) delete memberStore[k];
   for (const k of Object.keys(orgMemberStore)) delete orgMemberStore[k];
   pendingInvitationCount = 0;
+  for (const k of Object.keys(blockingCounts) as (keyof typeof blockingCounts)[]) {
+    blockingCounts[k] = 0;
+  }
   vi.clearAllMocks();
 });
 
@@ -472,6 +490,88 @@ describe('deleteMember', () => {
       deleteMember({ memberId: 'm-self', projectId: 'p-1', currentUserId: 'u-self' }),
     ).rejects.toMatchObject({ code: 'CANNOT_REMOVE_SELF', status: 409 });
     expect(prismaMock.projectMember.delete).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // 削除可否の判定。
+  // project_members は 8 本の FK から ON DELETE RESTRICT で参照されており、
+  // 素通しすると P2003 → 500 になる。**理由の分かる 409 になること**を固定する。
+  // ---------------------------------------------------------------------------
+  it('予定の担当になっている参加者は 409 MEMBER_HAS_ACTIVE_PLANS', async () => {
+    seedMember({ id: 'm-busy', projectId: 'p-1', userId: 'u-other' });
+    blockingCounts.plan = 3;
+
+    await expect(
+      deleteMember({ memberId: 'm-busy', projectId: 'p-1', currentUserId: 'u-self' }),
+    ).rejects.toMatchObject({
+      code: 'MEMBER_HAS_ACTIVE_PLANS',
+      status: 409,
+      details: { planCount: 3, isProjectProgressManager: false },
+    });
+    // 件数をメッセージに出す (画面には何件直せばいいのかが要る)
+    await expect(
+      deleteMember({ memberId: 'm-busy', projectId: 'p-1', currentUserId: 'u-self' }),
+    ).rejects.toThrow(/予定 3 件の担当/);
+    expect(prismaMock.projectMember.delete).not.toHaveBeenCalled();
+  });
+
+  it('プロジェクトの進行責任者は 409 MEMBER_HAS_ACTIVE_PLANS', async () => {
+    seedMember({ id: 'm-pm', projectId: 'p-1', userId: 'u-other' });
+    blockingCounts.projectProgressManager = 1;
+
+    await expect(
+      deleteMember({ memberId: 'm-pm', projectId: 'p-1', currentUserId: 'u-self' }),
+    ).rejects.toMatchObject({
+      code: 'MEMBER_HAS_ACTIVE_PLANS',
+      status: 409,
+      details: { planCount: 0, isProjectProgressManager: true },
+    });
+    expect(prismaMock.projectMember.delete).not.toHaveBeenCalled();
+  });
+
+  it('操作履歴が残っている参加者は 409 MEMBER_HAS_HISTORY', async () => {
+    seedMember({ id: 'm-hist', projectId: 'p-1', userId: 'u-other' });
+    blockingCounts.ballEvent = 2;
+    blockingCounts.attachment = 1;
+
+    await expect(
+      deleteMember({ memberId: 'm-hist', projectId: 'p-1', currentUserId: 'u-self' }),
+    ).rejects.toMatchObject({
+      code: 'MEMBER_HAS_HISTORY',
+      status: 409,
+      details: { ballEventCount: 2, attachmentCount: 1, shareLinkCount: 0 },
+    });
+    expect(prismaMock.projectMember.delete).not.toHaveBeenCalled();
+  });
+
+  it('履歴と予定の両方があるときは履歴側を返す (担当を外しても消せないため)', async () => {
+    seedMember({ id: 'm-both', projectId: 'p-1', userId: 'u-other' });
+    blockingCounts.ballEvent = 1;
+    blockingCounts.plan = 5;
+
+    await expect(
+      deleteMember({ memberId: 'm-both', projectId: 'p-1', currentUserId: 'u-self' }),
+    ).rejects.toMatchObject({ code: 'MEMBER_HAS_HISTORY', status: 409 });
+  });
+
+  it('競合で P2003 が出た場合も 500 ではなく 409 にする', async () => {
+    seedMember({ id: 'm-race', projectId: 'p-1', userId: 'u-other' });
+    prismaMock.projectMember.delete.mockRejectedValueOnce(
+      Object.assign(new Error('FK violation'), { code: 'P2003' }),
+    );
+
+    await expect(
+      deleteMember({ memberId: 'm-race', projectId: 'p-1', currentUserId: 'u-self' }),
+    ).rejects.toMatchObject({ code: 'MEMBER_HAS_ACTIVE_PLANS', status: 409 });
+  });
+
+  it('P2003 以外のエラーは握りつぶさずそのまま投げる', async () => {
+    seedMember({ id: 'm-boom', projectId: 'p-1', userId: 'u-other' });
+    prismaMock.projectMember.delete.mockRejectedValueOnce(new Error('connection lost'));
+
+    await expect(
+      deleteMember({ memberId: 'm-boom', projectId: 'p-1', currentUserId: 'u-self' }),
+    ).rejects.toThrow('connection lost');
   });
 });
 
