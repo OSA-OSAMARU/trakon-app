@@ -9,5 +9,7 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "vitest.config.ts"]
+  // appVersion.ts はバージョン表記の組み立て規則 (#248)。vite.config.ts が
+  // ビルド時に呼ぶため、ビルド設定側のプロジェクトにも含める。
+  "include": ["vite.config.ts", "vitest.config.ts", "src/lib/appVersion.ts"]
 }
