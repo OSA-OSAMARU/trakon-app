@@ -84,6 +84,55 @@ describe('share-links routes (integration)', () => {
       expect(res.body.data[0]!.status).toBe('active');
     });
 
+    it('GET /share-links は発行時と同じ共有 URL を返す (#255)', async () => {
+      const { token, project } = await setupProjectWithDirector();
+      const created = await api<{ data: { url: string } }>(
+        `/api/v1/projects/${project.id}/share-links`,
+        {
+          method: 'POST',
+          token,
+          body: { scopeType: 'project', expiresInHours: null },
+        },
+      );
+
+      const res = await api<{ data: Array<{ url: string | null }> }>(
+        `/api/v1/projects/${project.id}/share-links`,
+        { token },
+      );
+
+      // 発行直後しか見られなかった URL を、一覧から再表示できる
+      expect(res.body.data[0]!.url).toBe(created.body.data.url);
+      // 生トークンが平文で保存されていないことも併せて確認する
+      const row = await prisma.shareLink.findFirstOrThrow({
+        where: { projectId: project.id },
+        select: { tokenCipher: true },
+      });
+      const rawToken = created.body.data.url.split('/share/')[1]!;
+      expect(row.tokenCipher).not.toBeNull();
+      expect(row.tokenCipher).not.toContain(rawToken);
+    });
+
+    it('GET /share-links は暗号文を持たない行の url を null で返す (#255 以前の発行)', async () => {
+      const { token, project, member } = await setupProjectWithDirector();
+      await prisma.shareLink.create({
+        data: {
+          projectId: project.id,
+          scopeType: 'project',
+          scopeTargetId: null,
+          tokenHash: 'hash-for-legacy-url-test',
+          issuedByMemberId: member.id,
+          expiresAt: null,
+        },
+      });
+
+      const res = await api<{ data: Array<{ url: string | null }> }>(
+        `/api/v1/projects/${project.id}/share-links`,
+        { token },
+      );
+
+      expect(res.body.data[0]!.url).toBeNull();
+    });
+
     it('DELETE /share-links/:id はディレクターが失効でき 204 を返す', async () => {
       const { token, project, member } = await setupProjectWithDirector();
       const link = await prisma.shareLink.create({

@@ -120,6 +120,8 @@ jobs:
       SUPABASE_URL: http://127.0.0.1:54321
       SUPABASE_SERVICE_ROLE_KEY: test-service-role-key-1234567890
       SUPABASE_JWT_AUD: authenticated
+      # 共有トークンの列レベル暗号化 (#255)。テスト専用の固定値で、本番の鍵とは無関係
+      SHARE_TOKEN_ENCRYPTION_KEY: dHJha29uLWNpLXNoYXJlLXRva2VuLWtleS0zMmJ5dGU=
     steps:
       - name: Checkout
         uses: actions/checkout@v4

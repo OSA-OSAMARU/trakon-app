@@ -35,6 +35,15 @@ const envSchema = z
     STRIPE_PORTAL_CONFIGURATION_ID: z.string().min(3).optional(),
     SENTRY_ENVIRONMENT: z.string().optional(),
     /**
+     * 共有リンクの生トークンを暗号化して保管するための鍵 (#255)。
+     * base64 で 32 byte (`openssl rand -base64 32`)。
+     *
+     * 未設定でも共有リンクの発行・検証は動く (照合は token_hash のまま)。
+     * 効くのは「発行済みリンクの URL を一覧から再表示できるか」だけなので、
+     * ローカル・テストでは任意にしている。本番は下の superRefine で必須。
+     */
+    SHARE_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
+    /**
      * 運営管理画面 (#204) を開けるメールアドレス。カンマ区切り。
      *
      * DB の列ではなく環境変数で持つ。運営権限は**デプロイ側で管理したい**もので、
@@ -52,6 +61,13 @@ const envSchema = z
   // dev / test では未設定を許し、実行時に getStripe() が 503 を返す。
   .superRefine((d, ctx) => {
     if (d.APP_ENV !== 'prod') return;
+    if (!d.SHARE_TOKEN_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'SHARE_TOKEN_ENCRYPTION_KEY は本番環境では必須 (共有 URL の再表示に使う)',
+        path: ['SHARE_TOKEN_ENCRYPTION_KEY'],
+      });
+    }
     const required = [
       'STRIPE_SECRET_KEY',
       'STRIPE_WEBHOOK_SECRET',

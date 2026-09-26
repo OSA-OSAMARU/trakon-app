@@ -1415,13 +1415,18 @@ TOSS：承認済み → TOSS済み。進行責任者が後続予定へボール�
     revokedAt: string | null,
     organizationOffRevoked: boolean,    // Phase 0 は常に false
     lastAccessedAt: string | null,
-    status: 'active' | 'revoked' | 'expired'  // サーバ側で算出
+    status: 'active' | 'revoked' | 'expired',  // サーバ側で算出
+    url: string | null          // **#255 追加**。暗号文から復元した共有 URL
   }>,
   meta: { total: number, limit: number, offset: number }
 }
 ```
 
-> **生トークンは返さない**。発行直後の POST レスポンスでのみ平文を返す（後述）。
+> **#255 改訂**：一覧でも共有 URL を返す。「発行済みリンクの URL を後から確認してクライアントへ再送する」という運用のため、`share_links.token_cipher`（AES-256-GCM）から復元した URL を `url` に載せる（02-database §2.4.X / 05-security §5.4.5・§5.5.5）。
+>
+> `url` が `null` になるのは、#255 以前に発行された行（暗号文が無い）と、サーバーに復号鍵が無い / 鍵が入れ替わった場合。**リンク自体は有効なまま**で、再表示だけができない状態を表す。画面は「発行し直してください」と案内する。
+>
+> URL は発行時と同じオリジン（リクエスト元）で組み立てる。
 
 #### `POST /api/v1/projects/:projectId/share-links`
 
@@ -1442,7 +1447,7 @@ TOSS：承認済み → TOSS済み。進行責任者が後続予定へボール�
 1. scope 整合性検証（`scopeType='item'/'plan'` なら `scopeTargetId` がプロジェクト配下に存在することを確認）
 2. 期限上限チェック（既定 7日、上限 30日。最終確定値は章5 §5.x）
 3. トークン生成：暗号学的乱数 32バイト → URL-safe Base64
-4. SHA-256 で `token_hash` を算出して `share_links` に INSERT
+4. SHA-256 で `token_hash` を算出、併せて AES-256-GCM で `token_cipher` を算出して `share_links` に INSERT（#255。鍵が未設定の環境では `token_cipher` は NULL）
 5. `audit_logs` に `action='share_create'` を記録
 6. 平文トークンを含む URL をレスポンス
 
@@ -1452,7 +1457,7 @@ TOSS：承認済み → TOSS済み。進行責任者が後続予定へボール�
   data: {
     id: string,
     url: string,                 // 例：https://app.example.com/share/<token>
-    token: string,               // **このレスポンスでのみ返す。再表示不可**
+    token: string,               // 生トークン（#255 以降は一覧 API でも URL として再取得できる）
     scopeType, scopeTargetId,
     issuedByMemberId, issuedAt, expiresAt,
     revokedAt: null,

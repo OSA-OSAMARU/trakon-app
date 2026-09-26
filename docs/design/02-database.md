@@ -684,7 +684,7 @@ UPDATE project_members SET role_type = 'editor' WHERE role_type IS NULL;
 
 ### 2.4.9. share_links — 非会員URL共有
 
-**司る機能**：FR-SHARE-01〜06（Phase 0）／FR-SHARE-07（Phase 2）／SR-AUTH-08（Phase 0）／SR-AUTH-09（Phase 2）／UC-23 非会員URLでの確認・差し戻し／SC-16 非会員URL 発行・管理。**1行＝1発行URL**。短時間有効期限・個別失効・全アクセスの監査ログ記録（`audit_logs.share_link_id`）を Phase 0 から実装。組織OFFによる強制失効は Phase 2 で参照開始。トークン本体は SHA-256 等でハッシュ保存し、生トークンは保存しない（招待トークンと同方針）。
+**司る機能**：FR-SHARE-01〜06（Phase 0）／FR-SHARE-07（Phase 2）／SR-AUTH-08（Phase 0）／SR-AUTH-09（Phase 2）／UC-23 非会員URLでの確認・差し戻し／SC-16 非会員URL 発行・管理。**1行＝1発行URL**。短時間有効期限・個別失効・全アクセスの監査ログ記録（`audit_logs.share_link_id`）を Phase 0 から実装。組織OFFによる強制失効は Phase 2 で参照開始。トークンの**照合**は SHA-256 ハッシュの完全一致のみで行う。**#255 改訂**：発行済み URL を一覧で再表示するため、生トークンの AES-256-GCM 暗号文を `token_cipher` に併せて保管する（鍵はアプリ env、表示専用、05-security §5.5.5）。**招待トークンは対象外**（メールで届くもので再表示の要件がない）。
 
 | カラム | 型 | NULL | 既定 | 説明 |
 |---|---|:---:|---|---|
@@ -692,7 +692,8 @@ UPDATE project_members SET role_type = 'editor' WHERE role_type IS NULL;
 | project_id | uuid | × | — | FK → projects.id |
 | scope_type | text | × | — | 'project' / 'item' / 'plan'（CHECK）。共有スコープ |
 | scope_target_id | uuid | ○ | NULL | scope_type='item' なら project_items.id、'plan' なら plans.id、'project' なら NULL |
-| token_hash | text | × | — | トークン本体（≥256bit、暗号学的乱数、URL-safe Base64）の SHA-256 等ハッシュ。**生トークンは保存しない** |
+| token_hash | text | × | — | トークン本体（≥256bit、暗号学的乱数、URL-safe Base64）の SHA-256 ハッシュ。**照合はこの列だけで行う** |
+| **token_cipher** | text | ○ | NULL | **#255 追加**。生トークンの AES-256-GCM 暗号文（`v1:iv:ct:tag`）。一覧で URL を再表示するための**表示専用**の列で、認可には使わない。鍵は env `SHARE_TOKEN_ENCRYPTION_KEY`。NULL = #255 以前に発行された行、または鍵未設定の環境で発行された行 |
 | issued_by_member_id | uuid | × | — | FK → project_members.id（発行者） |
 | issued_at | timestamptz | × | now() | 発行日時 |
 | expires_at | timestamptz | × | — | 有効期限（FR-SHARE-02、SR-AUTH-08） |

@@ -445,8 +445,13 @@ model ShareLink {
   scopeType        String    @map("scope_type")
   /// scope_type='project' なら NULL (整合性 CHECK で強制)
   scopeTargetId    String?   @map("scope_target_id") @db.Uuid
-  /// SHA-256 ハッシュ。生トークンは保存しない
+  /// SHA-256 ハッシュ。**トークンの照合は常にこの列だけで行う**
   tokenHash        String    @unique(map: "uq_sl_token_hash") @map("token_hash")
+  /// 生トークンの AES-256-GCM 暗号文 (#255)。発行済みリンクの URL を一覧で
+  /// 再表示するためだけに持つ**表示専用**の列で、認証の判断には使わない。
+  /// 鍵はアプリの env (SHARE_TOKEN_ENCRYPTION_KEY) にあり DB には無い。
+  /// NULL = #255 以前に発行された行、または鍵未設定の環境で発行された行
+  tokenCipher      String?   @map("token_cipher")
   issuedByMemberId String    @map("issued_by_member_id") @db.Uuid
   issuedAt         DateTime  @default(now()) @map("issued_at") @db.Timestamptz
   /// NULL = 無期限 (有効期限なし)
