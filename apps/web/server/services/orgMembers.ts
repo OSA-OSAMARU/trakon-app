@@ -109,16 +109,17 @@ export async function listOrgMembers(organizationId: string): Promise<OrgMemberD
   );
 
   const active: OrgMemberDTO[] = members.map((m) => {
-    // 表示名・所属名・職種・メールの解決は参加者一覧と同じ関数を通す (#156)
+    // 表示名・所属名・職種・メールの解決は参加者一覧と同じ関数を通す (#156 / #254)
     const profile = resolveMemberProfile({
-      member: { name: '', organizationName: '', jobTitle: null, email: null },
+      member: { name: m.user.fullName, organizationName: '', jobTitle: null, email: null },
       user: m.user,
     });
     return {
       userId: m.userId,
       invitationId: null,
       status: 'active',
-      name: m.user.fullName || m.user.displayName,
+      // 表示名を全画面で揃える (#254)。fullName は表示名が空のときの保険
+      name: profile.name,
       organizationName: profile.organizationName || null,
       email: profile.email ?? m.user.email,
       jobTitle: profile.jobTitle as JobTitle | null,

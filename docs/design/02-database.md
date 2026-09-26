@@ -343,7 +343,7 @@ erDiagram
 - パスワードハッシュは Supabase Auth が `auth.users.encrypted_password` に保持、本テーブルには持たせない
 - 招待受諾フロー（FR-AUTH-02）：`invitations.token_hash` 検証 → Supabase Auth でユーザー作成 → アプリ DB の `users` 行作成 → `project_members.user_id` を埋める、の順
 - **OAuth サインアップフロー（v1.1、UC-24）**：FE が Supabase Auth `signInWithOAuth` → コールバック → BE `/auth/me/sync` で users 行 INSERT（primary_auth_method = 'google' or 'microsoft'）、oauth_identities INSERT
-- **所属名 / 職種 / メールの解決（#156）**：表示に使う所属名・職種・メールは **users 側が正**とし、
+- **表示名 / 所属名 / 職種 / メールの解決（#156、#254 で氏名を追加）**：表示に使う氏名（表示名）・所属名・職種・メールは **users 側が正**とし、
   `project_members` 側の値は「アカウント未紐付けの参加者（フリープランの表示専用メンバー）」のためのもの、
   および「プロジェクト別の上書き」として扱う（read-through）。解決は
   `packages/shared/src/domain/memberProfile.ts` の `resolveMemberProfile()` 1 箇所に集約する。
@@ -351,6 +351,12 @@ erDiagram
   直す手段もどこにも無い状態になるため。
   招待受諾時（`services/invitations.ts`）は、アカウント側が空なら招待行の値を引き継いだうえで
   **参加者行の `organization_name` / `job_title` を空にする**（正を users に一本化する）。
+  **#254 改訂**：氏名（画面に出る名前）も `users.display_name` を正とする。当初は「A社の山田さん」のような
+  プロジェクトごとの呼び分けを想定して `project_members.name` を残していたが、実際には
+  「メンバー管理では『みやまる』なのにスケジュールのサイドモーダルでは『宮丸』」という食い違いを生んだ。
+  呼び分けの需要より「マイページの表示名が全画面に出る」一貫性を優先する。`project_members.name` は
+  **アカウント未紐付けの参加者（`user_id IS NULL`）と、表示名が空のときのフォールバック**として残す。
+  予定を引くクエリは `services/plans.ts` の `PLAN_INCLUDE`（`user` を必ず include）を共用する。
 - **Magic-link サインアップフロー（v1.1、UC-01 改訂）**：FE がメール入力 → Supabase Auth Magic-link 送信 → リンク押下後に詳細入力（full_name / display_name / password）→ `/auth/me/complete-signup` で users 行 INSERT + Supabase Auth `updateUser({ password })` で恒久パスワード設定
 
 ---

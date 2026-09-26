@@ -648,13 +648,13 @@ describe('listMemberCandidates', () => {
     expect(res.pendingCount).toBe(2);
   });
 
-  it('表示名は氏名を優先する (未設定なら表示名)', async () => {
+  it('候補の名前は表示名を使う (#254)', async () => {
     seedOrgMember({
       userId: 'u-1',
       user: {
         id: 'u-1',
         fullName: '山田 太郎',
-        displayName: 'taro',
+        displayName: 'たろう',
         organizationName: 'Acme',
         email: 'taro@x.test',
         avatarPath: null,
@@ -664,6 +664,25 @@ describe('listMemberCandidates', () => {
 
     const res = await listMemberCandidates({ organizationId: ORG_ID });
 
-    expect(res.candidates[0]).toMatchObject({ name: '山田 太郎', organizationName: 'Acme' });
+    expect(res.candidates[0]).toMatchObject({ name: 'たろう', organizationName: 'Acme' });
+  });
+
+  it('表示名が空なら氏名へフォールバックする', async () => {
+    seedOrgMember({
+      userId: 'u-1',
+      user: {
+        id: 'u-1',
+        fullName: '山田 太郎',
+        displayName: '',
+        organizationName: 'Acme',
+        email: 'taro@x.test',
+        avatarPath: null,
+        deletedAt: null,
+      },
+    });
+
+    const res = await listMemberCandidates({ organizationId: ORG_ID });
+
+    expect(res.candidates[0]).toMatchObject({ name: '山田 太郎' });
   });
 });

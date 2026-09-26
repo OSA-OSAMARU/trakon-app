@@ -2,11 +2,13 @@ import { prisma } from '@trakon/db';
 import {
   deriveBallHolder,
   pickLatestBallEvent,
+  resolveMemberProfile,
   type BallEventType,
   type PlanCategory,
   type PlanState,
 } from '@trakon/shared';
 
+import { MEMBER_PROFILE_USER_SELECT } from '../lib/memberProfile.js';
 import type { DashboardQuery } from '../schemas/dashboard.js';
 
 export type DashboardTaskDTO = {
@@ -85,6 +87,8 @@ export async function getDashboard(input: {
       members: {
         where: { deletedAt: null },
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+        // 氏名・所属名はアカウント側が正 (#156 / #254)
+        include: { user: MEMBER_PROFILE_USER_SELECT },
       },
       items: { where: { deletedAt: null }, select: { id: true, name: true } },
     },
@@ -125,10 +129,24 @@ export async function getDashboard(input: {
     for (const it of p.items) itemMap.set(it.id, { name: it.name, projectId: p.id });
   }
 
-  // memberId -> 表示名 (進行責任者をカードに出すため)
-  const memberNameById = new Map<string, string>();
+  // memberId -> 表示名 / 所属名 (進行責任者をカードに出すため)。
+  // 解決はアカウント側を正とする共通関数を通す (#156 / #254)
+  const profileById = new Map<string, { name: string; organizationName: string }>();
   for (const p of projects) {
-    for (const m of p.members) memberNameById.set(m.id, m.name);
+    for (const m of p.members) {
+      profileById.set(
+        m.id,
+        resolveMemberProfile({
+          member: {
+            name: m.name,
+            organizationName: m.organizationName,
+            jobTitle: m.jobTitle,
+            email: m.email,
+          },
+          user: m.user,
+        }),
+      );
+    }
   }
 
   let todayTaskCount = 0;
@@ -179,7 +197,7 @@ export async function getDashboard(input: {
       progressManager: plan.progressManagerMemberId
         ? {
             id: plan.progressManagerMemberId,
-            name: memberNameById.get(plan.progressManagerMemberId) ?? '',
+            name: profileById.get(plan.progressManagerMemberId)?.name ?? '',
           }
         : null,
     };
@@ -195,8 +213,8 @@ export async function getDashboard(input: {
         .map((m) => ({
           member: {
             id: m.id,
-            name: m.name,
-            organizationName: m.organizationName,
+            name: profileById.get(m.id)?.name ?? m.name,
+            organizationName: profileById.get(m.id)?.organizationName ?? m.organizationName,
             memberType: m.memberType as 'client' | 'production',
             isMe: m.userId === input.currentUserId,
           },

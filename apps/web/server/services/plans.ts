@@ -4,12 +4,17 @@ import { prisma, type Prisma } from '@trakon/db';
 import {
   deriveBallHolder,
   pickLatestBallEvent,
+  resolveMemberProfile,
   type BallEventType,
   type MemberType,
   type PlanState,
 } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
+import {
+  MEMBER_PROFILE_USER_SELECT,
+  type MemberProfileUserRow,
+} from '../lib/memberProfile.js';
 import { assertPlanWithinProjectPeriod, toDateOnly } from './projectPeriod.js';
 import type {
   CreatePlanBody,
@@ -78,31 +83,55 @@ function toDateString(d: Date | null | undefined): string | null {
  * **メールアドレスや職種はここに載せない。** この DTO は共有リンク (非会員) の
  * 画面にもそのまま流れる (services/shareAccess.ts が toPlanDTO を再利用している)。
  * 認証済み画面のホバーカード (#159) は参加者一覧 API 側の値を使う。
+ *
+ * 氏名と所属名はアカウント (users) 側を正とする (#156 / #254)。参加者一覧と同じ
+ * resolveMemberProfile を通すことで、スケジュールカード・サイドモーダルにも
+ * マイページの表示名がそのまま出る。
  */
 function toMemberRef(m: {
   id: string;
   name: string;
   organizationName: string;
+  jobTitle: string | null;
+  email: string | null;
   memberType: string;
+  user?: MemberProfileUserRow | null;
 } | null | undefined): MemberRef | null {
   if (!m) return null;
+  const profile = resolveMemberProfile({
+    member: {
+      name: m.name,
+      organizationName: m.organizationName,
+      jobTitle: m.jobTitle,
+      email: m.email,
+    },
+    user: m.user,
+  });
   return {
     id: m.id,
-    name: m.name,
-    organizationName: m.organizationName,
+    name: profile.name,
+    organizationName: profile.organizationName,
     // 'partner' が抜けていて外部パートナーが client として型付けされていた (#147 の取りこぼし)
     memberType: m.memberType as MemberType,
   };
 }
 
-const PLAN_INCLUDE = {
-  executor: true,
-  approver: true,
-  progressManager: true,
-  fromMember: true,
-  toMember: true,
+/** 参加者行はプロフィール解決のため必ず users を伴わせる (#254)。 */
+const PLAN_MEMBER_INCLUDE = { include: { user: MEMBER_PROFILE_USER_SELECT } } as const;
+
+/**
+ * 予定を引くときの include。**toPlanDTO に渡す行は必ずこれで取得する。**
+ * ballActions / shareAccess にも同じ定義を置いていたが、user の include を
+ * 足したときに取りこぼす事故 (#254) を避けるため 1 か所に集約した。
+ */
+export const PLAN_INCLUDE = {
+  executor: PLAN_MEMBER_INCLUDE,
+  approver: PLAN_MEMBER_INCLUDE,
+  progressManager: PLAN_MEMBER_INCLUDE,
+  fromMember: PLAN_MEMBER_INCLUDE,
+  toMember: PLAN_MEMBER_INCLUDE,
   ballEvents: {
-    include: { actorMember: true },
+    include: { actorMember: PLAN_MEMBER_INCLUDE },
     orderBy: { occurredAt: 'desc' as const },
   },
 } as const;

@@ -1,10 +1,12 @@
 import { prisma, type Prisma } from '@trakon/db';
 import { deriveBallHolder, type BallEventType, type BallHolderResult, type PlanState } from '@trakon/shared';
 
+import { canProjectRole, resolveMemberProfile, type ProjectRole } from '@trakon/shared';
+
 import { ApiException } from '../lib/errors.js';
 import { getMailer, type BallHandoffKind } from '../lib/mailer.js';
-import { canProjectRole, resolveMemberProfile, type ProjectRole } from '@trakon/shared';
-import { toPlanDTO, type PlanDTO } from './plans.js';
+import { MEMBER_PROFILE_USER_SELECT } from '../lib/memberProfile.js';
+import { PLAN_INCLUDE, toPlanDTO, type PlanDTO } from './plans.js';
 
 export type TossResult = {
   plan: PlanDTO;
@@ -18,17 +20,6 @@ export type CompleteResult = {
   autoTossed: PlanDTO | null;
 };
 
-const PLAN_INCLUDE = {
-  executor: true,
-  approver: true,
-  progressManager: true,
-  fromMember: true,
-  toMember: true,
-  ballEvents: {
-    include: { actorMember: true },
-    orderBy: { occurredAt: 'desc' as const },
-  },
-} as const;
 
 type PlanWithIncludes = Prisma.PlanGetPayload<{ include: typeof PLAN_INCLUDE }>;
 
@@ -559,15 +550,7 @@ async function notifyBallHandoff(input: {
         email: true,
         organizationName: true,
         jobTitle: true,
-        user: {
-          select: {
-            organizationName: true,
-            jobTitle: true,
-            notificationEmail: true,
-            email: true,
-            avatarPath: true,
-          },
-        },
+        user: MEMBER_PROFILE_USER_SELECT,
       },
     }),
   ]);
