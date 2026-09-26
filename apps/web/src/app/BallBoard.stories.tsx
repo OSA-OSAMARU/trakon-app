@@ -24,6 +24,7 @@ const ball = (
   dueDate: iso(4),
   isOverdue: false,
   holderName: '杉野 遥',
+  holderAvatarUrl: null,
   holderIsMe: false,
   progressManager: { id: 'm3', name: '横山 直樹' },
   ...over,

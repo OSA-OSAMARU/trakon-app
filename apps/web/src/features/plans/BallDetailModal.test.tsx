@@ -277,6 +277,28 @@ describe('BallDetailModal (integration)', () => {
     expect(within(assignees).getByText('管理者')).toBeInTheDocument();
   });
 
+  it('アイコンを設定している担当者は「現在のボール」と担当欄に画像を出す (#253)', async () => {
+    setupReads({ plan: makePlan(), events: [] });
+    // 実施者=自分 (アイコンあり) / 承認者=他人 (アイコンなし)
+    renderModal({
+      members: [{ ...meMember, avatarUrl: 'https://signed.test/me.webp' }, otherMember],
+    });
+
+    await screen.findByText('デザインカンプ作成');
+
+    const holder = screen.getByText('現在のボール').closest('section')!;
+    expect(within(holder).getByRole('presentation', { hidden: true })).toHaveAttribute(
+      'src',
+      'https://signed.test/me.webp',
+    );
+
+    const assignees = screen.getByText('担当').closest('section')!;
+    const images = within(assignees).getAllByRole('presentation', { hidden: true });
+    // 実施者・進行責任者はどちらも自分なので 2 件。承認者はイニシャルのまま
+    expect(images).toHaveLength(2);
+    expect(within(assignees).getByText('他')).toBeInTheDocument();
+  });
+
   it('担当が未設定の行には権限バッジを出さない (#198)', async () => {
     setupReads({ plan: makePlan({ approver: null }), events: [] });
     renderModal({ members: [meMember] });

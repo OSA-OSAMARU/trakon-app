@@ -8,6 +8,7 @@ import {
   type PlanState,
 } from '@trakon/shared';
 
+import { signAvatarUrls } from '../lib/avatarStorage.js';
 import { MEMBER_PROFILE_USER_SELECT } from '../lib/memberProfile.js';
 import type { DashboardQuery } from '../schemas/dashboard.js';
 
@@ -32,6 +33,11 @@ export type DashboardMemberSectionDTO = {
     name: string;
     organizationName: string;
     memberType: 'client' | 'production';
+    /**
+     * プロフィール画像の表示 URL (#253)。非公開バケットの署名付き URL。
+     * アカウント未紐付け・未設定・署名失敗は null (頭文字アバターへ落ちる)。
+     */
+    avatarUrl: string | null;
     /** このメンバーがリクエスト元ユーザー自身か (「要対応のみ」の絞り込みに使う) */
     isMe: boolean;
   };
@@ -131,7 +137,10 @@ export async function getDashboard(input: {
 
   // memberId -> 表示名 / 所属名 (進行責任者をカードに出すため)。
   // 解決はアカウント側を正とする共通関数を通す (#156 / #254)
-  const profileById = new Map<string, { name: string; organizationName: string }>();
+  const profileById = new Map<
+    string,
+    { name: string; organizationName: string; avatarPath: string | null }
+  >();
   for (const p of projects) {
     for (const m of p.members) {
       profileById.set(
@@ -148,6 +157,14 @@ export async function getDashboard(input: {
       );
     }
   }
+
+  // アイコンは非公開バケットなので署名付き URL にする (#253)。
+  // 参加者一覧と同じ扱いで、署名できなければ頭文字アバターへ落ちる
+  const signedAvatars = await signAvatarUrls(
+    [...profileById.values()].map((v) => v.avatarPath).filter((v): v is string => !!v),
+  );
+  const avatarUrlOf = (path: string | null | undefined): string | null =>
+    path ? (signedAvatars.get(path) ?? null) : null;
 
   let todayTaskCount = 0;
   let overdueCount = 0;
@@ -216,6 +233,7 @@ export async function getDashboard(input: {
             name: profileById.get(m.id)?.name ?? m.name,
             organizationName: profileById.get(m.id)?.organizationName ?? m.organizationName,
             memberType: m.memberType as 'client' | 'production',
+            avatarUrl: avatarUrlOf(profileById.get(m.id)?.avatarPath),
             isMe: m.userId === input.currentUserId,
           },
           tasks: tasksByMember.get(m.id) ?? [],

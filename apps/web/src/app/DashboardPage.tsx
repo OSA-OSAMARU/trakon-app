@@ -10,6 +10,7 @@ import {
   ballBoardColumnOf,
   type BallBoardColumn,
 } from '@trakon/shared';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -28,6 +29,8 @@ import { dashboardApi, dashboardQueryKey, type DashboardTask } from '@/features/
 export type BoardBall = DashboardTask & {
   projectName: string;
   holderName: string;
+  /** 保持者のプロフィール画像 (#253)。未設定なら頭文字アバターに落ちる */
+  holderAvatarUrl: string | null;
   holderIsMe: boolean;
 };
 
@@ -68,6 +71,7 @@ export function DashboardPage() {
           ...task,
           projectName: project.name,
           holderName: section.member.name,
+          holderAvatarUrl: section.member.avatarUrl,
           holderIsMe: section.member.isMe,
         })),
       ),
@@ -213,12 +217,11 @@ function BallCard({ ball }: { ball: BoardBall }) {
 
       <span className="text-text-secondary mt-1 text-label">現在の保持者</span>
       <span className="flex items-center gap-2.5">
-        <span
-          aria-hidden
-          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-background text-label font-bold"
-        >
-          {ball.holderName.trim().charAt(0)}
-        </span>
+        <Avatar
+          name={ball.holderName}
+          src={ball.holderAvatarUrl}
+          className="bg-background text-foreground size-7 text-label font-bold"
+        />
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-body font-bold">{ball.holderName}</span>
           {ball.progressManager && (
