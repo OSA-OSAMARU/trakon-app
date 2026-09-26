@@ -82,7 +82,11 @@ export function assertInvitationAllowed(entitlement: Entitlement, roleType: Proj
     throw new ApiException(
       'SEAT_LIMIT_REACHED',
       409,
-      `管理者・編集者の上限 (${entitlement.limits.seatLimit} 名) に達しています。プランを変更するか、既存のメンバー・招待を整理してください。`,
+      // Free は座席 1 = オーナー本人で埋まる。「整理してください」では動きようがないので、
+      // プランの制約であることを先に言う (#257)
+      entitlement.limits.seatLimit === 1
+        ? '現在のプランでは、管理者・編集者として招待できません。招待できるのは閲覧者のみです。プランを変更すると編集できるメンバーを追加できます。'
+        : `管理者・編集者の上限 (${entitlement.limits.seatLimit} 名) に達しています。プランを変更するか、既存のメンバー・招待を整理してください。`,
       {
         planCode: entitlement.effectivePlanCode,
         seatLimit: entitlement.limits.seatLimit,

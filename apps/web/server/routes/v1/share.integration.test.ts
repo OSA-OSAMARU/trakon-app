@@ -11,9 +11,9 @@ import {
 } from '../../test/factories.js';
 
 // =============================================================================
-// public share ルートの統合テスト (実 DB + 未認証フロー) — #131
-//   クライアント(非会員)の確認依頼 / 承認 / 差し戻しを検証する。
-//   進行責任者の TOSS は共有リンクからは提供しない。
+// public share ルートの統合テスト (実 DB + 未認証フロー) — #257
+//   共有リンクは **閲覧専用**。#131 で追加した確認依頼 / 承認 / 差し戻しは
+//   削除済みで、データを変える POST は 1 本も存在しない (全プラン共通)。
 //   share トークンは認証付き作成ルートが返す生トークン (rawToken) を利用する。
 // =============================================================================
 
@@ -34,7 +34,7 @@ type ShareViewBody = {
   };
 };
 
-describe('share routes (integration, #131)', () => {
+describe('share routes (integration, #257)', () => {
   let ctx: Awaited<ReturnType<typeof setupProjectWithDirector>>;
   let itemId: string;
   let execId: string;
@@ -63,8 +63,9 @@ describe('share routes (integration, #131)', () => {
     return res.body.data.rawToken;
   }
 
+  /** 共有リンク経由でデータを変えようとする POST。閲覧専用なので全て 404 になる */
   const shareAct = (token: string, planId: string, action: string) =>
-    api<{ data: { plan: SharePlanDTO } }>(`/api/v1/share/${token}/plans/${planId}/${action}`, {
+    api<{ error?: { code: string } }>(`/api/v1/share/${token}/plans/${planId}/${action}`, {
       method: 'POST',
       body: {},
     });
@@ -107,50 +108,7 @@ describe('share routes (integration, #131)', () => {
       expect(raw).not.toContain('@example.test');
     });
 
-    it('承認者あり: 確認依頼→承認 で承認済みへ (クライアント操作)', async () => {
-      const successor = await createPlan({
-        itemId,
-        executorMemberId: execId,
-        progressManagerMemberId: pmId,
-      });
-      const plan = await createPlan({
-        itemId,
-        executorMemberId: execId,
-        approverMemberId: approverId,
-        progressManagerMemberId: pmId,
-        successorPlanId: successor.id,
-        status: 'active',
-      });
-      const token = await issueProjectShareToken();
-
-      const reviewed = await shareAct(token, plan.id, 'request-review');
-      expect(reviewed.status).toBe(200);
-      expect(reviewed.body.data.plan.ballState).toBe('review_pending');
-
-      const approved = await shareAct(token, plan.id, 'approve');
-      expect(approved.status).toBe(200);
-      expect(approved.body.data.plan.ballState).toBe('approved');
-      expect(approved.body.data.plan.ballHolder?.id).toBe(pmId);
-      // 後続があるので承認だけでは完了しない (TOSS は会員=進行責任者が行う)
-      expect(approved.body.data.plan.status).toBe('active');
-    });
-
-    it('承認者なし短絡: approve で承認済みへ。後続なしは完了', async () => {
-      const plan = await createPlan({
-        itemId,
-        executorMemberId: execId,
-        progressManagerMemberId: pmId,
-        status: 'active',
-      });
-      const token = await issueProjectShareToken();
-
-      const res = await shareAct(token, plan.id, 'approve');
-      expect(res.status).toBe(200);
-      expect(res.body.data.plan.ballState).toBe('approved');
-      expect(res.body.data.plan.status).toBe('completed'); // 後続なし = 承認で完了
-    });
-
-    it('確認待ち → 差し戻し で実施中へ戻る', async () => {
+    it('予定の状態は閲覧できる (承認待ちなどを確認できる)', async () => {
       const plan = await createPlan({
         itemId,
         executorMemberId: execId,
@@ -159,11 +117,54 @@ describe('share routes (integration, #131)', () => {
         status: 'active',
       });
       const token = await issueProjectShareToken();
-      await shareAct(token, plan.id, 'request-review');
 
-      const res = await shareAct(token, plan.id, 'send-back');
+      const res = await api<ShareViewBody>(`/api/v1/share/${token}`);
+
       expect(res.status).toBe(200);
-      expect(res.body.data.plan.ballState).toBe('sent_back');
+      const found = res.body.data.plans.find((p) => p.id === plan.id);
+      expect(found?.ballState).toBe('in_progress');
+      expect(found?.ballHolder?.id).toBe(execId);
+    });
+  });
+
+  describe('閲覧専用 (#257)', () => {
+    // #131 では共有リンクから確認依頼 / 承認 / 差し戻しができた。全プランで
+    // 「共有リンクで訪れた人は閲覧のみ」という方針になったためルートを削除した。
+    it.each(['request-review', 'approve', 'send-back', 'toss', 'complete'])(
+      'データを変える POST は存在しない: %s',
+      async (action) => {
+        const plan = await createPlan({
+          itemId,
+          executorMemberId: execId,
+          approverMemberId: approverId,
+          progressManagerMemberId: pmId,
+          status: 'active',
+        });
+        const token = await issueProjectShareToken();
+
+        const res = await shareAct(token, plan.id, action);
+
+        // ルート未定義のため 404 (Hono の not found)
+        expect(res.status).toBe(404);
+      },
+    );
+
+    it('承認を試みても予定の状態は変わらない', async () => {
+      const plan = await createPlan({
+        itemId,
+        executorMemberId: execId,
+        approverMemberId: approverId,
+        progressManagerMemberId: pmId,
+        status: 'active',
+      });
+      const token = await issueProjectShareToken();
+
+      await shareAct(token, plan.id, 'approve');
+
+      const res = await api<ShareViewBody>(`/api/v1/share/${token}`);
+      const found = res.body.data.plans.find((p) => p.id === plan.id);
+      expect(found?.status).toBe('active');
+      expect(found?.ballState).toBe('in_progress');
     });
   });
 
@@ -194,48 +195,6 @@ describe('share routes (integration, #131)', () => {
       const res = await api<{ error: { code: string } }>(`/api/v1/share/${token}`);
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe('SHARE_NOT_FOUND_OR_EXPIRED');
-    });
-
-    it('scope 外 (別プロジェクト) の plan を承認すると 404', async () => {
-      const token = await issueProjectShareToken();
-      const other = await setupProjectWithDirector();
-      const otherItem = await createItem({ projectId: other.project.id });
-      const otherPlan = await createPlan({ itemId: otherItem.id, status: 'active' });
-
-      const res = await api<{ error: { code: string } }>(
-        `/api/v1/share/${token}/plans/${otherPlan.id}/approve`,
-        { method: 'POST', body: {} },
-      );
-      expect(res.status).toBe(404);
-      expect(res.body.error.code).toBe('SHARE_NOT_FOUND_OR_EXPIRED');
-    });
-
-    it('active でない plan の承認は 422 PLAN_NOT_ACTIVE', async () => {
-      const plan = await createPlan({ itemId, status: 'completed' });
-      const token = await issueProjectShareToken();
-
-      const res = await api<{ error: { code: string } }>(
-        `/api/v1/share/${token}/plans/${plan.id}/approve`,
-        { method: 'POST', body: {} },
-      );
-      expect(res.status).toBe(422);
-      expect(res.body.error.code).toBe('PLAN_NOT_ACTIVE');
-    });
-
-    it('TOSS エンドポイントは共有リンクに存在しない (404)', async () => {
-      const plan = await createPlan({
-        itemId,
-        executorMemberId: execId,
-        progressManagerMemberId: pmId,
-        status: 'active',
-      });
-      const token = await issueProjectShareToken();
-      const res = await api<{ error: { code: string } }>(
-        `/api/v1/share/${token}/plans/${plan.id}/toss`,
-        { method: 'POST', body: {} },
-      );
-      // ルート未定義のため 404 (Hono の not found)
-      expect(res.status).toBe(404);
     });
   });
 });

@@ -8,15 +8,16 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Plan } from '@/features/plans/api';
 import { ShareSchedule } from './ShareSchedule';
-import { ShareActionModal } from './ShareActionModal';
+import { SharePlanDetailSheet } from './SharePlanDetailSheet';
 import { shareAccessApi, type ShareView } from './api';
 
 /**
  * 非会員 URL 閲覧画面 (`/share/:token`)
  *  - 未認証可
  *  - クローラ防止 meta タグを document に注入
- *  - share scope 範囲のスケジュールを「閲覧専用カレンダー」で表示 (#59)
- *    (ドラッグ移動・TOSS・完了・作成などの操作は一切不可)
+ *  - share scope 範囲のスケジュールを「閲覧専用カレンダー」で表示 (#59 / #257)
+ *    (ドラッグ移動・作成はもちろん、承認・差し戻しなどデータを変える操作も一切不可。
+ *     ボールをクリックすると閲覧専用の詳細パネルが開くだけ)
  */
 export function SharePage() {
   const { token } = useParams<{ token: string }>();
@@ -68,11 +69,7 @@ function Inner({ token }: { token: string }) {
         onSelectPlan={(plan: Plan) => setSelectedPlanId(plan.id)}
       />
       {selectedPlan && (
-        <ShareActionModal
-          token={token}
-          plan={selectedPlan}
-          onClose={() => setSelectedPlanId(null)}
-        />
+        <SharePlanDetailSheet plan={selectedPlan} onClose={() => setSelectedPlanId(null)} />
       )}
     </div>
   );
@@ -84,7 +81,7 @@ function Header({ view }: { view: ShareView }) {
       <div className="space-y-1">
         <div className="flex items-center gap-2 text-label text-muted-foreground">
           <Lock className="size-3" />
-          共有リンク (確認・承認)
+          共有リンク（閲覧専用）
         </div>
         <h1 className="text-heading-page font-semibold tracking-tight">{view.project.name}</h1>
         <p className="text-label text-muted-foreground">

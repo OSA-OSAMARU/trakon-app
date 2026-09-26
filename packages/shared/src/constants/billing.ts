@@ -46,9 +46,13 @@ export const BILLING_PLANS: Record<BillingPlanCode, BillingPlanSpec> = {
     code: 'free',
     label: 'Free',
     monthlyPriceJpyIncTax: 0,
+    // 座席 1 = オーナー本人で埋まる。したがって管理者・編集者は招待できない
     seatLimit: 1,
-    // Free は招待そのものができない (座席 1 = オーナー本人で埋まる)
-    viewerLimit: 0,
+    /**
+     * #257 で 0 → 5。Free でも「閲覧者として 5 名まで招待できる」に変更した。
+     * 招待できるのは閲覧者だけで、座席 (管理者・編集者) は増やせない。
+     */
+    viewerLimit: 5,
     projectLimit: 2,
     trialHours: null,
     stripeManaged: false,

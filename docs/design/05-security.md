@@ -678,7 +678,7 @@ app.use('/share/:token/*', async (c, next) => {
 |---|---|---|
 | `assertPlanInShareScope(shareLink, planId)` | `shareLink.scopeType` に応じて、リクエストパスの `:planId` が share_link.scope の範囲内に存在することを確認（`project` なら同 project_id 配下、`item` なら同 item_id 配下、`plan` なら同一 plan_id） | 404 |
 
-> **#131 改訂**：かつての `assertCallerIsBallHolderViaShare`（共有操作を「現 Ball Holder のみ」に制限）は**撤廃**した。非会員（クライアント）の操作は **scope 内かつ状態機械が許す限り、保持者の種別を問わず可**（確認依頼 / 承認 / 差し戻し）。ただし **TOSS（進行責任者の次工程操作）は共有リンクからは提供しない**（会員のみ）。
+> **#257 改訂**：共有リンクは**全プランで閲覧専用**に戻した（#59 の方針へ復帰）。#131 で許可していた確認依頼 / 承認 / 差し戻しは、**匿名のまま状態を変えられて「誰が承認したのか」が記録に残らない**（`audit_logs.share_link_id` から辿れるのは「そのリンクの誰か」まで）ため撤回した。承認・差し戻しをしてほしい相手は**閲覧者として組織へ招待する**（Free でも 5 名まで招待できる、§7.2）。したがって共有スコープガードが守るのは `GET /share/:token` の読み取り範囲だけになる。
 > **原則**：トークンが取れたからといって全リソースに触れられるわけではない。share_link.scope 外のリソースへのアクセスは「見えない」（404）。
 
 #### レート制限（FR-SHARE 関連）
@@ -843,9 +843,11 @@ PRD SR-AUDIT-01 の全項目のうち、**以下を記録**：
 >
 > - `audit_logs.resource_id` は uuid 型。Stripe の顧客 ID・契約 ID は入らないため、課金系は `resource_type='subscription'` / `resource_id=organization_id` とし、Stripe 側の ID は `extra` に入れる
 > - **許可 action は CHECK 制約で列挙されている。値の追加を忘れると INSERT が失敗し、同一トランザクション内の業務処理ごと巻き戻る**（章2 §2.4.7）
-| `share_request_review` / `share_approve` / `share_send_back` **(#131)** | 非会員URL 経由の確認依頼／承認／差し戻し | `POST /share/:token/plans/:planId/{request-review,approve,send-back}` | actor_user_id = NULL、share_link_id 設定。~~`share_toss` / `share_complete` は廃止~~（許可値は残す） |
+| ~~`share_request_review` / `share_approve` / `share_send_back`~~ **(#131 → #257 で廃止)** | 非会員URL 経由の確認依頼／承認／差し戻し | 対応ルートを削除済み（#257）。**新規には記録されない**。既存行の解釈のため CHECK の許可値には残す |
 
 > **#131 改訂**：会員の状態機械操作 5 種と共有の 3 種を Phase 0 記録対象に追加。旧 `share_toss` / `share_complete` は対応ルート廃止に伴い新規記録なし（CHECK には残す）。`auto_toss` は #117 廃止で新規記録なし。
+>
+> **#257 改訂**：`share_request_review` / `share_approve` / `share_send_back` も同じ扱いになった（共有リンクが閲覧専用に戻ったため、新規記録は `share_access` と `share_create` / `share_revoke` だけ）。`ball_events` の `source='auto_chain'` も**新規には発行されない**（#117 の自動連鎖廃止と #257 の共有匿名操作廃止で発行元が無くなった）。許可値は既存行の解釈のため残す。
 
 > Phase 1 で追加：`logout`、`login_failed`、**`oauth_login` / `oauth_state_failure` / `complete_signup` / `email_changed`（v1.1 想定）**、`member_added`、`member_removed`、`item_deleted`、`project_closed`、`project_archived`、`project_deleted`、`pdf_export`、`file_download`、`invitation_accepted`、`invitation_email_mismatch`。
 
@@ -891,7 +893,7 @@ export const auditLogger: AuditLogger = {
 |---|---|
 | login | `POST /auth/me/sync` ハンドラ末尾（成功時） |
 | request_review / approve / send_back / toss / untoss ほか（#131） | `services/ballActions.ts` の各アクション内（状態遷移と同一トランザクション） |
-| share_request_review / share_approve / share_send_back（#131） | `services/shareAccess.ts` の共有アクション内（同一トランザクション、`share_link_id` セット） |
+| ~~share_request_review / share_approve / share_send_back~~（#131 → #257 で廃止） | ルート削除済み。`services/shareAccess.ts` は `share_access` の記録のみ |
 
 #### 記録の同期 / 非同期
 
@@ -1141,4 +1143,5 @@ Content-Security-Policy:
 | 2026-05-09 | **v1.1 確定**（非会員URL前倒し） | PRD v1.3 改訂（非会員URL共有 Phase 0 化）に追従。§5.1 で非会員URL共有を本章節（Phase 0）扱いに変更、§5.2 公開範囲・デフォルト非公開の Phase 区切りを更新、§5.4.5 非会員URL共有のセキュリティ実装を新設（トークン生成・保管・検証・スコープ判定・クローラ防止・期限失効優先順位）、§5.6.1 監査ログ Phase 0 必須に `share_*` 5アクションを追加、§5.12 Phase 1+ 持ち越しを組織レベル統制（Phase 2）のみに整理。 |
 | 2026-05-24 | **v1.1 確定**（プロトタイプ反映） | §5.3.5 招待トークン × OAuth 組合せルール追記／§5.3.9 OAuth 認証セクション新規（フロー・PKCE/state・同一メール1認証制約・メール変更同期）／§5.4.3 IDOR にカンバン DnD toMemberId 検証 / successor_plan_id 検証 / oauth_identities 検証を追加／§5.6.1 監査ログに `auto_toss` を追加（system actor 識別）／§5.11 論点 11〜14 追加。 |
 | 2026-07-24 | **#131 反映**（確認者付き予定・進行責任者） | §5.4.3 IDOR の役割 ID 検証を 3 役割へ更新／§5.4.4 状態遷移ガードを状態機械（request-review/approve/send-back/toss ほか）へ刷新／§5.4.5 共有スコープガードから「現 Ball Holder のみ」制限を撤廃（scope 内かつ状態機械が許す限り可、TOSS は共有不可）／§5.6.1 監査ログに会員 5 種・共有 3 種を追加、`auto_toss`・`share_toss`・`share_complete` を廃止扱いに／§5.6.2 呼び出し場所を ballActions/shareAccess へ更新／§5.11 論点 14 を #131 反映（auto_chain を共有匿名記録へ再利用）。共有画面の閲覧専用（#59）撤回。 |
+| 2026-09-26 | **#257 反映**（プランごとの仕様変更） | §5.4.5 共有スコープガードを「閲覧専用」へ改訂し、#131 の共有操作許可を撤回（匿名のまま状態を変えられ「誰が承認したか」が残らないため）／トークン保管の表を #255 と併せて更新／§5.6.1 の `share_request_review` / `share_approve` / `share_send_back` を廃止扱いにし、`ball_events` の `auto_chain` も新規発行なしと明記／§5.5.5 共有トークンの列レベル暗号化を新設（#255）。 |
 | 2026-08-30 | **v1.2 確定**（課金・組織・ロール） | §5.4.1 ガード階層に `requireProjectWritable` / `requireProjectAction` / `requireOrgMember` / `requireOrgRole` を追加し `requireProjectDirector` を廃止／**§5.4.2 の Phase 0 簡易ロール導出（member_type + created_by）を撤回**し `role_type` による正規化へ全面改訂（TOSS は管理者のみ）／§5.5.3 に Stripe シークレットの取り扱いを追加／§5.6.1 監査ログ記録対象に課金系 10 値・組織/ロール系 7 値を追加／§5.6.4 に決済情報の保持方針（カード識別子を保存しない）を明記／§5.12 に SR-BILL-01〜07 の整合を追加。 |

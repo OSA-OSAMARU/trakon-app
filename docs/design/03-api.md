@@ -341,7 +341,7 @@ flowchart TB
 | `POST /share/:token/plans/:planId/send-back` **(#131)** | ✅ | ✅ | — | — | — | 非会員による差し戻し／同上 |
 
 > 凡例：✅ 許可／❌ 拒否（401 or 403／親リソース未参加なら 404／ロール不足は **404 に集約**）／✅※holder（現 Ball Holder 本人のみ）／✅※involved（当該予定の実施者/承認者/進行責任者のいずれか）／✅※override（**管理者は Ball Holder でなくても実行可**）／✅※limit（プランの上限内でのみ可）／`/share/:token` 系はトークン自体が認可、有効期限・個別失効・スコープ・対象 plan が share_link.scope に整合することを `requireShareToken` ミドルウェアが検証（章5 §5.x）。
-> **#131 改訂**：共有リンクからの操作は「保持者の種別を問わず、scope 内かつ状態機械が許す限り可」。ただし TOSS（進行責任者の次工程操作）は共有リンクからは提供しない。旧 `/share/:token/plans/:planId/{toss,complete}` は廃止（**#59 の「共有＝閲覧専用」方針は撤回**）。
+> **#257 改訂**：共有リンクは**全プランで閲覧専用**。`GET /share/:token` 以外のエンドポイントを持たない（#131 で追加した確認依頼 / 承認 / 差し戻しは廃止し、**#59 の「共有＝閲覧専用」方針へ戻した**）。承認・差し戻しをしてほしい相手は閲覧者として組織へ招待する（Free でも 5 名まで）。
 
 ---
 
@@ -1485,10 +1485,11 @@ TOSS：承認済み → TOSS済み。進行責任者が後続予定へボール�
 
 ---
 
-### 3.6.10. Share Access（非会員URL閲覧・操作）
+### 3.6.10. Share Access（非会員URL閲覧）
 
 > **PRD 紐付け**：FR-SHARE-01〜06／SR-AUTH-08／SR-AUTHZ-02／UC-23。
 > 未認証で利用可能（トークン自体が認可）。Phase 0 から提供。
+> **#257：閲覧専用**。この節のエンドポイントは `GET /share/:token` の 1 本だけ。
 
 #### 共通ミドルウェア `requireShareToken`（章5 §5.x）
 
@@ -1523,20 +1524,13 @@ TOSS：承認済み → TOSS済み。進行責任者が後続予定へボール�
 }
 ```
 
-#### `POST /api/v1/share/:token/plans/:planId/{request-review,approve,send-back}`（#131）
+#### ~~`POST /api/v1/share/:token/plans/:planId/{request-review,approve,send-back}`~~（#131 → **#257 で廃止**）
 
-非会員（クライアント）による状態機械操作。**#131 で共有画面は閲覧専用ではなくなった（#59 の「共有＝閲覧専用」方針を撤回）**。会員版と同じ状態遷移（確認依頼 / 承認 / 差し戻し）を提供する。**TOSS（進行責任者の次工程操作）は共有リンクからは提供しない**。旧 `/share/:token/plans/:planId/{toss,complete}` は廃止。
+**#257：共有リンクは全プランで閲覧専用に戻した。** 共有リンク配下でデータを変える POST は 1 本も存在しない（`GET /share/:token` だけ）。#131 で追加したこの 3 本と、`ball_events` の匿名記録（`source='auto_chain'` ＋ `note='via share_link:<id>'`）を行うコードは削除済み。
 
-**認可**：`requireShareToken` ＋ `assertPlanInShareScope(planId, share_link.scope)`。**#131：保持者の種別は問わず、scope 内かつ状態機械が許す限り操作可**（会員版のような「現 Ball Holder のみ」制限は課さない）。
+**なぜ戻したか**：#131 は「クライアントに承認してもらう導線」を共有リンクで実現したが、匿名のまま状態を変えられるため**誰が承認したのかが記録に残らない**（`audit_logs.share_link_id` から辿れるのは「そのリンクの誰か」まで）。承認・差し戻しをしてほしい相手は**閲覧者として組織へ招待する**運用に一本化した。Free でも閲覧者を 5 名まで招待できる（§7.2、#257）ので、無料で使い続けたい組織も導線を失わない。
 
-**処理**（各アクション共通）：
-- 会員版と同じ事前条件・状態遷移（§3.6.8）。`request-review`（実施中/差し戻し→確認待ち、承認者あり必須）／`approve`（確認待ち→承認済み、承認者なしは実施中→承認済み、後続なしは承認=完了）／`send-back`（確認待ち→差し戻し）。
-- **actor は匿名**のため `ball_events` は `source='auto_chain'`（`actor_member_id` / `actor_user_id` 両方 NULL、`note` に `via share_link:<id>` を残す）で記録。誰が操作したかは `audit_logs.share_link_id`（＋ IP / UA）で辿る（§5.6）。
-- `audit_logs` に `action='share_request_review' / 'share_approve' / 'share_send_back'` を記録。
-
-**レスポンス（200）**：`{ data: { plan: PlanDTO } }`。
-
-**エラー**：404 `SHARE_NOT_FOUND_OR_EXPIRED`（scope 外・期限切れ等）、409 `INVALID_STATE`、422 `INCOMPLETE_PLAN` / `NO_APPROVER` / `PLAN_NOT_ACTIVE`。
+`audit_logs` の許可値 `share_request_review` / `share_approve` / `share_send_back`、および `ball_events` の `source='auto_chain'` は**既存行の解釈のために CHECK 制約に残す**（新規には記録されない）。
 
 > **エラー方針**：トークン期限切れ・失効・存在せず・scope 外は **すべて 404 に集約**（PRD §9.1 機密第一）。クライアント側は専用の「失効ページ」を表示（基本設計書 第4章 §4.4.x）。
 

@@ -133,9 +133,9 @@ describe('evaluateEntitlement — 解約予約', () => {
 });
 
 describe('evaluateEntitlement — 上限と超過', () => {
-  it('Free は会員 1 名・プロジェクト 2 件', () => {
+  it('Free は会員 1 名・閲覧者 5 名・プロジェクト 2 件', () => {
     const e = evaluateEntitlement(input({ seatCount: 1, projectCount: 2 }));
-    expect(e.limits).toEqual({ seatLimit: 1, viewerLimit: 0, projectLimit: 2 });
+    expect(e.limits).toEqual({ seatLimit: 1, viewerLimit: 5, projectLimit: 2 });
     expect(e.over).toEqual({ seats: 0, viewers: 0, projects: 0 });
     expect(e.canCreateProject).toBe(false); // 上限ちょうどは作成不可 (境界値)
     expect(e.canInviteMember).toBe(false);
@@ -233,9 +233,16 @@ describe('evaluateEntitlement — 閲覧者の枠 (#160)', () => {
     expect(e.canInviteViewer).toBe(false);
   });
 
-  it('Free は閲覧者も招待できない (viewerLimit = 0)', () => {
+  it('Free は閲覧者を 5 名まで招待できる (#257)', () => {
     const e = evaluateEntitlement(input({ seatCount: 1, viewerCount: 0 }));
-    expect(e.limits.viewerLimit).toBe(0);
+    expect(e.limits.viewerLimit).toBe(5);
+    expect(e.canInviteViewer).toBe(true);
+    // 座席 1 はオーナー本人で埋まっているので、管理者・編集者は招待できない
+    expect(e.canInviteMember).toBe(false);
+  });
+
+  it('Free の閲覧者が 5 名に達すると招待できなくなる (#257)', () => {
+    const e = evaluateEntitlement(input({ seatCount: 1, viewerCount: 5 }));
     expect(e.canInviteViewer).toBe(false);
   });
 
@@ -253,5 +260,40 @@ describe('evaluateEntitlement — 閲覧者の枠 (#160)', () => {
     );
     expect(e.level).toBe('read_only');
     expect(e.canInviteViewer).toBe(false);
+  });
+});
+
+describe('evaluateEntitlement — 招待できるロール (#257)', () => {
+  it('Free は閲覧者だけ (編集者・管理者として招待できない)', () => {
+    const e = evaluateEntitlement(input({ seatCount: 1, viewerCount: 0 }));
+    expect(e.invitableProjectRoles).toEqual(['viewer']);
+  });
+
+  it('座席に空きがあれば管理者・編集者も選べる', () => {
+    const e = evaluateEntitlement(
+      input({ planCode: 'team', status: 'active', seatCount: 1, viewerCount: 0 }),
+    );
+    expect(e.invitableProjectRoles).toEqual(['admin', 'editor', 'viewer']);
+  });
+
+  it('座席が満席なら閲覧者だけに絞られる', () => {
+    const e = evaluateEntitlement(
+      input({ planCode: 'team', status: 'active', seatCount: 5, viewerCount: 0 }),
+    );
+    expect(e.invitableProjectRoles).toEqual(['viewer']);
+  });
+
+  it('閲覧者枠も満席なら空になる', () => {
+    const e = evaluateEntitlement(
+      input({ planCode: 'team', status: 'active', seatCount: 5, viewerCount: 20 }),
+    );
+    expect(e.invitableProjectRoles).toEqual([]);
+  });
+
+  it('read_only では誰も招待できない', () => {
+    const e = evaluateEntitlement(
+      input({ planCode: 'team', status: 'unpaid', seatCount: 0, viewerCount: 0 }),
+    );
+    expect(e.invitableProjectRoles).toEqual([]);
   });
 });

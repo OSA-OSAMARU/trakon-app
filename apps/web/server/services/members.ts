@@ -1,5 +1,5 @@
 import { prisma } from '@trakon/db';
-import { resolveMemberProfile } from '@trakon/shared';
+import { consumesSeat, resolveMemberProfile } from '@trakon/shared';
 
 import { signAvatarUrls } from '../lib/avatarStorage.js';
 import {
@@ -171,6 +171,24 @@ export async function addMembers(input: {
   });
   const takenUserIds = new Set(existing.flatMap((m) => (m.userId ? [m.userId] : [])));
   const takenEmails = new Set(existing.flatMap((m) => (m.email ? [m.email.toLowerCase()] : [])));
+  // 閲覧者の座席で入っている人を、追加時に編集者・管理者にはできない (#257)。
+  // ここで弾かないと「閲覧者として招待 → プロジェクト追加時に編集者」で座席を素通りできる。
+  for (const m of input.body.members) {
+    const om = byUserId.get(m.userId)!;
+    if (
+      m.roleType &&
+      consumesSeat(m.roleType) &&
+      !consumesSeat(om.defaultProjectRole as ProjectRole)
+    ) {
+      throw new ApiException(
+        'SEAT_ROLE_REQUIRED',
+        409,
+        'このメンバーは閲覧者の枠で参加しています。編集できるようにするには、メンバー管理で既定の権限を変更してください。',
+        { userId: m.userId, defaultProjectRole: om.defaultProjectRole, roleType: m.roleType },
+      );
+    }
+  }
+
   for (const id of userIds) {
     const om = byUserId.get(id)!;
     if (takenUserIds.has(id)) {
@@ -247,6 +265,7 @@ export async function reorderMembers(input: {
 export async function updateMember(input: {
   memberId: string;
   projectId: string;
+  organizationId: string;
   body: UpdateMemberBody;
 }): Promise<MemberDTO> {
   const existing = await prisma.projectMember.findFirst({
@@ -257,6 +276,14 @@ export async function updateMember(input: {
   // 管理者を 0 名にはできない (FR-ROLE-03)
   if (input.body.roleType && input.body.roleType !== 'admin' && existing.roleType === 'admin') {
     await assertNotLastAdmin(input.projectId, input.memberId);
+  }
+
+  if (input.body.roleType) {
+    await assertProjectRoleWithinSeat({
+      organizationId: input.organizationId,
+      userId: existing.userId,
+      roleType: input.body.roleType,
+    });
   }
 
   const updated = await prisma.projectMember.update({
@@ -278,6 +305,44 @@ export async function updateMember(input: {
     new Map([[dto.id, updated.user?.avatarPath ?? null]]),
   );
   return withAvatar ?? dto;
+}
+
+/**
+ * プロジェクトの権限が、その人の座席の種類を超えないことを保証する (#257)。
+ *
+ * 座席 (課金枠) は `organization_members.default_project_role` で数えている。
+ * プロジェクト側の `role_type` を自由に上げられると、
+ * 「閲覧者として招待 → プロジェクトで編集者に昇格」で座席上限を素通りできてしまう。
+ * Free では「閲覧者としてしか招待できない」という #257 の制約が骨抜きになる。
+ *
+ * したがって **閲覧者の座席で入っている人には、プロジェクトでも閲覧者しか割り当てない**。
+ * 編集させたいときは「メンバー管理」で既定ロールを上げる (そこで座席の空きを見る)。
+ *
+ * アカウント未紐付けの参加者 (user_id IS NULL) は対象外。組織の会員ではなく座席も
+ * 消費せず、ログインできないので role_type で何かを実行することがない。
+ */
+async function assertProjectRoleWithinSeat(input: {
+  organizationId: string;
+  userId: string | null;
+  roleType: ProjectRole;
+}): Promise<void> {
+  if (!input.userId) return;
+  if (!consumesSeat(input.roleType)) return;
+
+  const om = await prisma.organizationMember.findFirst({
+    where: { organizationId: input.organizationId, userId: input.userId, deletedAt: null },
+    select: { defaultProjectRole: true },
+  });
+  // 組織の会員として見つからない場合は座席の話にならないので通す
+  if (!om) return;
+  if (consumesSeat(om.defaultProjectRole as ProjectRole)) return;
+
+  throw new ApiException(
+    'SEAT_ROLE_REQUIRED',
+    409,
+    'このメンバーは閲覧者の枠で参加しています。編集できるようにするには、メンバー管理で既定の権限を変更してください。',
+    { defaultProjectRole: om.defaultProjectRole, roleType: input.roleType },
+  );
 }
 
 /**
