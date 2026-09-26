@@ -11,8 +11,8 @@ type ShareItem = { id: string; name: string };
  * 共有リンク (非会員) 向けスケジュールカレンダー。
  *
  * 描画は認証済み画面と同じ ScheduleBoard を閲覧専用モードで使う。
- * ドラッグ移動 / 作成はできない。#131 でクライアントの確認/承認/差し戻し操作を
- * 追加したため、ボールをクリックすると操作モーダル (onSelectPlan) が開く。
+ * ドラッグ移動 / 作成はできない。ボールをクリックすると閲覧専用の詳細パネル
+ * (onSelectPlan) が開くだけで、データを変える操作は一切ない (#257)。
  */
 export function ShareSchedule({
   project,

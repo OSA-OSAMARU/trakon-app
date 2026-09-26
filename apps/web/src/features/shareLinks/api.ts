@@ -63,27 +63,15 @@ export const shareLinksApi = {
     }),
 };
 
+/**
+ * 共有リンク (非会員) の API は **閲覧のみ** (#257)。
+ *
+ * #131 で用意していた確認依頼 / 承認 / 差し戻しは削除した。全プランで
+ * 「共有リンクで訪れた人は閲覧のみ」という方針になったため、サーバー側の
+ * エンドポイントも無い (設計書 §3.6.10)。
+ */
 export const shareAccessApi = {
-  view: (token: string) =>
-    apiRequest<ShareView>(`/share/${encodeURIComponent(token)}`),
-
-  // #131: 非会員(クライアント)の操作。確認依頼 / 承認 / 差し戻し。
-  // 進行責任者の TOSS(次工程へ進める操作)は共有リンクからは提供しない。
-  requestReview: (token: string, planId: string) =>
-    apiRequest<{ plan: Plan }>(
-      `/share/${encodeURIComponent(token)}/plans/${planId}/request-review`,
-      { method: 'POST', body: {} },
-    ),
-  approve: (token: string, planId: string) =>
-    apiRequest<{ plan: Plan }>(`/share/${encodeURIComponent(token)}/plans/${planId}/approve`, {
-      method: 'POST',
-      body: {},
-    }),
-  sendBack: (token: string, planId: string) =>
-    apiRequest<{ plan: Plan }>(`/share/${encodeURIComponent(token)}/plans/${planId}/send-back`, {
-      method: 'POST',
-      body: {},
-    }),
+  view: (token: string) => apiRequest<ShareView>(`/share/${encodeURIComponent(token)}`),
 };
 
 export const shareLinksQueryKey = {

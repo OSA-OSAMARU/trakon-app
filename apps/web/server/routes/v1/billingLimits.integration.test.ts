@@ -382,17 +382,44 @@ describe('閲覧者の枠 (#160)', () => {
     expect(over.body.error.details?.viewerLimit).toBe(5);
   });
 
-  it('Free は閲覧者も招待できない (viewerLimit = 0)', async () => {
+  it('Free は閲覧者を 5 名まで招待でき、6 人目で 409 になる (#257)', async () => {
+    const { project } = await ownedProject();
+
+    for (let i = 0; i < 5; i += 1) {
+      const res = await api(`/api/v1/projects/${project.id}/invitations`, {
+        method: 'POST',
+        token: ownerToken,
+        body: { email: `free-v${i}@example.test`, roleType: 'viewer' },
+      });
+      expect(res.status).toBe(201);
+    }
+
+    const over = await api<{ error: { code: string; details?: { viewerLimit: number } } }>(
+      `/api/v1/projects/${project.id}/invitations`,
+      {
+        method: 'POST',
+        token: ownerToken,
+        body: { email: 'free-v9@example.test', roleType: 'viewer' },
+      },
+    );
+    expect(over.status).toBe(409);
+    expect(over.body.error.code).toBe('VIEWER_LIMIT_REACHED');
+    expect(over.body.error.details?.viewerLimit).toBe(5);
+  });
+
+  it('Free は管理者・編集者としては招待できない (座席 1 = オーナー本人、#257)', async () => {
     const { project } = await ownedProject();
 
     const res = await api<{ error: { code: string; message: string } }>(
       `/api/v1/projects/${project.id}/invitations`,
-      { method: 'POST', token: ownerToken, body: { email: 'v@example.test', roleType: 'viewer' } },
+      { method: 'POST', token: ownerToken, body: { email: 'e@example.test', roleType: 'editor' } },
     );
 
     expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('VIEWER_LIMIT_REACHED');
-    expect(res.body.error.message).toContain('現在のプランでは閲覧者を招待できません');
+    expect(res.body.error.code).toBe('SEAT_LIMIT_REACHED');
+    expect(res.body.error.message).toContain(
+      '現在のプランでは、管理者・編集者として招待できません',
+    );
   });
 });
 

@@ -81,7 +81,12 @@ export const membersRoute = new Hono()
       const memberId = c.req.param('memberId');
       if (!memberId) throw new ApiException('BAD_REQUEST', 400, 'memberId required.');
       const body = updateMemberBodySchema.parse(await c.req.json());
-      const member = await updateMember({ memberId, projectId: project.projectId, body });
+      const member = await updateMember({
+        memberId,
+        projectId: project.projectId,
+        organizationId: project.organizationId,
+        body,
+      });
       return c.json({ data: member });
     },
   )

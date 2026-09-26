@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -177,6 +177,12 @@ export function OrgMembersPage() {
   const seatLimit = entitlement?.limits.seatLimit ?? null;
   const seatCount = entitlement?.usage.seatCount ?? 0;
   const canInvite = !!entitlement && (entitlement.canInviteMember || entitlement.canInviteViewer);
+  /**
+   * 既存メンバーを昇格できるロール (#257)。招待と同じ枠の判定を使う。
+   * 閲覧者 → 編集者の昇格は座席を 1 つ消費するため、空きが無ければ選べない
+   * (サーバー側も changeDefaultProjectRole で同じ判定をしている)。
+   */
+  const promotableRoles = entitlement?.invitableProjectRoles ?? [...PROJECT_ROLES];
 
   return (
     <>
@@ -273,7 +279,13 @@ export function OrgMembersPage() {
                             </SelectTrigger>
                             <SelectContent>
                               {PROJECT_ROLES.map((r) => (
-                                <SelectItem key={r} value={r}>
+                                <SelectItem
+                                  key={r}
+                                  value={r}
+                                  // 座席に空きが無いロールへは昇格できない (#257)。
+                                  // 今のロールは常に選べる (表示中の値を消さない)
+                                  disabled={r !== m.defaultProjectRole && !promotableRoles.includes(r)}
+                                >
                                   {PROJECT_ROLE_LABEL[r]}
                                 </SelectItem>
                               ))}
@@ -500,11 +512,28 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
     onError: (e) => toast.error(msg(e, '招待を送信できませんでした')),
   });
 
+  /**
+   * 選べる権限はサーバーの判定結果をそのまま使う (#257、§7.6.4)。
+   * Free は座席 1 がオーナー本人で埋まるため ['viewer'] だけになる。
+   * entitlement 取得前は全ロールを出しておき、送信時にサーバー側で弾く。
+   */
+  const invitableRoles = useMemo(
+    () => entitlement?.invitableProjectRoles ?? [...PROJECT_ROLES],
+    [entitlement],
+  );
   const roleType = form.watch('roleType');
   const isViewer = roleType === 'viewer';
   const limit = isViewer ? entitlement?.limits.viewerLimit : entitlement?.limits.seatLimit;
   const used = isViewer ? entitlement?.usage.viewerCount : entitlement?.usage.seatCount;
   const remaining = limit === null || limit === undefined ? null : Math.max(0, limit - (used ?? 0));
+
+  // 選べないロールが既定値になっていたら、選べるものへ寄せる。
+  // Free で既定の editor が残ると「送信して初めて 409」になってしまう
+  useEffect(() => {
+    if (invitableRoles.length > 0 && !invitableRoles.includes(roleType)) {
+      form.setValue('roleType', invitableRoles[0]!);
+    }
+  }, [form, invitableRoles, roleType]);
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -589,12 +618,18 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
                 </SelectTrigger>
                 <SelectContent>
                   {PROJECT_ROLES.map((r) => (
-                    <SelectItem key={r} value={r}>
+                    <SelectItem key={r} value={r} disabled={!invitableRoles.includes(r)}>
                       {PROJECT_ROLE_LABEL[r]}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {/* 選べない理由を先に見せる。送信して 409 で気づくのは遅い (#257) */}
+              {!invitableRoles.includes('editor') && (
+                <p className="text-text-tertiary mt-1 text-label">
+                  現在のプランでは閲覧者としてのみ招待できます。
+                </p>
+              )}
             </Field>
           </div>
 

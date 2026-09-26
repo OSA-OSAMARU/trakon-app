@@ -19,6 +19,7 @@ import {
   type BillingPlanCode,
   type SubscriptionStatus,
 } from '../constants/billing.js';
+import { consumesSeat, PROJECT_ROLES, type ProjectRole } from './projectRole.js';
 
 export type EntitlementInput = {
   planCode: BillingPlanCode;
@@ -91,6 +92,14 @@ export type Entitlement = {
   canInviteMember: boolean;
   /** 閲覧者を招待できるか (#160)。座席とは別枠 */
   canInviteViewer: boolean;
+  /**
+   * いま招待できるプロジェクトロール (#257)。
+   *
+   * 画面はこの配列だけを選択肢に出す。Free は座席 1 がオーナー本人で埋まるため
+   * `['viewer']` だけになり、「編集者・管理者として招待できない」が
+   * 判定関数 1 か所から素直に導かれる (§7.6.4: FE は再計算しない)。
+   */
+  invitableProjectRoles: ProjectRole[];
   /** 支払猶予の期限 (ISO 文字列)。猶予中でなければ null */
   graceEndsAt: string | null;
   /** 現在の請求期間の終了日時 (ISO 文字列) */
@@ -251,6 +260,9 @@ export function evaluateEntitlement(input: EntitlementInput): Entitlement {
     writable && (limits.seatLimit === null || input.seatCount < limits.seatLimit);
   const canInviteViewer =
     writable && (limits.viewerLimit === null || input.viewerCount < limits.viewerLimit);
+  const invitableProjectRoles = PROJECT_ROLES.filter((role) =>
+    consumesSeat(role) ? canInviteMember : canInviteViewer,
+  );
 
   return {
     level: resolved.level,
@@ -267,6 +279,7 @@ export function evaluateEntitlement(input: EntitlementInput): Entitlement {
     canCreateProject,
     canInviteMember,
     canInviteViewer,
+    invitableProjectRoles,
     graceEndsAt: resolved.reason === 'in_grace_period' ? toIso(gracePeriodEndsAt) : null,
     periodEndsAt: toIso(currentPeriodEnd),
     message: buildMessage({ ...resolved, over }),

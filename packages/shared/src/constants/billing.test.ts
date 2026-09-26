@@ -127,8 +127,12 @@ describe('閲覧者の上限 (#160)', () => {
     }
   });
 
-  it('Free は閲覧者を招待できない (0)', () => {
-    expect(BILLING_PLANS.free.viewerLimit).toBe(0);
+  it('Free は閲覧者を 5 名まで招待できる (#257 で 0 から変更)', () => {
+    expect(BILLING_PLANS.free.viewerLimit).toBe(5);
+  });
+
+  it('Free は座席が 1 (オーナー本人) なので管理者・編集者は招待できない', () => {
+    expect(BILLING_PLANS.free.seatLimit).toBe(1);
   });
 
   it('有料プランは座席より広い閲覧者枠を持つ (無制限を含む)', () => {

@@ -104,6 +104,23 @@ function teamBilling(over: Record<string, unknown> = {}) {
       usage: { seatCount: 3, viewerCount: 0, projectCount: 4 },
       canInviteMember: true,
       canInviteViewer: true,
+      invitableProjectRoles: ['admin', 'editor', 'viewer'],
+    },
+    ...over,
+  };
+}
+
+/** Free プラン (座席 1 = オーナー本人で埋まる / 閲覧者 5) の契約情報 (#257)。 */
+function freeBilling(over: Record<string, unknown> = {}) {
+  return {
+    ...defaultBillingResponse,
+    entitlement: {
+      ...defaultBillingResponse.entitlement,
+      limits: { seatLimit: 1, viewerLimit: 5, projectLimit: 2 },
+      usage: { seatCount: 1, viewerCount: 0, projectCount: 1 },
+      canInviteMember: false,
+      canInviteViewer: true,
+      invitableProjectRoles: ['viewer'],
     },
     ...over,
   };
@@ -523,6 +540,48 @@ describe('OrgMembersPage', () => {
     expect(screen.getByText(/閲覧者は管理者・編集者の枠を消費しません。/)).toBeInTheDocument();
     // 閲覧者は 20 枠のうち 0 使用
     expect(screen.getByText(/現在の空きは20名です。/)).toBeInTheDocument();
+  });
+
+  it('Free では閲覧者としてしか招待できない (#257)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stub({ billing: freeBilling() });
+    renderPage();
+    await screen.findByText('佐藤 航');
+    await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
+
+    // 既定の editor は選べないので、選べる閲覧者へ寄せる
+    expect(await screen.findByText('現在のプランでは閲覧者としてのみ招待できます。')).toBeInTheDocument();
+    expect(await screen.findByText('招待すると閲覧者枠を1名分使用します')).toBeInTheDocument();
+    expect(screen.getByText(/現在の空きは5名です。/)).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('combobox', { name: '権限' }));
+    expect(await screen.findByRole('option', { name: '編集者' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByRole('option', { name: '管理者' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(screen.getByRole('option', { name: '閲覧者' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('Free では閲覧者を編集者へ昇格させる選択肢を選べない (#257)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stub({
+      billing: freeBilling(),
+      members: [owner, { ...editor, defaultProjectRole: 'viewer' as const }],
+    });
+    renderPage();
+
+    await user.click(await screen.findByRole('combobox', { name: '横山 美咲 の権限' }));
+
+    expect(await screen.findByRole('option', { name: '編集者' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    // 今のロール (閲覧者) は選択肢として残す
+    expect(screen.getByRole('option', { name: '閲覧者' })).not.toHaveAttribute('aria-disabled');
   });
 
   it('一般の会員には管理できない旨を出し、一覧を取りに行かない', async () => {

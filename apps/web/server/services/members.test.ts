@@ -167,6 +167,16 @@ const prismaMock = {
             (args.where.user === undefined || om.user.deletedAt === null),
         ),
     ),
+    // 座席の種類の確認 (#257)。閲覧者の座席の人に編集権限を与えないため
+    findFirst: vi.fn(
+      async (args: { where: { organizationId: string; userId: string; deletedAt: null } }) =>
+        Object.values(orgMemberStore).find(
+          (om) =>
+            om.organizationId === args.where.organizationId &&
+            om.userId === args.where.userId &&
+            om.deletedAt === null,
+        ) ?? null,
+    ),
   },
   // 未受諾の招待 (#238)。候補が空の理由を出すために数だけ使う
   invitation: {
@@ -439,6 +449,7 @@ describe('updateMember', () => {
     const res = await updateMember({
       memberId: 'm-up',
       projectId: 'p-1',
+      organizationId: ORG_ID,
       body: { name: 'New Name', sortOrder: 9, memberType: 'production', roleType: 'editor' },
     });
     expect(res).toMatchObject({ id: 'm-up', name: 'New Name', sortOrder: 9, memberType: 'production' });
@@ -448,16 +459,107 @@ describe('updateMember', () => {
 
   it('leaves fields unchanged when body is empty (all undefined)', async () => {
     seedMember({ id: 'm-noop', projectId: 'p-1', name: 'Keep', organizationName: 'KeepOrg' });
-    const res = await updateMember({ memberId: 'm-noop', projectId: 'p-1', body: {} });
+    const res = await updateMember({
+      memberId: 'm-noop',
+      projectId: 'p-1',
+      organizationId: ORG_ID,
+      body: {},
+    });
     expect(res.name).toBe('Keep');
     expect(res.organizationName).toBe('KeepOrg');
   });
 
   it('throws 404 NOT_FOUND when the member does not exist in the project', async () => {
     await expect(
-      updateMember({ memberId: 'missing', projectId: 'p-1', body: { name: 'X' } }),
+      updateMember({
+        memberId: 'missing',
+        projectId: 'p-1',
+        organizationId: ORG_ID,
+        body: { name: 'X' },
+      }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', status: 404 });
     expect(prismaMock.projectMember.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('座席の種類を超える権限は与えない (#257)', () => {
+  it('閲覧者の座席の人をプロジェクトで編集者にはできない', async () => {
+    seedOrgMember({ userId: 'u-viewer', defaultProjectRole: 'viewer' });
+    seedMember({ id: 'm-v', projectId: 'p-1', userId: 'u-viewer', roleType: 'viewer' });
+
+    await expect(
+      updateMember({
+        memberId: 'm-v',
+        projectId: 'p-1',
+        organizationId: ORG_ID,
+        body: { roleType: 'editor' },
+      }),
+    ).rejects.toMatchObject({ code: 'SEAT_ROLE_REQUIRED', status: 409 });
+    expect(prismaMock.projectMember.update).not.toHaveBeenCalled();
+  });
+
+  it('閲覧者の座席の人でも、閲覧者のままなら更新できる', async () => {
+    seedOrgMember({ userId: 'u-viewer', defaultProjectRole: 'viewer' });
+    seedMember({ id: 'm-v', projectId: 'p-1', userId: 'u-viewer', roleType: 'viewer' });
+
+    await expect(
+      updateMember({
+        memberId: 'm-v',
+        projectId: 'p-1',
+        organizationId: ORG_ID,
+        body: { roleType: 'viewer', memberType: 'client' },
+      }),
+    ).resolves.toMatchObject({ roleType: 'viewer' });
+  });
+
+  it('座席を持っている人 (既定が編集者) はプロジェクトで管理者にできる', async () => {
+    seedOrgMember({ userId: 'u-editor', defaultProjectRole: 'editor' });
+    seedMember({ id: 'm-e', projectId: 'p-1', userId: 'u-editor', roleType: 'editor' });
+
+    await expect(
+      updateMember({
+        memberId: 'm-e',
+        projectId: 'p-1',
+        organizationId: ORG_ID,
+        body: { roleType: 'admin' },
+      }),
+    ).resolves.toMatchObject({ roleType: 'admin' });
+  });
+
+  it('アカウント未紐付けの表示専用メンバーは対象外 (座席を消費しないしログインもしない)', async () => {
+    seedMember({ id: 'm-guest', projectId: 'p-1', userId: null, roleType: 'viewer' });
+
+    await expect(
+      updateMember({
+        memberId: 'm-guest',
+        projectId: 'p-1',
+        organizationId: ORG_ID,
+        body: { roleType: 'editor' },
+      }),
+    ).resolves.toMatchObject({ roleType: 'editor' });
+  });
+
+  it('addMembers も閲覧者の座席の人を編集者として追加できない', async () => {
+    seedOrgMember({ userId: 'u-viewer', defaultProjectRole: 'viewer' });
+
+    await expect(
+      addMembers({
+        projectId: 'p-1',
+        organizationId: ORG_ID,
+        body: { members: [{ userId: 'u-viewer', memberType: 'client', roleType: 'editor' }] },
+      }),
+    ).rejects.toMatchObject({ code: 'SEAT_ROLE_REQUIRED', status: 409 });
+  });
+
+  it('addMembers で閲覧者として追加するのは通る', async () => {
+    seedOrgMember({ userId: 'u-viewer', defaultProjectRole: 'viewer' });
+
+    const res = await addMembers({
+      projectId: 'p-1',
+      organizationId: ORG_ID,
+      body: { members: [{ userId: 'u-viewer', memberType: 'client', roleType: 'viewer' }] },
+    });
+    expect(res[0]).toMatchObject({ roleType: 'viewer' });
   });
 });
 
