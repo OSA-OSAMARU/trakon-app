@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -488,7 +489,10 @@ export function BallDetailModal({
                     className="flex-1 space-y-5 overflow-y-auto px-6 pt-5"
                   >
                     <Section title="現在のボール">
-                      <BallHolderBanner plan={plan} />
+                      <BallHolderBanner
+                        plan={plan}
+                        avatarUrl={memberById.get(plan.ballHolder?.id ?? '')?.avatarUrl ?? null}
+                      />
                     </Section>
 
                     <Section title="担当">
@@ -504,6 +508,7 @@ export function BallDetailModal({
                               role="executor"
                               trailing={roleBadgeFor(plan.executor?.id)}
                               name={plan.executor?.name ?? '未設定'}
+                              avatarUrl={memberById.get(plan.executor?.id ?? '')?.avatarUrl}
                               caption={plan.executor?.organizationName ?? undefined}
                             />
                           </MemberProfileHover>
@@ -518,6 +523,7 @@ export function BallDetailModal({
                               role="approver"
                               trailing={roleBadgeFor(plan.approver?.id)}
                               name={plan.approver?.name ?? '未設定（実施者が承認）'}
+                              avatarUrl={memberById.get(plan.approver?.id ?? '')?.avatarUrl}
                               caption={plan.approver?.organizationName ?? undefined}
                             />
                           </MemberProfileHover>
@@ -532,6 +538,9 @@ export function BallDetailModal({
                               role="manager"
                               trailing={roleBadgeFor(plan.progressManager?.id)}
                               name={plan.progressManager?.name ?? '未設定'}
+                              avatarUrl={
+                                memberById.get(plan.progressManager?.id ?? '')?.avatarUrl
+                              }
                               caption={plan.progressManager?.organizationName ?? undefined}
                             />
                           </MemberProfileHover>
@@ -792,27 +801,40 @@ function handoffLabel(
 
 function BallHolderBanner({
   plan,
+  avatarUrl,
 }: {
   plan: {
     ballHolder: { name: string; organizationName: string } | null;
     ballState: PlanState;
     status: string;
   };
+  /** 保持者のプロフィール画像 (#253)。未設定ならイニシャルタイルを出す */
+  avatarUrl?: string | null;
 }) {
   const completed = plan.status === 'completed';
   const holder = plan.ballHolder;
+  // 完了カードは「誰の番か」ではなく「済んだこと」を伝える枠なので、顔写真は出さない
+  const showAvatar = !completed && !!avatarUrl && !!holder;
   return (
     <DetailCard className="bg-surface-subtle">
       <DetailRow className="flex items-center gap-4">
-        <span
-          aria-hidden
-          className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-full text-body font-bold',
-            completed ? 'bg-success-subtle text-success' : 'bg-brand-subtle text-brand-strong',
-          )}
-        >
-          {completed ? <CheckCircle2 className="size-4" /> : (holder?.name.trim().charAt(0) ?? '—')}
-        </span>
+        {showAvatar ? (
+          <Avatar name={holder.name} src={avatarUrl} className="size-8 shrink-0 text-body" />
+        ) : (
+          <span
+            aria-hidden
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-full text-body font-bold',
+              completed ? 'bg-success-subtle text-success' : 'bg-brand-subtle text-brand-strong',
+            )}
+          >
+            {completed ? (
+              <CheckCircle2 className="size-4" />
+            ) : (
+              (holder?.name.trim().charAt(0) ?? '—')
+            )}
+          </span>
+        )}
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-body font-bold">
             {completed ? '完了済み' : (holder?.name ?? '—')}

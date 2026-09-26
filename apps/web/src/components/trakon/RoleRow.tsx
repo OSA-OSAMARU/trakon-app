@@ -1,5 +1,6 @@
 import type * as React from 'react';
 
+import { Avatar } from '@/components/ui/avatar';
 import { cn } from '@/components/ui/utils';
 
 import { PLAN_ROLE_SPEC, type PlanRole } from './planRole';
@@ -7,6 +8,11 @@ import { PLAN_ROLE_SPEC, type PlanRole } from './planRole';
 type RoleRowProps = React.ComponentProps<'div'> & {
   role: PlanRole;
   name: string;
+  /**
+   * プロフィール画像の URL (#253)。渡されない / 読み込めない場合は
+   * 役割色のイニシャルタイルへフォールバックする。
+   */
+  avatarUrl?: string | null;
   /** 職種・所属などの補足。detail でのみ表示する */
   caption?: string;
   /**
@@ -30,6 +36,7 @@ type RoleRowProps = React.ComponentProps<'div'> & {
 export function RoleRow({
   role,
   name,
+  avatarUrl,
   caption,
   trailing,
   variant = 'compact',
@@ -55,17 +62,26 @@ export function RoleRow({
       >
         {spec.label}
       </span>
-      <span
-        aria-hidden
-        className={cn(
-          'flex shrink-0 items-center justify-center rounded-full font-bold',
-          detail
-            ? cn('size-8 text-body text-foreground', spec.avatarSubtle)
-            : cn('size-5 text-micro text-white', spec.avatar),
-        )}
-      >
-        {initial}
-      </span>
+      {avatarUrl ? (
+        // アイコンを設定している人は写真を出す (#253)。役割は左のラベルで分かる
+        <Avatar
+          name={name}
+          src={avatarUrl}
+          className={cn('shrink-0', detail ? 'size-8 text-body' : 'size-5 text-micro')}
+        />
+      ) : (
+        <span
+          aria-hidden
+          className={cn(
+            'flex shrink-0 items-center justify-center rounded-full font-bold',
+            detail
+              ? cn('size-8 text-body text-foreground', spec.avatarSubtle)
+              : cn('size-5 text-micro text-white', spec.avatar),
+          )}
+        >
+          {initial}
+        </span>
+      )}
       <span className="flex min-w-0 flex-col">
         {/* detail は行の高さをアバター (32px) に揃えたいので行間を詰める (Figma node 38:12) */}
         <span

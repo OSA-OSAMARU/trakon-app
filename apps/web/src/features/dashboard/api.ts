@@ -23,6 +23,8 @@ export type DashboardMemberSection = {
     name: string;
     organizationName: string;
     memberType: 'client' | 'production';
+    /** プロフィール画像 (#253)。未設定・未紐付けなら null で頭文字アバターに落ちる */
+    avatarUrl: string | null;
     /** 自分自身か (「要対応のみ」の絞り込みに使う) */
     isMe: boolean;
   };

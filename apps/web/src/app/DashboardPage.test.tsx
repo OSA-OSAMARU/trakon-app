@@ -35,6 +35,7 @@ const dashboard: Dashboard = {
             name: '山田 太郎',
             organizationName: 'Acme',
             memberType: 'production',
+            avatarUrl: null,
             isMe: true,
           },
           tasks: [
@@ -48,6 +49,7 @@ const dashboard: Dashboard = {
             name: '他人 花子',
             organizationName: 'Acme',
             memberType: 'client',
+            avatarUrl: null,
             isMe: false,
           },
           tasks: [
@@ -67,6 +69,7 @@ const dashboard: Dashboard = {
             name: '別 太郎',
             organizationName: 'Acme',
             memberType: 'production',
+            avatarUrl: null,
             isMe: false,
           },
           tasks: [task({ planId: 'pl5', projectId: 'p2', title: '別案件の予定' })],
@@ -113,6 +116,22 @@ describe('DashboardPage (integration)', () => {
     );
   });
 
+  it('保持者がアイコンを設定していれば頭文字ではなく画像を出す (#253)', async () => {
+    const withAvatar = structuredClone(dashboard);
+    withAvatar.projects[0]!.memberSections[0]!.member.avatarUrl = 'https://signed.test/y.webp';
+    stub(withAvatar);
+    renderWithProviders(<DashboardPage />);
+
+    const card = (await screen.findByText('デザインカンプ作成')).closest('a')!;
+    expect(within(card).getByRole('presentation', { hidden: true })).toHaveAttribute(
+      'src',
+      'https://signed.test/y.webp',
+    );
+    // アイコン未設定の保持者は頭文字のまま
+    const other = (await screen.findByText('差し戻された予定')).closest('a')!;
+    expect(within(other).queryByRole('presentation', { hidden: true })).toBeNull();
+  });
+
   it('「要対応のみ」で自分が保持しているボールだけに絞る', async () => {
     stub();
     const user = userEvent.setup({ pointerEventsCheck: 0 });
@@ -139,6 +158,7 @@ describe('DashboardPage (integration)', () => {
                 name: '山田 太郎',
                 organizationName: 'Acme',
                 memberType: 'production',
+                avatarUrl: null,
                 isMe: true,
               },
               tasks: [

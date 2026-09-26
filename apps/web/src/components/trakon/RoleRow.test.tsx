@@ -47,6 +47,22 @@ describe('RoleRow', () => {
     expect(screen.getByText('管理者')).toBeInTheDocument();
   });
 
+  it('アイコンがあれば頭文字ではなく画像を出す (#253)', () => {
+    const { container } = render(
+      <RoleRow
+        variant="detail"
+        role="executor"
+        name="みやまる"
+        avatarUrl="https://signed.test/miyamaru.webp"
+      />,
+    );
+    const img = container.querySelector('img');
+    expect(img).toHaveAttribute('src', 'https://signed.test/miyamaru.webp');
+    // 画像が出ているときは役割色のイニシャルタイルは出さない
+    expect(screen.queryByText('み')).toBeNull();
+    expect(screen.getByText('みやまる')).toBeInTheDocument();
+  });
+
   it('caption は指定したときだけ出る', () => {
     const { rerender } = render(<RoleRow role="manager" name="横山 直樹" />);
     expect(screen.queryByText('ディレクター')).toBeNull();
