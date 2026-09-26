@@ -23,8 +23,16 @@ export type InvitationScope = 'project' | 'org';
 /** `GET /invitations/:token` (未認証可) */
 export type InvitationVerifyDTO = {
   scope: InvitationScope;
-  /** 組織単位の招待では null */
+  /** 組織単位の招待では null。受諾後の遷移先を決めるのに使う */
   project: { id: string; name: string } | null;
+  /**
+   * 受諾すると参加することになるプロジェクト (#258)。
+   *
+   * プロジェクト単位の招待では 1 件、組織単位の招待では**招待時に選ばれた
+   * プロジェクトの分だけ複数**になる (0 件もありうる — 組織に入るだけの招待)。
+   * 招待された人が「何に参加するのか」を受諾前に確認できるようにするための項目。
+   */
+  projects: Array<{ id: string; name: string }>;
   /** 招待元の組織名。組織単位の招待ではこれが見出しになる */
   organizationName: string;
   /** 招待の宛先。氏名は参加者行 or 招待行から取るため空文字になりうる */

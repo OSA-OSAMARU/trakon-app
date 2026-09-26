@@ -385,7 +385,12 @@ describe('createOrgInvitation', () => {
       }),
     );
     expect(sendInvitationMock).toHaveBeenCalledWith(
-      expect.objectContaining({ to: 'yokoyama@example.test', projectName: 'テスト組織' }),
+      expect.objectContaining({
+        to: 'yokoyama@example.test',
+        organizationName: 'テスト組織',
+        // プロジェクトを選ばない組織招待では空 (#258)
+        projectNames: [],
+      }),
     );
   });
 
@@ -414,7 +419,7 @@ describe('createOrgInvitation', () => {
   });
 
   it('選ばれたプロジェクトに未紐付けの参加者行を作る', async () => {
-    prismaMock.project.findFirst.mockResolvedValue({ id: 'p-1' });
+    prismaMock.project.findFirst.mockResolvedValue({ id: 'p-1', name: '灯和食品サイト' });
     prismaMock.projectMember.findFirst.mockResolvedValue(null);
 
     await createOrgInvitation({
@@ -437,8 +442,29 @@ describe('createOrgInvitation', () => {
     );
   });
 
-  it('既に参加者行があるプロジェクトは作り直さない', async () => {
-    prismaMock.project.findFirst.mockResolvedValue({ id: 'p-1' });
+  it('招待メールに参加するプロジェクト名を載せる (#258)', async () => {
+    prismaMock.project.findFirst
+      .mockResolvedValueOnce({ id: 'p-1', name: '灯和食品サイト' })
+      .mockResolvedValueOnce({ id: 'p-2', name: '採用サイト' });
+    prismaMock.projectMember.findFirst.mockResolvedValue(null);
+
+    await createOrgInvitation({
+      organizationId: 'org-1',
+      actorUserId: 'u-1',
+      origin: '',
+      body: { ...body, projectIds: ['p-1', 'p-2'] },
+    });
+
+    expect(sendInvitationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationName: 'テスト組織',
+        projectNames: ['灯和食品サイト', '採用サイト'],
+      }),
+    );
+  });
+
+  it('既に参加者行があるプロジェクトでもメールには名前を載せる (#258)', async () => {
+    prismaMock.project.findFirst.mockResolvedValue({ id: 'p-1', name: '灯和食品サイト' });
     prismaMock.projectMember.findFirst.mockResolvedValue({ id: 'pm-1' });
 
     await createOrgInvitation({
@@ -449,6 +475,10 @@ describe('createOrgInvitation', () => {
     });
 
     expect(prismaMock.projectMember.create).not.toHaveBeenCalled();
+    // 参加者行を作り直さないだけで、参加先であることに変わりはない
+    expect(sendInvitationMock).toHaveBeenCalledWith(
+      expect.objectContaining({ projectNames: ['灯和食品サイト'] }),
+    );
   });
 
   it('別組織のプロジェクトを指定すると 404', async () => {
@@ -525,7 +555,8 @@ describe('resendOrgInvitation', () => {
     expect(sendInvitationMock).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'hanako@example.com',
-        projectName: '制作会社A',
+        organizationName: '制作会社A',
+        projectNames: [],
         acceptUrl: expect.stringMatching(/^https:\/\/app\.test\/invitations\/.+/),
       }),
     );

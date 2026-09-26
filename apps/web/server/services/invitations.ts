@@ -24,13 +24,60 @@ export type {
 } from '@trakon/shared';
 
 /**
+ * 受諾すると参加することになるプロジェクトを返す (#258)。
+ *
+ * 招待された人が「何に参加するのか」を受諾前に確認できるようにするための情報で、
+ * 受諾画面と招待メールの両方がこれを使う。**受諾処理 (acceptInvitation) が
+ * 実際に紐づける行と同じ条件で引く**ようにしてあり、案内と結果がずれない。
+ *
+ *   プロジェクト単位の招待 … その 1 件
+ *   組織単位の招待         … 招待時に選ばれたプロジェクトに用意された
+ *                            「未紐付けの参加者行」の分だけ (0 件もありうる)
+ */
+export async function findInvitedProjects(input: {
+  organizationId: string;
+  email: string;
+  /** プロジェクト単位の招待ならその ID */
+  projectId?: string | null;
+}): Promise<Array<{ id: string; name: string }>> {
+  if (input.projectId) {
+    const project = await prisma.project.findFirst({
+      where: { id: input.projectId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    return project ? [project] : [];
+  }
+
+  const rows = await prisma.projectMember.findMany({
+    where: {
+      userId: null,
+      deletedAt: null,
+      email: input.email,
+      project: { organizationId: input.organizationId, deletedAt: null },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { project: { select: { id: true, name: true } } },
+  });
+  // 同じプロジェクトに複数行が残っている異常系でも 1 件にまとめる
+  const byId = new Map(rows.map((r) => [r.project.id, r.project]));
+  return [...byId.values()];
+}
+
+/**
  * 招待を検証して状態を返す。期限切れ・受諾済・失効・未存在は全て 404 集約。
  */
 export async function verifyInvitation(rawToken: string): Promise<InvitationVerifyDTO> {
   const inv = await findActiveInvitation(rawToken);
+  // 受諾前に「何に参加するのか」を出す (#258)
+  const projects = await findInvitedProjects({
+    organizationId: inv.organizationId,
+    email: inv.email,
+    projectId: inv.projectId,
+  });
   return {
     scope: inv.projectId ? 'project' : 'org',
     project: inv.project ? { id: inv.project.id, name: inv.project.name } : null,
+    projects,
     organizationName: inv.organization.name,
     invitee: {
       name: inv.invitedMember?.name ?? inv.invitedName ?? '',

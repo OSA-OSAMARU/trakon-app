@@ -20,7 +20,12 @@ import { api } from '../../test/request.js';
 // 権限変更が参加中のプロジェクトへ反映されることが要点。
 // =============================================================================
 
-type SentInvitation = { to: string; projectName: string; acceptUrl: string };
+type SentInvitation = {
+  to: string;
+  organizationName: string;
+  projectNames: string[];
+  acceptUrl: string;
+};
 let sent: SentInvitation[] = [];
 
 let owner: Awaited<ReturnType<typeof createUser>>;
@@ -31,7 +36,12 @@ beforeEach(async () => {
   sent = [];
   const mailer: Partial<Mailer> = {
     async sendInvitation(input) {
-      sent.push({ to: input.to, projectName: input.projectName, acceptUrl: input.acceptUrl });
+      sent.push({
+        to: input.to,
+        organizationName: input.organizationName,
+        projectNames: input.projectNames,
+        acceptUrl: input.acceptUrl,
+      });
     },
   };
   __setMailerForTest(mailer);
@@ -198,6 +208,55 @@ describe('POST /organizations/me/invitations', () => {
     });
     expect(member.userId).toBeNull();
     expect(member.roleType).toBe('viewer');
+  });
+
+  it('メールと受諾画面に、参加するプロジェクト名を出す (#258)', async () => {
+    const a = await createProjectWithAdmin({ user: owner });
+    const b = await createProjectWithAdmin({ user: owner });
+
+    await api('/api/v1/organizations/me/invitations', {
+      method: 'POST',
+      token: ownerToken,
+      body: {
+        name: '宮丸 一郎',
+        email: 'miyamaru@example.test',
+        roleType: 'viewer',
+        projectIds: [a.project.id, b.project.id],
+      },
+    });
+
+    // 招待メール
+    expect(sent[0]!.projectNames).toEqual([a.project.name, b.project.name]);
+
+    // 受諾画面 (未認証でも見られる)
+    const rawToken = sent[0]!.acceptUrl.split('/').pop()!;
+    const verify = await api<{
+      data: { scope: string; project: unknown; projects: Array<{ id: string; name: string }> };
+    }>(`/api/v1/invitations/${rawToken}`);
+
+    expect(verify.status).toBe(200);
+    expect(verify.body.data.scope).toBe('org');
+    expect(verify.body.data.project).toBeNull();
+    expect(verify.body.data.projects.map((p) => p.id).sort()).toEqual(
+      [a.project.id, b.project.id].sort(),
+    );
+  });
+
+  it('プロジェクトを選ばない招待では、参加するプロジェクトは空になる (#258)', async () => {
+    await api('/api/v1/organizations/me/invitations', {
+      method: 'POST',
+      token: ownerToken,
+      body: { name: '組織だけ', email: 'org-only@example.test', roleType: 'viewer' },
+    });
+
+    expect(sent[0]!.projectNames).toEqual([]);
+
+    const rawToken = sent[0]!.acceptUrl.split('/').pop()!;
+    const verify = await api<{ data: { projects: unknown[] } }>(
+      `/api/v1/invitations/${rawToken}`,
+    );
+
+    expect(verify.body.data.projects).toEqual([]);
   });
 
   it('受諾すると組織メンバーになり、選ばれていたプロジェクトにも紐づく', async () => {

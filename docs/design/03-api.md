@@ -694,19 +694,31 @@ Magic-link でメール認証完了後、詳細情報（`full_name` / `display_n
 **処理**：
 1. `token` を SHA-256 ハッシュ化
 2. `invitations WHERE token_hash = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()` で検索
-3. 紐付く `projects.name`、`invited_member.name`、`invited_member.organization_name`、`role_type` を返す
+3. 紐付く組織名・招待先の情報・`role_type` を返す
+4. **#258**：受諾すると参加することになるプロジェクトを `projects` として返す（下記）
 
 **レスポンス（200）**：
 ```typescript
 {
   data: {
-    project: { id: string, name: string },
-    invitedMember: { name: string, email: string, organizationName: string },
-    roleType: string | null,
+    scope: 'project' | 'org',
+    project: { id: string, name: string } | null,   // 組織単位では null（受諾後の遷移先に使う）
+    projects: Array<{ id: string, name: string }>,  // #258：参加することになるプロジェクト
+    organizationName: string,
+    invitee: { name: string, email: string, organizationName: string, roleType: string },
     expiresAt: string,
   }
 }
 ```
+
+**`projects` の求め方（#258）**：
+
+| scope | 中身 |
+|---|---|
+| `project` | その 1 件 |
+| `org` | 招待時に選ばれたプロジェクトに用意された「未紐付けの参加者行」（`project_members.user_id IS NULL AND email = invitations.email`）の分。**0 件もありうる**（組織に入るだけの招待） |
+
+> **受諾処理が実際に紐づける行と同じ条件で引く。** 案内と結果がずれないよう、`services/invitations.ts` の `findInvitedProjects()` に集約している（受諾画面と招待メールの両方がこれを使う）。招待メールも同じ情報を載せる（件名は「1 件目 ほか N 件」、本文は全部）。
 
 **エラー**：404 (`INVITATION_NOT_FOUND_OR_EXPIRED`)。**有効期限切れ／受諾済／失効済はすべて 404 に集約**（漏れ防止）。
 
