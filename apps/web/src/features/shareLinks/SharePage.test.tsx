@@ -58,14 +58,52 @@ afterEach(() => {
 });
 
 describe('SharePage', () => {
-  it('共有ビューを取得してヘッダ (プロジェクト名/scope/閲覧専用) を描画する', async () => {
+  it('ヘッダにプロジェクト名・期間・共有用バッジ・有効期限を出す (#256)', async () => {
     server.use(http.get('*/api/v1/share/:token', () => HttpResponse.json({ data: view })));
     renderWithProviders(<SharePage />);
 
-    expect(await screen.findByText('共有プロジェクト')).toBeInTheDocument();
-    // #257: 共有リンクは全プランで閲覧専用
-    expect(screen.getByText('共有リンク（閲覧専用）')).toBeInTheDocument();
-    expect(screen.getByText('scope: project')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '共有プロジェクト' })).toBeInTheDocument();
+    expect(screen.getByText('共有用')).toBeInTheDocument();
+    expect(screen.getByText(/期間：2026\/06\/01 〜 2026\/06\/30/)).toBeInTheDocument();
+    // 時刻はローカルタイムゾーンで出るため、書式だけを見る (CI は UTC)
+    expect(screen.getByText(/^有効期限 \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}まで$/)).toBeInTheDocument();
+    // プロジェクト全体の共有ではスコープの注記は出さない (既定なので情報量が増えない)
+    expect(screen.queryByText(/の共有/)).toBeNull();
+  });
+
+  it('期限なしのリンクは「無期限」と出す', async () => {
+    server.use(
+      http.get('*/api/v1/share/:token', () =>
+        HttpResponse.json({ data: { ...view, share: { ...view.share, expiresAt: null } } }),
+      ),
+    );
+    renderWithProviders(<SharePage />);
+
+    expect(await screen.findByText('有効期限なし（無期限）')).toBeInTheDocument();
+  });
+
+  it('制作物単位の共有ではスコープを注記する', async () => {
+    server.use(
+      http.get('*/api/v1/share/:token', () =>
+        HttpResponse.json({
+          data: { ...view, share: { ...view.share, scopeType: 'item', scopeTargetId: 'it1' } },
+        }),
+      ),
+    );
+    renderWithProviders(<SharePage />);
+
+    expect(await screen.findByText(/特定の制作物の共有/)).toBeInTheDocument();
+  });
+
+  it('カレンダーは角丸カードに収め、画面の端に貼り付かせない (#256)', async () => {
+    server.use(http.get('*/api/v1/share/:token', () => HttpResponse.json({ data: view })));
+    const { container } = renderWithProviders(<SharePage />);
+    await screen.findByRole('heading', { name: '共有プロジェクト' });
+
+    // 外側: 淡色の地 + 余白 / 内側: 角丸のカード
+    const canvas = container.querySelector('.bg-surface-muted')!;
+    expect(canvas.className).toContain('lg:px-12');
+    expect(canvas.firstElementChild!.className).toContain('rounded-2xl');
   });
 
   it('robots noindex meta を head に注入する', async () => {
