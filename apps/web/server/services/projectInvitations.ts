@@ -138,10 +138,16 @@ export async function createInvitation(
   });
   if (!project) throw new ApiException('NOT_FOUND', 404, 'Project not found.');
 
-  const inviter = await prisma.user.findUnique({
-    where: { id: input.actorUserId },
-    select: { displayName: true },
-  });
+  const [inviter, organization] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: input.actorUserId },
+      select: { displayName: true },
+    }),
+    prisma.organization.findUniqueOrThrow({
+      where: { id: input.organizationId },
+      select: { name: true },
+    }),
+  ]);
 
   const { raw, hash } = generateInvitationToken();
   const expiresAt = defaultInvitationExpiresAt();
@@ -231,7 +237,9 @@ export async function createInvitation(
   try {
     await getMailer().sendInvitation({
       to: email,
-      projectName: project.name,
+      organizationName: organization.name,
+      // プロジェクト単位の招待なのでそのプロジェクト 1 件 (#258)
+      projectNames: [project.name],
       inviterName: inviter?.displayName ?? 'TRAKON',
       acceptUrl: `${input.origin}/invitations/${raw}`,
       expiresAt,

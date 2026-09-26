@@ -11,7 +11,13 @@ import { getServerEnv } from './env.js';
 
 export type InvitationEmail = {
   to: string;
-  projectName: string;
+  /** 招待元の組織名 */
+  organizationName: string;
+  /**
+   * 受諾すると参加することになるプロジェクト名 (#258)。
+   * 複数もあり、0 件 (組織に入るだけ) もある。
+   */
+  projectNames: string[];
   inviterName: string;
   acceptUrl: string;
   expiresAt: Date;
@@ -117,7 +123,7 @@ function createDummyMailer(): Mailer {
     async sendInvitation(input) {
       // eslint-disable-next-line no-console
       console.log(
-        `[trakon][mailer/dummy] invitation -> ${input.to} | project="${input.projectName}" inviter="${input.inviterName}" url=${input.acceptUrl} expires=${input.expiresAt.toISOString()}`,
+        `[trakon][mailer/dummy] invitation -> ${input.to} | org="${input.organizationName}" projects="${input.projectNames.join(' / ')}" inviter="${input.inviterName}" url=${input.acceptUrl} expires=${input.expiresAt.toISOString()}`,
       );
     },
     async sendTrialWillEnd(input) {
@@ -158,24 +164,19 @@ function createResendMailer(apiKey: string, fromEmail: string): Mailer {
       const expires = input.expiresAt.toLocaleString('ja-JP', {
         timeZone: 'Asia/Tokyo',
       });
-      const html = renderInvitationHtml({
-        projectName: input.projectName,
+      const body = {
+        organizationName: input.organizationName,
+        projectNames: input.projectNames,
         inviterName: input.inviterName,
         acceptUrl: input.acceptUrl,
         expiresHuman: expires,
-      });
-      const text = renderInvitationText({
-        projectName: input.projectName,
-        inviterName: input.inviterName,
-        acceptUrl: input.acceptUrl,
-        expiresHuman: expires,
-      });
+      };
       const { error } = await client.emails.send({
         from: fromEmail,
         to: input.to,
-        subject: `「${input.projectName}」への参加のご案内 | TRAKON`,
-        html,
-        text,
+        subject: `${invitationSubjectTarget(input)}への参加のご案内 | TRAKON`,
+        html: renderInvitationHtml(body),
+        text: renderInvitationText(body),
       });
       if (error) {
         throw new Error(
@@ -292,16 +293,43 @@ function stripTags(html: string): string {
   return html.replace(/<[^>]*>/g, '');
 }
 
-function renderInvitationText(input: {
-  projectName: string;
+type InvitationBody = {
+  organizationName: string;
+  projectNames: string[];
   inviterName: string;
   acceptUrl: string;
   expiresHuman: string;
+};
+
+/**
+ * 件名・本文で「どこへの招待か」を表す見出し (#258)。
+ *
+ * プロジェクトが 1 件ならその名前、複数なら「1 件目 ほか N 件」、
+ * 0 件 (組織に入るだけ) なら組織名にする。件名は一覧で切れるので、
+ * ここに全部のプロジェクト名を並べない。
+ */
+function invitationSubjectTarget(input: {
+  organizationName: string;
+  projectNames: string[];
 }): string {
+  const [first, ...rest] = input.projectNames;
+  if (!first) return `「${input.organizationName}」`;
+  if (rest.length === 0) return `「${first}」`;
+  return `「${first}」ほか ${rest.length} 件`;
+}
+
+function renderInvitationText(input: InvitationBody): string {
+  const target = invitationSubjectTarget(input);
   return [
-    `${input.inviterName} さんが、TRAKON のプロジェクト「${input.projectName}」にあなたを招待しました。`,
+    `${input.inviterName} さんが、TRAKON の ${target} にあなたを招待しました。`,
     '',
     'TRAKON は、いま誰が次の対応を持っているか（ボール）を可視化し、制作の進行をスムーズにするツールです。',
+    '',
+    `招待元の組織：${input.organizationName}`,
+    // 参加するプロジェクトは受諾前に分かるようにする (#258)
+    ...(input.projectNames.length > 0
+      ? ['参加するプロジェクト：', ...input.projectNames.map((n) => `  ・${n}`)]
+      : ['参加するプロジェクト：まだ指定されていません（参加後に追加されます）']),
     '',
     '▼ 参加する（アカウント作成・招待の受諾）',
     input.acceptUrl,
@@ -314,20 +342,35 @@ function renderInvitationText(input: {
   ].join('\n');
 }
 
-function renderInvitationHtml(input: {
-  projectName: string;
-  inviterName: string;
-  acceptUrl: string;
-  expiresHuman: string;
-}): string {
+function renderInvitationHtml(input: InvitationBody): string {
   // シンプルな HTML テンプレート。Phase 1 で React Email に移行候補
   // 認証メール（Supabase Email Templates）と同一トーン: docs/email-templates.md
+  //
+  // 参加するプロジェクトは受諾前に分かるようにする (#258)。複数のときは
+  // 全部並べる (件名と違い、本文は長さの制約がない)。
+  const detail = `
+    <table style="width:100%;border-collapse:collapse;margin:0 0 24px;font-size:14px">
+      <tr>
+        <td style="padding:6px 0;color:#64748b;white-space:nowrap;vertical-align:top">招待元の組織</td>
+        <td style="padding:6px 0 6px 16px">${escapeHtml(input.organizationName)}</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 0;color:#64748b;white-space:nowrap;vertical-align:top">参加するプロジェクト</td>
+        <td style="padding:6px 0 6px 16px">${
+          input.projectNames.length > 0
+            ? input.projectNames.map((n) => escapeHtml(n)).join('<br/>')
+            : '<span style="color:#64748b">まだ指定されていません（参加後に追加されます）</span>'
+        }</td>
+      </tr>
+    </table>`;
+
   return `<!doctype html><html lang="ja"><body style="font-family:-apple-system,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;color:#0f172a;line-height:1.7;background:#f8fafc;margin:0;padding:24px">
   <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:32px">
     <p style="font-size:13px;letter-spacing:.08em;color:#64748b;margin:0 0 16px">TRAKON</p>
-    <h1 style="font-size:18px;margin:0 0 16px">「${escapeHtml(input.projectName)}」への参加のご案内</h1>
-    <p style="margin:0 0 12px"><strong>${escapeHtml(input.inviterName)}</strong> さんが、あなたをプロジェクトに招待しました。</p>
+    <h1 style="font-size:18px;margin:0 0 16px">${escapeHtml(invitationSubjectTarget(input))}への参加のご案内</h1>
+    <p style="margin:0 0 12px"><strong>${escapeHtml(input.inviterName)}</strong> さんが、あなたを TRAKON に招待しました。</p>
     <p style="margin:0 0 24px;color:#475569;font-size:14px">TRAKON は、いま誰が次の対応を持っているか（ボール）を可視化し、制作の進行をスムーズにするツールです。</p>
+    ${detail}
     <p style="margin:0 0 24px">
       <a href="${input.acceptUrl}" style="display:inline-block;padding:12px 20px;background:#030213;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">参加する</a>
     </p>

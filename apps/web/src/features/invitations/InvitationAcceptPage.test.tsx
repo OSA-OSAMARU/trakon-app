@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { server } from '@/test/handlers';
@@ -53,6 +53,7 @@ import { InvitationAcceptPage } from './InvitationAcceptPage';
 const verifyData: InvitationVerify = {
   scope: 'project',
   project: { id: 'proj-1', name: 'サンプル制作案件' },
+  projects: [{ id: 'proj-1', name: 'サンプル制作案件' }],
   organizationName: '制作会社A',
   invitee: {
     name: '鈴木 花子',
@@ -67,6 +68,10 @@ const verifyData: InvitationVerify = {
 const orgVerifyData: InvitationVerify = {
   scope: 'org',
   project: null,
+  projects: [
+    { id: 'proj-1', name: 'サンプル制作案件' },
+    { id: 'proj-2', name: '採用サイト' },
+  ],
   organizationName: '河津正和 の組織',
   invitee: {
     name: '河津',
@@ -146,6 +151,26 @@ describe('InvitationAcceptPage', () => {
     expect(screen.getByText('河津正和 の組織')).toBeInTheDocument();
     expect(screen.getByText('hanako@example.com')).toBeInTheDocument();
     expect(screen.getByText('編集者')).toBeInTheDocument();
+  });
+
+  it('参加するプロジェクトを受諾前に出す。組織単位で複数なら全部並べる (#258)', async () => {
+    stubVerify(200, orgVerifyData);
+    renderWithProviders(<InvitationAcceptPage />);
+
+    await screen.findByText('組織への招待');
+    const list = screen.getByText('参加するプロジェクト').nextElementSibling as HTMLElement;
+    expect(within(list).getByText('サンプル制作案件')).toBeInTheDocument();
+    expect(within(list).getByText('採用サイト')).toBeInTheDocument();
+  });
+
+  it('参加するプロジェクトが未指定なら、そうと分かる文言を出す (#258)', async () => {
+    stubVerify(200, { ...orgVerifyData, projects: [] });
+    renderWithProviders(<InvitationAcceptPage />);
+
+    await screen.findByText('組織への招待');
+    expect(
+      screen.getByText('まだ指定されていません（参加後に追加されます）'),
+    ).toBeInTheDocument();
   });
 
   it('氏名が空の招待でも描画できる (招待行に氏名が無い場合)', async () => {

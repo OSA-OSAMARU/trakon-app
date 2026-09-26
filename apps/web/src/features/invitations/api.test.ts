@@ -21,6 +21,7 @@ beforeEach(() => {
 const stubVerify: InvitationVerify = {
   scope: 'project',
   project: { id: 'proj-1', name: 'プロジェクト' },
+  projects: [{ id: 'proj-1', name: 'プロジェクト' }],
   organizationName: '制作会社B',
   invitee: {
     name: '田中',

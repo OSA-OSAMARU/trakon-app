@@ -123,6 +123,10 @@ const prismaMock = {
       return p && p.deletedAt === null ? p : null;
     }),
   },
+  // 招待メールに載せる組織名 (#258)
+  organization: {
+    findUniqueOrThrow: vi.fn(async () => ({ name: 'テスト組織' })),
+  },
   user: {
     findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
       where.id === 'u-inviter' ? { displayName: '招待 する子' } : null,
@@ -251,7 +255,9 @@ describe('createInvitation', () => {
       expect(sendInvitation).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'invitee@example.test',
-          projectName: 'プロジェクトA',
+          organizationName: 'テスト組織',
+          // 参加するプロジェクトをメールに載せる (#258)
+          projectNames: ['プロジェクトA'],
           inviterName: '招待 する子',
           acceptUrl: expect.stringMatching(/^https:\/\/trakon\.test\/invitations\/.+/),
         }),

@@ -15,6 +15,7 @@ import { signAvatarUrls } from '../lib/avatarStorage.js';
 import { getMailer } from '../lib/mailer.js';
 import { defaultInvitationExpiresAt, generateInvitationToken } from '../lib/tokens.js';
 import { getEntitlement } from './billing/entitlement.js';
+import { findInvitedProjects } from './invitations.js';
 import { assertNotLastAdmin } from './members.js';
 import { assertInvitationAllowed } from './projectInvitations.js';
 
@@ -428,6 +429,7 @@ export async function createOrgInvitation(input: CreateOrgInvitationInput): Prom
   const { raw, hash } = generateInvitationToken();
   const expiresAt = defaultInvitationExpiresAt();
 
+  const invitedProjectNames: string[] = [];
   const created = await prisma.$transaction(async (tx) => {
     // 枠の確認は重複チェックより後に置く。どちらも枠を増やさないケースで、
     // 「上限です」より「既に招待済みです」の方が具体的な案内になる。
@@ -454,11 +456,13 @@ export async function createOrgInvitation(input: CreateOrgInvitationInput): Prom
     for (const projectId of body.projectIds ?? []) {
       const project = await tx.project.findFirst({
         where: { id: projectId, organizationId: input.organizationId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, name: true },
       });
       if (!project) {
         throw new ApiException('NOT_FOUND', 404, 'Project not found.', { projectId });
       }
+      // メールに「参加するプロジェクト」を載せる (#258)
+      invitedProjectNames.push(project.name);
       const taken = await tx.projectMember.findFirst({
         where: { projectId, email, deletedAt: null },
         select: { id: true },
@@ -509,7 +513,8 @@ export async function createOrgInvitation(input: CreateOrgInvitationInput): Prom
   try {
     await getMailer().sendInvitation({
       to: email,
-      projectName: organization.name,
+      organizationName: organization.name,
+      projectNames: invitedProjectNames,
       inviterName: inviter?.displayName ?? 'TRAKON',
       acceptUrl: `${input.origin}/invitations/${raw}`,
       expiresAt,
@@ -579,7 +584,7 @@ export async function resendOrgInvitation(input: {
       acceptedAt: null,
       revokedAt: null,
     },
-    select: { id: true, email: true },
+    select: { id: true, email: true, projectId: true },
   });
   if (!invitation) throw new ApiException('NOT_FOUND', 404, 'Invitation not found.');
 
@@ -597,11 +602,20 @@ export async function resendOrgInvitation(input: {
   const { raw, hash } = generateInvitationToken();
   const expiresAt = defaultInvitationExpiresAt();
 
+  // 再送でも参加するプロジェクトを載せる (#258)。招待作成後に管理者が
+  // プロジェクトを足していることもあるので、そのときの状態を引き直す。
+  const projects = await findInvitedProjects({
+    organizationId: input.organizationId,
+    email: invitation.email,
+    projectId: invitation.projectId,
+  });
+
   // 送信を先に試す。送れないのにトークンだけ差し替えると、
   // 手元に残っている前のリンクまで道連れで無効になってしまう。
   await getMailer().sendInvitation({
     to: invitation.email,
-    projectName: organization.name,
+    organizationName: organization.name,
+    projectNames: projects.map((p) => p.name),
     inviterName: inviter?.displayName ?? 'TRAKON',
     acceptUrl: `${input.origin}/invitations/${raw}`,
     expiresAt,

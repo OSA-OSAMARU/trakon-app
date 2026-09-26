@@ -31,8 +31,10 @@ type MockInvitation = {
   acceptedAt: Date | null;
   revokedAt: Date | null;
   expiresAt: Date;
-  projectId: string;
-  invitedMemberId: string;
+  /** 組織単位の招待では NULL (#160) */
+  projectId: string | null;
+  /** 組織単位の招待では NULL (#160) */
+  invitedMemberId: string | null;
   email: string;
   organizationId: string;
   roleType: string;
@@ -72,21 +74,24 @@ const matchActive = (inv: MockInvitation, tokenHash: string, now: Date): boolean
   inv.expiresAt.getTime() > now.getTime();
 
 // include で展開された invitation を返すヘルパ。
+// 組織単位の招待では projectId / invitedMemberId が NULL になる (#160)。
 const withIncludes = (inv: MockInvitation) => {
-  const project = projectStore[inv.projectId]!;
-  const member = memberStore[inv.invitedMemberId]!;
+  const project = inv.projectId ? projectStore[inv.projectId] : null;
+  const member = inv.invitedMemberId ? memberStore[inv.invitedMemberId] : null;
   return {
     ...inv,
-    project: { id: project.id, name: project.name },
+    project: project ? { id: project.id, name: project.name } : null,
     organization: { name: 'テスト組織' },
-    invitedMember: {
-      id: member.id,
-      name: member.name,
-      email: member.email,
-      organizationName: member.organizationName,
-      jobTitle: member.jobTitle,
-      memberType: member.memberType,
-    },
+    invitedMember: member
+      ? {
+          id: member.id,
+          name: member.name,
+          email: member.email,
+          organizationName: member.organizationName,
+          jobTitle: member.jobTitle,
+          memberType: member.memberType,
+        }
+      : null,
   };
 };
 
@@ -270,6 +275,13 @@ const prismaMock = {
         );
       },
     ),
+    // findInvitedProjects (#258)。組織単位の招待で紐づく先を引く
+    findMany: vi.fn(async ({ where }: { where: { email: string } }) => {
+      return Object.values(memberStore)
+        .filter((m) => m.userId === null && m.deletedAt === null && m.email === where.email)
+        .map((m) => ({ project: projectStore[m.projectId] ?? null }))
+        .filter((r): r is { project: MockProject } => r.project !== null);
+    }),
   },
   // 受諾時の座席上限チェック (§7.11.1) が読む先。Free / 空きあり を既定にする。
   billingSubscription: {
@@ -282,7 +294,11 @@ const prismaMock = {
     })),
   },
   organizationMember: { count: vi.fn(async () => 1) },
-  project: { count: vi.fn(async () => 0) },
+  project: {
+    count: vi.fn(async () => 0),
+    // findInvitedProjects (#258)。プロジェクト単位の招待で 1 件だけ引く
+    findFirst: vi.fn(async ({ where }: { where: { id: string } }) => projectStore[where.id] ?? null),
+  },
   // コールバック形式 ($transaction(fn)) を再現。
   $transaction: vi.fn(async (arg: unknown) => {
     return (arg as (tx: unknown) => Promise<unknown>)({
@@ -374,6 +390,8 @@ describe('verifyInvitation', () => {
     expect(res).toMatchObject({
       scope: 'project',
       project: { id: 'p-1', name: 'プロジェクトA' },
+      // 受諾前に「何に参加するのか」を出す (#258)
+      projects: [{ id: 'p-1', name: 'プロジェクトA' }],
       invitee: {
         name: '招待 太郎',
         email: 'invitee@example.com',
@@ -382,6 +400,35 @@ describe('verifyInvitation', () => {
       },
     });
     expect(res.expiresAt).toBe(new Date('2999-01-01T00:00:00Z').toISOString());
+  });
+
+  it('組織単位の招待では、用意された参加者行の分だけプロジェクトを返す (#258)', async () => {
+    const { member } = seedValidInvitation({
+      inv: { projectId: null, invitedMemberId: null },
+    });
+    // 同じメール宛に別プロジェクトの参加者行も用意されている状態
+    projectStore['p-2'] = { id: 'p-2', name: '採用サイト' };
+    memberStore['m-2'] = { ...member, id: 'm-2', projectId: 'p-2' };
+
+    const res = await verifyInvitation(RAW_TOKEN);
+
+    expect(res.scope).toBe('org');
+    expect(res.project).toBeNull();
+    expect(res.projects).toEqual([
+      { id: 'p-1', name: 'プロジェクトA' },
+      { id: 'p-2', name: '採用サイト' },
+    ]);
+  });
+
+  it('組織単位で参加者行が無ければ projects は空 (組織に入るだけの招待)', async () => {
+    seedValidInvitation({
+      // 招待先のメール宛には参加者行が 1 件も用意されていない
+      inv: { projectId: null, invitedMemberId: null, email: 'nobody@example.com' },
+    });
+
+    const res = await verifyInvitation(RAW_TOKEN);
+
+    expect(res.projects).toEqual([]);
   });
 
   it('期限切れの招待は 404 INVITATION_NOT_FOUND_OR_EXPIRED', async () => {

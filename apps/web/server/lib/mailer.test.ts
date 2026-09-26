@@ -44,7 +44,8 @@ const importMailer = async (): Promise<{ getMailer: typeof GetMailerType }> => {
 
 const invitation = {
   to: 'invitee@example.com',
-  projectName: 'プロジェクト<X>',
+  organizationName: 'おさまる & カンパニー',
+  projectNames: ['プロジェクト<X>'],
   inviterName: '招待者 & 太郎',
   acceptUrl: 'https://app.example.com/invitations/abc',
   expiresAt: new Date('2026-07-01T12:00:00Z'),
@@ -123,13 +124,63 @@ describe('getMailer (resend)', () => {
     expect(payload.from).toBe('noreply@trakon.test');
     expect(payload.to).toBe(invitation.to);
     expect(payload.subject).toBe('「プロジェクト<X>」への参加のご案内 | TRAKON');
-    // HTML 本文には受諾 URL とエスケープ済みのプロジェクト名が含まれる
+    // HTML 本文には受諾 URL とエスケープ済みのプロジェクト名・組織名が含まれる
     expect(payload.html).toContain(invitation.acceptUrl);
     expect(payload.html).toContain('プロジェクト&lt;X&gt;');
+    expect(payload.html).toContain('おさまる &amp; カンパニー');
     expect(payload.html).toContain('招待者 &amp; 太郎');
-    // text 本文にも URL と招待者名が含まれる
+    // text 本文にも URL と招待者名・プロジェクト名が含まれる
     expect(payload.text).toContain(invitation.acceptUrl);
     expect(payload.text).toContain('招待者 & 太郎');
+    expect(payload.text).toContain('参加するプロジェクト：');
+    expect(payload.text).toContain('・プロジェクト<X>');
+  });
+
+  it('参加するプロジェクトが複数なら件名は「1 件目 ほか N 件」にする (#258)', async () => {
+    setEnv({
+      APP_ENV: 'dev',
+      RESEND_API_KEY: 'sk-test',
+      RESEND_FROM_EMAIL: 'noreply@trakon.test',
+    });
+    const { getMailer } = await importMailer();
+
+    await getMailer().sendInvitation({
+      ...invitation,
+      projectNames: ['灯和食品サイト', '採用サイト', '会社案内'],
+    });
+
+    const payload = (sendMock.mock.calls[0] as unknown[])?.[0] as {
+      subject: string;
+      html: string;
+      text: string;
+    };
+    // 件名は一覧で切れるので全部並べない
+    expect(payload.subject).toBe('「灯和食品サイト」ほか 2 件への参加のご案内 | TRAKON');
+    // 本文には全部出す
+    for (const name of ['灯和食品サイト', '採用サイト', '会社案内']) {
+      expect(payload.html).toContain(name);
+      expect(payload.text).toContain(`・${name}`);
+    }
+  });
+
+  it('プロジェクトが 1 件も無ければ組織名で案内する (#258)', async () => {
+    setEnv({
+      APP_ENV: 'dev',
+      RESEND_API_KEY: 'sk-test',
+      RESEND_FROM_EMAIL: 'noreply@trakon.test',
+    });
+    const { getMailer } = await importMailer();
+
+    await getMailer().sendInvitation({ ...invitation, projectNames: [] });
+
+    const payload = (sendMock.mock.calls[0] as unknown[])?.[0] as {
+      subject: string;
+      html: string;
+      text: string;
+    };
+    expect(payload.subject).toBe('「おさまる & カンパニー」への参加のご案内 | TRAKON');
+    expect(payload.text).toContain('参加するプロジェクト：まだ指定されていません');
+    expect(payload.html).toContain('まだ指定されていません');
   });
 
   it('APP_ENV=prod かつ両キー設定で Resend を使う', async () => {
@@ -195,7 +246,8 @@ describe('__setMailerForTest', () => {
 
     await getMailer().sendInvitation({
       to: 'x@example.test',
-      projectName: 'P',
+      organizationName: 'O',
+      projectNames: ['P'],
       inviterName: 'I',
       acceptUrl: 'https://example.test/invitations/tok',
       expiresAt: new Date('2026-01-01T00:00:00Z'),

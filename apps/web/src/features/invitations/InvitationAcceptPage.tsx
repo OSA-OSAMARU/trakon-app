@@ -155,8 +155,8 @@ export function InvitationAcceptPage() {
                 {verifyQuery.data.scope === 'org' ? '組織への招待' : 'プロジェクトへの招待'}
               </CardTitle>
               <CardDescription>
-                <span className="font-medium text-foreground">
-                  {verifyQuery.data.project?.name ?? verifyQuery.data.organizationName}
+                <span className="text-foreground font-medium">
+                  {verifyQuery.data.organizationName}
                 </span>{' '}
                 への招待を受け取りました。
               </CardDescription>
@@ -167,13 +167,26 @@ export function InvitationAcceptPage() {
                 <dd>{verifyQuery.data.invitee.email}</dd>
                 <dt className="text-muted-foreground">氏名</dt>
                 <dd>{verifyQuery.data.invitee.name || '—'}</dd>
+                {/* 何に参加するのかを受諾前に出す (#258)。複数もありうる */}
+                <dt className="text-muted-foreground">参加するプロジェクト</dt>
+                <dd>
+                  {verifyQuery.data.projects.length > 0 ? (
+                    <ul className="space-y-0.5">
+                      {verifyQuery.data.projects.map((p) => (
+                        <li key={p.id}>{p.name}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      まだ指定されていません（参加後に追加されます）
+                    </span>
+                  )}
+                </dd>
                 {/* 区分ではなく権限を出す。操作可否の根拠はロールだけ (§7.12) */}
                 <dt className="text-muted-foreground">権限</dt>
                 <dd>{PROJECT_ROLE_LABEL[verifyQuery.data.invitee.roleType]}</dd>
                 <dt className="text-muted-foreground">有効期限</dt>
-                <dd>
-                  {dateTimeFmt.format(new Date(verifyQuery.data.expiresAt))}
-                </dd>
+                <dd>{dateTimeFmt.format(new Date(verifyQuery.data.expiresAt))}</dd>
               </dl>
 
               {sessionLoading || userLoading ? (
