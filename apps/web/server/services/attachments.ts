@@ -9,6 +9,10 @@ import { resolveMemberProfile, type ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
 import {
+  MEMBER_PROFILE_USER_SELECT,
+  type MemberProfileUserRow,
+} from '../lib/memberProfile.js';
+import {
   ATTACHMENT_MAX_PER_PLAN,
   assertValidAttachment,
   buildAttachmentKey,
@@ -42,13 +46,7 @@ type AttachmentRow = {
     organizationName: string;
     jobTitle: string | null;
     email: string | null;
-    user: {
-      organizationName: string | null;
-      jobTitle: string | null;
-      notificationEmail: string | null;
-      email: string;
-      avatarPath: string | null;
-    } | null;
+    user: MemberProfileUserRow | null;
   } | null;
 };
 
@@ -59,19 +57,11 @@ const UPLOADER_SELECT = {
     organizationName: true,
     jobTitle: true,
     email: true,
-    user: {
-      select: {
-        organizationName: true,
-        jobTitle: true,
-        notificationEmail: true,
-        email: true,
-        avatarPath: true,
-      },
-    },
+    user: MEMBER_PROFILE_USER_SELECT,
   },
 } as const;
 
-/** 表示名はアカウント側が正 (#156)。参加者行の名前はフォールバック。 */
+/** 表示名はアカウント側が正 (#156 / #254)。参加者行の名前はフォールバック。 */
 function uploaderRef(row: AttachmentRow['uploader']): { id: string; name: string } | null {
   if (!row) return null;
   const profile = resolveMemberProfile({

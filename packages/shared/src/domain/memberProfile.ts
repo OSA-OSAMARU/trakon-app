@@ -12,8 +12,11 @@
  *   - フリープランの「予定上に表示されるだけのメンバー」(user_id IS NULL) は
  *     users を持たないので、これまでどおり自分の値がそのまま使われる。
  *
- * 氏名 (name) だけは参加者行のままにする。スケジュールカードに出る名前であり、
- * 「A社の山田さん」のようにプロジェクトごとの呼び分けが実際にありうるため。
+ * 氏名 (name) も users.display_name を正とする (#254)。当初は「A社の山田さん」のような
+ * プロジェクトごとの呼び分けを想定して参加者行の値を残していたが、実際には
+ * 「メンバー管理では『みやまる』なのにスケジュールでは『宮丸』」という食い違いを生んだ。
+ * 呼び分けの需要より「マイページの表示名が全画面に出る」一貫性を優先する。
+ * アカウント未紐付けの参加者 (user_id IS NULL) は、これまでどおり参加者行の氏名を使う。
  */
 
 /** 解決の入力になる参加者行 (project_members)。 */
@@ -27,6 +30,8 @@ export type MemberProfileSource = {
 
 /** 解決の入力になるアカウント行 (users)。未紐付けなら null。 */
 export type UserProfileSource = {
+  /** 表示名 (マイページの「表示名」)。全画面の氏名表示はこれが正 (#254) */
+  displayName: string;
   organizationName: string | null;
   jobTitle: string | null;
   /** 通知先メール (未設定なら null) */
@@ -60,6 +65,9 @@ export function effectiveNotificationEmail(user: {
  *
  * 所属名は空文字も「未設定」として扱う (project_members.organization_name は
  * NOT NULL DEFAULT '' のため、NULL ではなく '' が入る)。
+ *
+ * 氏名も同様に、users.display_name が空白だけなら参加者行の氏名へフォールバックする
+ * (退会済みの匿名化などで空になっても「名前が消える」より参加者行を出す方がまし)。
  */
 export function resolveMemberProfile(input: {
   member: MemberProfileSource;
@@ -67,7 +75,7 @@ export function resolveMemberProfile(input: {
 }): ResolvedMemberProfile {
   const { member, user } = input;
   return {
-    name: member.name,
+    name: user?.displayName?.trim() || member.name,
     organizationName: member.organizationName || user?.organizationName || '',
     jobTitle: member.jobTitle ?? user?.jobTitle ?? null,
     email: user ? effectiveNotificationEmail(user) : (member.email ?? null),

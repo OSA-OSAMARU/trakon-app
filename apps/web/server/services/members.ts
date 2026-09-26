@@ -2,6 +2,10 @@ import { prisma } from '@trakon/db';
 import { resolveMemberProfile } from '@trakon/shared';
 
 import { signAvatarUrls } from '../lib/avatarStorage.js';
+import {
+  MEMBER_PROFILE_USER_SELECT,
+  type MemberProfileUserRow,
+} from '../lib/memberProfile.js';
 import type { JobTitle, MemberType, ProjectRole } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
@@ -35,26 +39,12 @@ export type MemberDTO = {
 };
 
 /**
- * 参加者行に紐付くアカウントの、プロフィール解決に必要な列だけ (#156)。
+ * 参加者行に紐付くアカウントの、プロフィール解決に必要な列だけ (#156 / #254)。
  * すべての findMany / update でこの include を使う。
  */
-export const MEMBER_USER_SELECT = {
-  select: {
-    organizationName: true,
-    jobTitle: true,
-    notificationEmail: true,
-    email: true,
-    avatarPath: true,
-  },
-} as const;
+export const MEMBER_USER_SELECT = MEMBER_PROFILE_USER_SELECT;
 
-type MemberUserRow = {
-  organizationName: string | null;
-  jobTitle: string | null;
-  notificationEmail: string | null;
-  email: string;
-  avatarPath: string | null;
-};
+type MemberUserRow = MemberProfileUserRow;
 
 function toDTO(m: {
   id: string;
@@ -70,7 +60,7 @@ function toDTO(m: {
   updatedAt: Date;
   user?: MemberUserRow | null;
 }): MemberDTO {
-  // 所属名 / 職種 / メール / アイコンは users を正とする (#156)。
+  // 表示名 / 所属名 / 職種 / メール / アイコンは users を正とする (#156 / #254)。
   // アカウント未紐付けの表示専用メンバーは参加者行の値がそのまま使われる。
   const profile = resolveMemberProfile({
     member: {
@@ -534,7 +524,8 @@ export async function listMemberCandidates(input: {
   return {
     candidates: selectable.map((m) => ({
       userId: m.userId,
-      name: m.user.fullName || m.user.displayName,
+      // 表示名を全画面で揃える (#254)。fullName は表示名が空のときの保険
+      name: m.user.displayName || m.user.fullName,
       organizationName: m.user.organizationName || null,
       avatarUrl: m.user.avatarPath ? (signed.get(m.user.avatarPath) ?? null) : null,
       defaultProjectRole: m.defaultProjectRole as ProjectRole,

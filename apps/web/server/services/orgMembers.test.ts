@@ -122,7 +122,8 @@ describe('listOrgMembers', () => {
     expect(rows[0]).toMatchObject({
       userId: 'u-1',
       status: 'active',
-      name: '佐藤 航',
+      // 全画面で表示名に揃える (#254)
+      name: '佐藤',
       organizationName: 'おさまるカンパニー',
       // 通知先メール未設定ならログイン用メール (#156)
       email: 'sato@example.jp',

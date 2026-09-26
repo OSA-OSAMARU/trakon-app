@@ -167,6 +167,7 @@ describe('プロフィール項目 (#156)', () => {
 
     it('参加者行に所属名・職種が入っていればプロジェクト別の上書きとして優先される', async () => {
       const owner = await createUser({
+        displayName: 'みやまる',
         organizationName: 'アカウント側の所属',
         jobTitle: 'director',
       });
@@ -181,10 +182,12 @@ describe('プロフィール項目 (#156)', () => {
       });
 
       const res = await api<MembersBody>(`/api/v1/projects/${project.id}/members`, { token });
-      const m = res.body.data.find((x) => x.name === '上書きされる人');
+      const m = res.body.data.find((x) => x.userId === owner.id);
 
       expect(m?.organizationName).toBe('プロジェクト側の所属');
       expect(m?.jobTitle).toBe('designer');
+      // 氏名だけは上書きが効かず、表示名が正になる (#254)
+      expect(m?.name).toBe('みやまる');
     });
   });
 });

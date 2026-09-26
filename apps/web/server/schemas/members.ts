@@ -28,6 +28,11 @@ export const addMembersBodySchema = z.object({
 export type AddMembersBody = z.infer<typeof addMembersBodySchema>;
 
 export const updateMemberBodySchema = z.object({
+  /**
+   * 参加者行の氏名。**アカウント紐付け済みの参加者では表示に使われない** (#254)。
+   * 表示名は `users.display_name` が正で、ここへ書いた値はアカウント未紐付けの
+   * 参加者と、表示名が空のときのフォールバックにだけ効く。
+   */
   name: z.string().trim().min(1).max(100).optional(),
   organizationName: z.string().trim().max(255).optional(),
   memberType: z.enum(MEMBER_TYPES).optional(),

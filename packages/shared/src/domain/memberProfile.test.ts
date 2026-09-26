@@ -16,6 +16,7 @@ const member = (over: Partial<MemberProfileSource> = {}): MemberProfileSource =>
 });
 
 const user = (over: Partial<UserProfileSource> = {}): UserProfileSource => ({
+  displayName: 'みやまる',
   organizationName: 'おさまるカンパニー',
   jobTitle: 'director',
   notificationEmail: null,
@@ -45,10 +46,10 @@ describe('effectiveNotificationEmail', () => {
 });
 
 describe('resolveMemberProfile', () => {
-  it('アカウント紐付け済みなら users の所属名・職種・メール・アイコンを使う', () => {
+  it('アカウント紐付け済みなら users の表示名・所属名・職種・メール・アイコンを使う', () => {
     const r = resolveMemberProfile({ member: member(), user: user() });
     expect(r).toEqual({
-      name: '山田 太郎',
+      name: 'みやまる',
       organizationName: 'おさまるカンパニー',
       jobTitle: 'director',
       email: 'yamada@example.test',
@@ -56,12 +57,20 @@ describe('resolveMemberProfile', () => {
     });
   });
 
-  it('氏名は常に参加者行のもの (プロジェクトごとの呼び分けを許す)', () => {
+  it('参加者行の氏名より users.display_name が優先される (#254)', () => {
     const r = resolveMemberProfile({
-      member: member({ name: '山田（A社）' }),
-      user: user(),
+      member: member({ name: '宮丸' }),
+      user: user({ displayName: 'みやまる' }),
     });
-    expect(r.name).toBe('山田（A社）');
+    expect(r.name).toBe('みやまる');
+  });
+
+  it('表示名が空白だけなら参加者行の氏名へフォールバックする', () => {
+    const r = resolveMemberProfile({
+      member: member({ name: '宮丸' }),
+      user: user({ displayName: '   ' }),
+    });
+    expect(r.name).toBe('宮丸');
   });
 
   it('参加者行に所属名・職種があればそちらが優先される (プロジェクト別の上書き)', () => {

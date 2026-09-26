@@ -2,7 +2,7 @@ import { prisma, type Prisma } from '@trakon/db';
 import { deriveBallHolder, type BallEventType, type PlanState } from '@trakon/shared';
 
 import { ApiException } from '../lib/errors.js';
-import { toPlanDTO, type PlanDTO } from './plans.js';
+import { PLAN_INCLUDE, toPlanDTO, type PlanDTO } from './plans.js';
 import { findActiveShareLinkByRawToken, touchShareLinkAccess } from './shareLinks.js';
 
 export type ShareViewDTO = {
@@ -18,17 +18,6 @@ export type ShareViewDTO = {
   plans: PlanDTO[];
 };
 
-const PLAN_INCLUDE = {
-  executor: true,
-  approver: true,
-  progressManager: true,
-  fromMember: true,
-  toMember: true,
-  ballEvents: {
-    include: { actorMember: true },
-    orderBy: { occurredAt: 'desc' as const },
-  },
-} as const;
 
 /**
  * トークンを検証してスコープに応じた閲覧情報を返す。

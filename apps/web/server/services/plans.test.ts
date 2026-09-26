@@ -20,9 +20,20 @@ type MockMember = {
   id: string;
   name: string;
   organizationName: string;
+  jobTitle: string | null;
+  email: string | null;
   memberType: string;
   projectId: string;
   deletedAt: Date | null;
+  /** アカウント紐付け済みの参加者。表示名・所属名はこちらが正 (#254) */
+  user: {
+    displayName: string;
+    organizationName: string | null;
+    jobTitle: string | null;
+    notificationEmail: string | null;
+    email: string;
+    avatarPath: string | null;
+  } | null;
 };
 type MockItem = {
   id: string;
@@ -343,9 +354,12 @@ function seedMember(overrides: Partial<MockMember> = {}): MockMember {
     id: newId('m'),
     name: 'メンバー',
     organizationName: '組織',
+    jobTitle: null,
+    email: null,
     memberType: 'production',
     projectId: PROJECT_ID,
     deletedAt: null,
+    user: null,
     ...overrides,
   };
   memberStore.push(m);
@@ -527,6 +541,36 @@ describe('toPlanDTO', () => {
     hydrated.toMember = null;
     const dto = toPlanDTO(hydrated, []);
     expect(dto.ballHolder).toBeNull();
+  });
+
+  it('アカウント紐付け済みの担当者は表示名と所属名を users から出す (#254)', () => {
+    const exec = seedMember({
+      // 招待時に入力された氏名。アカウント紐付け後は表示名が正になる
+      name: '宮丸',
+      organizationName: '',
+      user: {
+        displayName: 'みやまる',
+        organizationName: 'おさまるカンパニー',
+        jobTitle: 'director',
+        notificationEmail: null,
+        email: 'miyamaru@example.test',
+        avatarPath: 'u1/a.webp',
+      },
+    });
+    const plan = seedPlan({ executorMemberId: exec.id });
+    const dto = toPlanDTO(hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0], []);
+    expect(dto.executor).toMatchObject({
+      name: 'みやまる',
+      organizationName: 'おさまるカンパニー',
+    });
+    expect(dto.ballHolder?.name).toBe('みやまる');
+  });
+
+  it('アカウント未紐付けの参加者は参加者行の氏名をそのまま出す', () => {
+    const exec = seedMember({ name: '外部の山田', organizationName: 'A社', user: null });
+    const plan = seedPlan({ executorMemberId: exec.id });
+    const dto = toPlanDTO(hydratePlan(plan) as Parameters<typeof ToPlanDTOType>[0], []);
+    expect(dto.executor).toMatchObject({ name: '外部の山田', organizationName: 'A社' });
   });
 });
 
