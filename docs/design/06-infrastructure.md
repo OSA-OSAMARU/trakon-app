@@ -242,6 +242,7 @@ Vercel は1プロジェクトで以下の環境を持つ：
 | **`STRIPE_TEAM_MONTHLY_PRICE_ID`** **(v1.2)** | All（**環境別**） | 同上 | BE 専用 |
 | **`STRIPE_JP_TAX_RATE_ID`** **(v1.2)** | All（**環境別**） | Stripe の Tax Rate 設定 | BE 専用 |
 | **`STRIPE_PORTAL_CONFIGURATION_ID`** **(v1.2)** | All（**環境別**） | Stripe の Customer Portal 設定 | BE 専用。プラン変更を無効化した構成を明示指定する |
+| **`SHARE_TOKEN_ENCRYPTION_KEY`** **(#255)** | All（**環境別**） | `openssl rand -base64 32` で生成 | BE 専用、絶対漏洩禁止。共有トークンの列レベル暗号化の鍵（章5 §5.5.5）。**DB とは別の場所に置くことが前提**。差し替えると既存リンクの URL 再表示を失う（リンク自体は生きる） |
 
 > **環境別値**：Vercel の各環境（Production / Preview / Development）で別の値を設定。Preview は dev Supabase を指す。**OAuth Client は dev / prod で別アプリ作成**（Authorized redirect URI が環境別の URL を指すため）。
 >
@@ -456,6 +457,7 @@ flowchart LR
 | Supabase DB パスワード | Vercel Env | 同上 |
 | **Google OAuth Client Secret** **(v1.1)** | Vercel Env + Supabase Auth Provider 設定 | 漏洩疑い時に即時（Google Cloud Console で再生成）、Phase 1 で **年次定期**（OAuth 標準慣行） |
 | **Microsoft OAuth Client Secret** **(v1.1)** | Vercel Env + Supabase Auth Provider 設定 | 同上、ただし**作成時に有効期限を 24ヶ月で設定**しているため、期限前カレンダー登録（運用 Runbook §6.15.6） |
+| **共有トークン暗号鍵** **(#255)** | Vercel Env | ローテしない運用が既定。差し替えると既存リンクの URL 再表示を失うため、漏洩疑い時のみ（章5 §5.5.5） |
 | GitHub Actions シークレット | GitHub Settings → Secrets | リポジトリ管理者のみ閲覧 |
 
 ### 6.7.2. ローカル開発（`.env.local`）
@@ -476,6 +478,8 @@ GOOGLE_OAUTH_CLIENT_SECRET=
 MICROSOFT_OAUTH_CLIENT_ID=
 MICROSOFT_OAUTH_CLIENT_SECRET=
 OAUTH_STATE_TTL_SECONDS=300
+# #255 共有トークンの列レベル暗号化 (openssl rand -base64 32)
+SHARE_TOKEN_ENCRYPTION_KEY=
 ```
 
 `.env.local` は **gitignore 必須**。実値は開発者個別に Supabase CLI から取得 or Vercel CLI で `vercel env pull .env.local` で同期。

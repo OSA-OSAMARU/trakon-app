@@ -48,6 +48,7 @@ const link = (over: Partial<ShareLink> = {}): ShareLink => ({
   revokedAt: null,
   lastAccessedAt: null,
   status: 'active',
+  url: 'https://app.test/share/tok-sl1',
   ...over,
 });
 
@@ -126,12 +127,65 @@ describe('ShareLinksPage (integration)', () => {
     expect(await screen.findByText('有効')).toBeInTheDocument();
     expect(screen.getByText('失効')).toBeInTheDocument();
     expect(screen.getByText('期限切れ')).toBeInTheDocument();
-    // scope ラベル。
-    expect(screen.getByText('scope: project')).toBeInTheDocument();
-    expect(screen.getByText('scope: item')).toBeInTheDocument();
-    expect(screen.getByText('scope: plan')).toBeInTheDocument();
+    // scope ラベルは日本語で出す。制作物名が引けないときは種別だけ
+    expect(screen.getByText('プロジェクト全体')).toBeInTheDocument();
+    expect(screen.getByText('特定の制作物')).toBeInTheDocument();
+    expect(screen.getByText('特定の予定')).toBeInTheDocument();
     // 有効なリンクにのみ失効ボタンが出る (1 件)。
     expect(screen.getAllByRole('button', { name: '失効' })).toHaveLength(1);
+  });
+
+  it('制作物スコープは制作物名まで出す', async () => {
+    stubLinks([link({ scopeType: 'item', scopeTargetId: 'it1' })]);
+    stubItems([{ id: 'it1', name: 'Webサイト' }]);
+
+    renderPage();
+
+    expect(await screen.findByText('制作物：Webサイト')).toBeInTheDocument();
+  });
+
+  it('有効なリンクは一覧に共有 URL とコピーボタンを出す (#255)', async () => {
+    stubLinks([link({ url: 'https://app.test/share/abc' })]);
+    stubItems([]);
+    const write = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    // navigator.clipboard は getter-only。userEvent.setup が独自スタブを差すため、
+    // setup 後に defineProperty で上書きして writeText の呼び出しを観測する。
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: write },
+      configurable: true,
+    });
+
+    renderPage();
+
+    const field = await screen.findByLabelText('共有 URL');
+    expect(field).toHaveValue('https://app.test/share/abc');
+    await user.click(screen.getByRole('button', { name: 'コピー' }));
+    await waitFor(() => expect(write).toHaveBeenCalledWith('https://app.test/share/abc'));
+  });
+
+  it('失効・期限切れのリンクには URL を出さない', async () => {
+    stubLinks([
+      link({ id: 'sl2', status: 'revoked', revokedAt: '2026-06-05T00:00:00.000Z' }),
+      link({ id: 'sl3', status: 'expired', expiresAt: '2026-06-02T00:00:00.000Z' }),
+    ]);
+    stubItems([]);
+
+    renderPage();
+
+    expect(await screen.findByText('失効')).toBeInTheDocument();
+    expect(screen.queryByLabelText('共有 URL')).toBeNull();
+  });
+
+  it('URL を再表示できないリンクは理由を添えて案内する (#255)', async () => {
+    // #255 以前に発行された行 (暗号文が無い) は url が null で返る
+    stubLinks([link({ url: null })]);
+    stubItems([]);
+
+    renderPage();
+
+    expect(await screen.findByText(/URL は再表示できません/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('共有 URL')).toBeNull();
   });
 
   it('無期限リンクは「期限 無期限」を表示する', async () => {

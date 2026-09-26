@@ -2,6 +2,7 @@ import { prisma } from '@trakon/db';
 
 import { ApiException } from '../lib/errors.js';
 import { getServerEnv } from '../lib/env.js';
+import { decryptShareToken, encryptShareToken } from '../lib/tokenCipher.js';
 import { generateInvitationToken, hashToken } from '../lib/tokens.js';
 import type { CreateShareLinkBody, ShareScope } from '../schemas/shareLinks.js';
 
@@ -17,11 +18,20 @@ export type ShareLinkDTO = {
   revokedAt: string | null;
   lastAccessedAt: string | null;
   status: 'active' | 'revoked' | 'expired';
+  /**
+   * 共有 URL (#255)。発行後も一覧で確認・コピーできるようにするため、
+   * 暗号化して保管した生トークンから組み立てて返す。
+   *
+   * null になるのは #255 以前に発行された行 (暗号文が無い) と、
+   * 鍵が未設定 / 入れ替わった環境。**リンク自体は有効なまま**で、
+   * 再表示だけができない状態を表す。
+   */
+  url: string | null;
 };
 
 export type CreateShareLinkResult = {
   shareLink: ShareLinkDTO;
-  /** 発行時のみ返却される生トークン。あとから再表示できない */
+  /** 発行時の生トークン */
   rawToken: string;
   /** FE 表示用の完全な共有 URL */
   url: string;
@@ -33,17 +43,22 @@ function statusOf(r: { revokedAt: Date | null; expiresAt: Date | null }): ShareL
   return 'active'; // expiresAt が null なら無期限
 }
 
-function toDTO(r: {
-  id: string;
-  projectId: string;
-  scopeType: string;
-  scopeTargetId: string | null;
-  issuedByMemberId: string;
-  issuedAt: Date;
-  expiresAt: Date | null;
-  revokedAt: Date | null;
-  lastAccessedAt: Date | null;
-}): ShareLinkDTO {
+function toDTO(
+  r: {
+    id: string;
+    projectId: string;
+    scopeType: string;
+    scopeTargetId: string | null;
+    issuedByMemberId: string;
+    issuedAt: Date;
+    expiresAt: Date | null;
+    revokedAt: Date | null;
+    lastAccessedAt: Date | null;
+    tokenCipher?: string | null;
+  },
+  baseUrl?: string,
+): ShareLinkDTO {
+  const rawToken = decryptShareToken(r.tokenCipher);
   return {
     id: r.id,
     projectId: r.projectId,
@@ -55,15 +70,25 @@ function toDTO(r: {
     revokedAt: r.revokedAt?.toISOString() ?? null,
     lastAccessedAt: r.lastAccessedAt?.toISOString() ?? null,
     status: statusOf(r),
+    url: rawToken ? shareUrl(baseUrl, rawToken) : null,
   };
 }
 
-export async function listShareLinks(projectId: string): Promise<ShareLinkDTO[]> {
+/** 共有 URL を組み立てる。baseUrl 未指定なら env の FE オリジンを使う。 */
+function shareUrl(baseUrl: string | undefined, rawToken: string): string {
+  return `${baseUrl ?? getServerEnv().PUBLIC_APP_URL}/share/${rawToken}`;
+}
+
+export async function listShareLinks(
+  projectId: string,
+  /** 共有 URL の基底オリジン。発行時と同じく、参照元と同一ドメインで組み立てる */
+  baseUrl?: string,
+): Promise<ShareLinkDTO[]> {
   const rows = await prisma.shareLink.findMany({
     where: { projectId },
     orderBy: { issuedAt: 'desc' },
   });
-  return rows.map(toDTO);
+  return rows.map((r) => toDTO(r, baseUrl));
 }
 
 export async function createShareLink(input: {
@@ -104,6 +129,8 @@ export async function createShareLink(input: {
       scopeType: body.scopeType,
       scopeTargetId: body.scopeType === 'project' ? null : body.scopeTargetId!,
       tokenHash: hash,
+      // 一覧で URL を再表示するための暗号文 (#255)。鍵が無ければ NULL のまま
+      tokenCipher: encryptShareToken(raw),
       issuedByMemberId: input.issuerMemberId,
       expiresAt,
     },
@@ -120,11 +147,10 @@ export async function createShareLink(input: {
     },
   });
 
-  const base = input.baseUrl ?? getServerEnv().PUBLIC_APP_URL;
   return {
-    shareLink: toDTO(created),
+    shareLink: toDTO(created, input.baseUrl),
     rawToken: raw,
-    url: `${base}/share/${raw}`,
+    url: shareUrl(input.baseUrl, raw),
   };
 }
 

@@ -22,6 +22,11 @@ const STRIPE = {
   STRIPE_PORTAL_CONFIGURATION_ID: 'bpc_1',
 };
 
+/** 本番で必須の、Stripe 以外の設定 (#255) */
+const PROD_EXTRA = {
+  SHARE_TOKEN_ENCRYPTION_KEY: 'bkl4cXFCbk9wVFhiRGRMMkVvY1RuNlZ4WWs4S2p0UUE=',
+};
+
 const original = { ...process.env };
 
 async function loadEnv(patch: Record<string, string | undefined>) {
@@ -59,6 +64,7 @@ describe('Stripe の環境変数', () => {
     const getServerEnv = await loadEnv({
       APP_ENV: 'prod',
       ...STRIPE,
+      ...PROD_EXTRA,
       STRIPE_PORTAL_CONFIGURATION_ID: undefined,
     });
 
@@ -67,7 +73,7 @@ describe('Stripe の環境変数', () => {
   });
 
   it('本番で 6 つ揃っていれば読み込める', async () => {
-    const getServerEnv = await loadEnv({ APP_ENV: 'prod', ...STRIPE });
+    const getServerEnv = await loadEnv({ APP_ENV: 'prod', ...STRIPE, ...PROD_EXTRA });
 
     const env = getServerEnv();
 
@@ -93,5 +99,19 @@ describe('getServerEnv', () => {
     const { getServerEnv } = await import('./env.js');
 
     expect(() => getServerEnv()).toThrow(/SUPABASE_SECRET_KEY/);
+  });
+});
+
+describe('共有トークンの暗号鍵 (#255)', () => {
+  it('本番以外では未設定を許す (URL の再表示だけができなくなる)', async () => {
+    const getServerEnv = await loadEnv({ APP_ENV: 'dev' });
+
+    expect(getServerEnv().SHARE_TOKEN_ENCRYPTION_KEY).toBeUndefined();
+  });
+
+  it('本番では必須にする', async () => {
+    const getServerEnv = await loadEnv({ APP_ENV: 'prod', ...STRIPE });
+
+    expect(() => getServerEnv()).toThrow(/SHARE_TOKEN_ENCRYPTION_KEY は本番環境では必須/);
   });
 });

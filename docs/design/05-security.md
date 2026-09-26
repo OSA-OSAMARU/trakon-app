@@ -612,8 +612,13 @@ PRD §9.2 統制ポリシーのうち、Phase 0 で必須となる **URL 単位�
 |---|---|
 | 生成方法 | Web Crypto API の `crypto.getRandomValues(new Uint8Array(32))`（256bit、暗号学的乱数）。サーバ側のみで生成 |
 | エンコード | URL-safe Base64（`+ → -`、`/ → _`、パディング除去）。長さは 43 文字程度 |
-| 保管 | **SHA-256 ハッシュで保管**（`share_links.token_hash`）。生トークンは DB に保存しない（招待トークンと同方針） |
-| 配布 | 発行 API レスポンスでのみ平文を返す（章3 §3.6.9 POST レスポンス。再表示・再取得は不可） |
+| 照合 | **SHA-256 ハッシュ**（`share_links.token_hash`）の完全一致のみ。**認証の判断はこの列だけで行う** |
+| 保管 | **#255 改訂**：ハッシュに加えて、生トークンの **AES-256-GCM 暗号文**（`share_links.token_cipher`）を保管する。鍵はアプリの環境変数 `SHARE_TOKEN_ENCRYPTION_KEY`（base64 で 32 byte）に置き、**DB には置かない**。詳細は §5.5.5 |
+| 配布 | 発行 API レスポンスで平文を返し、以降も一覧 API（`GET /projects/:projectId/share-links`）が暗号文から復元した URL を返す（#255） |
+
+> **#255 改訂の理由**：当初は招待トークンと同方針で「生トークンは保存せず、発行時の 1 回だけ表示する」としていた。しかし運用では「発行済みリンクの URL を後から確認してクライアントへ再送する」が普通に必要で、ハッシュからは復元できないため発行し直すほかなかった（旧 URL が失効し、既に配った相手を巻き込む）。取り出せる形に変えるうえで、**平文保存は採らない**——DB ダンプが漏れた時点で全プロジェクトの共有 URL がそのまま使える状態になるため。
+>
+> **招待トークン（`invitations.token_hash`）はこの改訂の対象外**。招待はメールで届くものであり、後から URL を再表示する要件がない。生トークンは保存しない方針を維持する。
 
 #### トークン検証ミドルウェア（`requireShareToken`）
 
@@ -728,7 +733,7 @@ app.use('/share/:token/*', async (c, next) => {
 | Postgres ディスク | Supabase が AES-256 で暗号化（プラットフォーム既定） |
 | 添付ファイル（Phase 1） | Supabase Storage が AES-256 で暗号化 |
 | バックアップ | Supabase 既定の暗号化 |
-| 列レベル暗号化 | **Phase 0 では実施しない**（PII は最小収集で対応、§5.5.4） |
+| 列レベル暗号化 | 原則として実施しない（PII は最小収集で対応、§5.5.4）。**例外は `share_links.token_cipher` のみ**（#255、§5.5.5） |
 
 ### 5.5.3. シークレット管理（SR-OPS-03）
 
@@ -742,6 +747,7 @@ app.use('/share/:token/*', async (c, next) => {
 | **Stripe Secret Key**（v1.2） | Vercel Environment Variables（**FE には絶対露出しない**） |
 | **Stripe Webhook Secret**（v1.2） | Vercel Environment Variables |
 | **Stripe Price ID / Tax Rate ID / Portal Configuration ID**（v1.2） | Vercel Environment Variables（秘匿情報ではないが、**本番とテストで値が異なるため env で分離する**） |
+| **共有トークン暗号鍵 `SHARE_TOKEN_ENCRYPTION_KEY`**（#255） | Vercel Environment Variables（**DB とは別の場所に置くことが前提**。同じ場所に置くと列レベル暗号化の意味が消える） |
 
 **v1.2：決済シークレットの取り扱い（PRD SR-BILL-04）**
 
@@ -758,6 +764,35 @@ app.use('/share/:token/*', async (c, next) => {
 | (プレフィックスなし) | BE 専用 | サーバ側のみ |
 
 > `VITE_SUPABASE_URL` `VITE_SUPABASE_ANON_KEY` はブラウザに出すが、`SUPABASE_SERVICE_ROLE_KEY` は絶対に `VITE_` プレフィックスを付けない。
+
+### 5.5.5. 共有トークンの列レベル暗号化（#255）
+
+共有リンクの生トークンを**発行後も取り出せる**ようにするための例外実装。
+
+| 観点 | 方針 |
+|---|---|
+| 対象列 | `share_links.token_cipher`（nullable text）。**この列だけ**。招待トークンは対象外 |
+| 方式 | AES-256-GCM。保存形式は `v1:<iv>:<ciphertext>:<tag>`（各要素は URL-safe Base64） |
+| AAD | `trakon:share_link_token` 固定。別用途の暗号文を取り違えて復号できないよう用途を結び付ける |
+| 鍵 | `SHARE_TOKEN_ENCRYPTION_KEY`（base64 で 32 byte）。**本番では必須**（`lib/env.ts` の検証で強制）。ローカル・テストでは任意 |
+| IV | 発行ごとにランダム 12 byte。同じトークンでも暗号文は毎回異なる |
+| 実装 | `apps/web/server/lib/tokenCipher.ts`。暗号化・復号はこの 1 ファイルのみ |
+
+**この列を認可に使わない。** トークンの照合は `token_hash` の完全一致だけで行う（§5.4.5）。暗号文は画面表示専用であり、
+
+- 復号に失敗しても共有リンクは有効なまま（URL の再表示だけができない）
+- 復号は**例外を投げず null を返す**。1 件の失敗で一覧全体を 500 にする価値はない
+- 認証タグの検証に失敗した暗号文（改竄・鍵の入れ替え）も同じく null
+
+**null になるケースと画面の扱い**：
+
+| ケース | 画面 |
+|---|---|
+| #255 以前に発行された行（`token_cipher IS NULL`） | 「この URL は再表示できません。必要なら発行し直してください」を出す |
+| 鍵が未設定の環境で発行された行 | 同上 |
+| 鍵をローテーションした後の既存行 | 同上。**鍵のローテーションは既存 URL の再表示を失う**（リンク自体は生きる） |
+
+**鍵ローテーションの手順**：再暗号化のバッチは用意しない（対象が表示専用で、失っても発行し直せるため）。鍵を替える場合は、影響が「既存リンクの URL 再表示ができなくなる」だけであることを確認してから差し替える。
 
 ### 5.5.4. PII（個人情報）の最小収集（SR-PRIVACY-01）
 

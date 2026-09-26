@@ -29,6 +29,7 @@ const stubLink: ShareLink = {
   revokedAt: null,
   lastAccessedAt: null,
   status: 'active',
+  url: 'https://app.test/share/tok-1',
 };
 
 describe('shareLinksApi', () => {

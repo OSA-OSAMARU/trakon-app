@@ -15,6 +15,12 @@ export type ShareLink = {
   revokedAt: string | null;
   lastAccessedAt: string | null;
   status: 'active' | 'revoked' | 'expired';
+  /**
+   * 共有 URL (#255)。発行後も一覧から確認・コピーできる。
+   * null は「#255 以前に発行された」か「サーバーに復号鍵が無い」ケースで、
+   * リンク自体は有効なまま URL の再表示だけができない状態。
+   */
+  url: string | null;
 };
 
 export type CreateShareLinkResult = {

@@ -116,7 +116,7 @@ function Inner({ projectId }: { projectId: string }) {
           <ul className="divide-y divide-border">
             {linksQuery.data?.map((s) => (
               <li key={s.id} className="flex items-start justify-between gap-2 py-3">
-                <div className="space-y-0.5 text-body">
+                <div className="min-w-0 flex-1 space-y-1.5 text-body">
                   <div className="flex items-center gap-2">
                     <Badge
                       variant={
@@ -134,9 +134,11 @@ function Inner({ projectId }: { projectId: string }) {
                           : '期限切れ'}
                     </Badge>
                     <span className="text-label text-muted-foreground">
-                      scope: {s.scopeType}
+                      {scopeLabel(s, itemsQuery.data ?? [])}
                     </span>
                   </div>
+                  {/* URL は発行済みリンクの「本体」なので一覧の主役として出す (#255) */}
+                  <ShareUrlField link={s} />
                   <p className="text-label text-muted-foreground">
                     {s.expiresAt
                       ? `期限 ${format(new Date(s.expiresAt), 'yyyy/M/d HH:mm')}`
@@ -242,7 +244,7 @@ function CreateDialog({
         <DialogHeader>
           <DialogTitle>共有リンクを発行</DialogTitle>
           <DialogDescription>
-            発行直後のみ完全な URL が表示されます。コピーして外部に共有してください。
+            発行した URL は一覧からいつでもコピーできます。共有を止めたいときは失効させてください。
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -331,7 +333,8 @@ function IssuedDialog({ url, onClose }: { url: string; onClose: () => void }) {
         <DialogHeader>
           <DialogTitle>共有リンクを発行しました</DialogTitle>
           <DialogDescription>
-            この URL は今だけ表示されます。閉じると二度と表示できません。必ずコピーしてください。
+            この URL を知っている人は誰でも閲覧できます。共有先を絞って渡してください。
+            あとから一覧でも確認できます。
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-2">
@@ -346,5 +349,61 @@ function IssuedDialog({ url, onClose }: { url: string; onClose: () => void }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * スコープの表示ラベル。制作物スコープは名前まで出す。
+ * 制作物が消えている / 一覧の取得前は ID を出さず種別だけに留める。
+ */
+function scopeLabel(link: ShareLink, items: Array<{ id: string; name: string }>): string {
+  if (link.scopeType === 'project') return 'プロジェクト全体';
+  if (link.scopeType === 'item') {
+    const name = items.find((it) => it.id === link.scopeTargetId)?.name;
+    return name ? `制作物：${name}` : '特定の制作物';
+  }
+  return '特定の予定';
+}
+
+/**
+ * 一覧に出す共有 URL (#255)。
+ *
+ * URL は発行時しか表示できない仕様だったが、「クライアントに送り直したい」
+ * という運用のため、暗号化して保管した生トークンから再表示する
+ * (docs/design/05-security.md §5.10)。
+ *
+ * 失効・期限切れのリンクの URL は出さない。もう使えない文字列を並べても
+ * 誤ってコピーされるだけで、役に立たない。
+ */
+function ShareUrlField({ link }: { link: ShareLink }) {
+  const copy = async () => {
+    if (!link.url) return;
+    try {
+      await navigator.clipboard.writeText(link.url);
+      toast.success('URL をクリップボードにコピーしました');
+    } catch {
+      toast.error('コピーに失敗しました');
+    }
+  };
+
+  if (link.status !== 'active') return null;
+
+  if (!link.url) {
+    return (
+      <p className="text-label text-muted-foreground">
+        このリンクの URL は再表示できません（発行時のみ表示される仕様で作られたリンクです）。
+        必要な場合は新しく発行し直してください。
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex max-w-xl items-center gap-2">
+      <Input value={link.url} readOnly className="font-mono text-label" aria-label="共有 URL" />
+      <Button type="button" variant="secondary" size="sm" onClick={copy} className="shrink-0">
+        <Copy className="size-4" />
+        コピー
+      </Button>
+    </div>
   );
 }

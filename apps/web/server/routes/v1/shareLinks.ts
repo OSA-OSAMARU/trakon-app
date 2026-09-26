@@ -22,7 +22,8 @@ import {
 export const shareLinksRoute = new Hono()
   .get('/', requireProjectMember(), async (c) => {
     const project = c.get('project');
-    const items = await listShareLinks(project.projectId);
+    // URL を発行時と同じオリジンで組み立てる (#255)
+    const items = await listShareLinks(project.projectId, resolveRequestOrigin(c));
     return c.json({ data: items });
   })
 

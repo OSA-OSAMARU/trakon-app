@@ -1,5 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { randomBytes } from 'node:crypto';
+
 import { hashToken } from '../lib/tokens.js';
 import type {
   listShareLinks as ListType,
@@ -24,6 +26,7 @@ type MockShareLink = {
   expiresAt: Date | null;
   revokedAt: Date | null;
   lastAccessedAt: Date | null;
+  tokenCipher?: string | null;
 };
 type MockItem = { id: string; projectId: string; deletedAt: Date | null };
 type MockPlan = {
@@ -132,8 +135,13 @@ const prismaMock = {
 
 vi.mock('@trakon/db', () => ({ prisma: prismaMock }));
 
-// env フォールバック検証用。既定では呼ばれない (baseUrl を渡すため)。
-const getServerEnvMock = vi.fn(() => ({ PUBLIC_APP_URL: 'https://env.example' }));
+// env フォールバック検証用。PUBLIC_APP_URL は baseUrl 未指定時のみ使われる。
+// 共有トークンの暗号鍵 (#255) はここで与える (未設定なら url が null になる挙動も別途検証)。
+let shareTokenKey: string | undefined = randomBytes(32).toString('base64');
+const getServerEnvMock = vi.fn(() => ({
+  PUBLIC_APP_URL: 'https://env.example',
+  SHARE_TOKEN_ENCRYPTION_KEY: shareTokenKey,
+}));
 vi.mock('../lib/env.js', () => ({ getServerEnv: getServerEnvMock }));
 
 // =============================================================================
@@ -161,6 +169,7 @@ afterEach(() => {
   itemStore.length = 0;
   planStore.length = 0;
   auditStore.length = 0;
+  shareTokenKey = randomBytes(32).toString('base64');
   vi.clearAllMocks();
 });
 
@@ -186,8 +195,11 @@ describe('createShareLink', () => {
     expect(res.shareLink.expiresAt).not.toBeNull();
     expect(res.rawToken).toEqual(expect.any(String));
     expect(res.url).toBe(`${baseUrl}/share/${res.rawToken}`);
-    // DB には生トークンではなくハッシュが保存される
+    // 照合に使うのはハッシュだけ。生トークンは平文では保存しない
     expect(shareLinkStore[0]?.tokenHash).toBe(hashToken(res.rawToken));
+    expect(shareLinkStore[0]?.tokenCipher).not.toContain(res.rawToken);
+    // 一覧で URL を再表示するため、暗号文も併せて保存する (#255)
+    expect(res.shareLink.url).toBe(res.url);
     // 監査ログ share_create
     expect(auditStore).toHaveLength(1);
     expect(auditStore[0]).toMatchObject({
@@ -325,6 +337,56 @@ describe('listShareLinks', () => {
     expect(rows.map((r) => r.id)).toEqual(['sl-new', 'sl-old']);
     expect(rows[0]).toMatchObject({ status: 'expired', lastAccessedAt: expect.any(String) });
     expect(rows[1]).toMatchObject({ status: 'active' });
+  });
+
+  it('暗号文から共有 URL を復元して返す (#255)', async () => {
+    const created = await createShareLink({
+      projectId: 'p-1',
+      issuerMemberId: 'm-1',
+      baseUrl,
+      body: { scopeType: 'project', expiresInHours: null },
+    });
+
+    const rows = await listShareLinks('p-1', baseUrl);
+
+    expect(rows[0]?.url).toBe(`${baseUrl}/share/${created.rawToken}`);
+  });
+
+  it('暗号文を持たない行 (#255 以前に発行) は url が null になる', async () => {
+    shareLinkStore.push({
+      id: 'sl-legacy',
+      projectId: 'p-1',
+      scopeType: 'project',
+      scopeTargetId: null,
+      tokenHash: 'h',
+      tokenCipher: null,
+      issuedByMemberId: 'm-1',
+      issuedAt: new Date('2026-01-01T00:00:00Z'),
+      expiresAt: null,
+      revokedAt: null,
+      lastAccessedAt: null,
+    });
+
+    const rows = await listShareLinks('p-1', baseUrl);
+
+    expect(rows[0]).toMatchObject({ status: 'active', url: null });
+  });
+
+  it('鍵が未設定の環境では発行できるが URL は再表示できない', async () => {
+    shareTokenKey = undefined;
+    const created = await createShareLink({
+      projectId: 'p-1',
+      issuerMemberId: 'm-1',
+      baseUrl,
+      body: { scopeType: 'project', expiresInHours: null },
+    });
+    // 発行そのものは成功し、その場では URL を渡せる
+    expect(created.url).toBe(`${baseUrl}/share/${created.rawToken}`);
+    expect(shareLinkStore[0]?.tokenCipher).toBeNull();
+
+    const rows = await listShareLinks('p-1', baseUrl);
+
+    expect(rows[0]?.url).toBeNull();
   });
 
   it('revoked な行は status=revoked になる', async () => {
