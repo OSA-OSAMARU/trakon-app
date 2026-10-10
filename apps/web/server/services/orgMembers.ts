@@ -363,7 +363,8 @@ export type CreateOrgInvitationInput = {
   actorUserId: string;
   origin: string;
   body: {
-    name: string;
+    /** 任意 (#267)。画面からは送らない */
+    name?: string;
     email: string;
     organizationName?: string;
     jobTitle?: JobTitle | null;
@@ -442,7 +443,7 @@ export async function createOrgInvitation(input: CreateOrgInvitationInput): Prom
         organizationId: input.organizationId,
         invitedByUserId: input.actorUserId,
         email,
-        invitedName: body.name.trim(),
+        invitedName: body.name?.trim() || null,
         organizationName: body.organizationName?.trim() || null,
         jobTitle: body.jobTitle ?? null,
         roleType: body.roleType,
@@ -477,7 +478,8 @@ export async function createOrgInvitation(input: CreateOrgInvitationInput): Prom
         data: {
           projectId,
           userId: null,
-          name: body.name.trim() || email,
+          // 氏名が無ければメールで仮置きする。受諾後は users の表示名が正になる (#254)
+          name: body.name?.trim() || email,
           email,
           // 所属名 / 職種はアカウント側 (users) を正とする (#156)。参加者行には持たせない
           organizationName: '',

@@ -368,7 +368,6 @@ describe('OrgMembersPage', () => {
     await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
 
     const dialog = await screen.findByRole('dialog');
-    await user.type(within(dialog).getByLabelText(/氏名/), '重複');
     await user.type(within(dialog).getByLabelText(/通知先メール/), 'sato@example.jp');
     await user.click(screen.getByRole('button', { name: '招待を送信' }));
 
@@ -391,7 +390,7 @@ describe('OrgMembersPage', () => {
     await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
     await user.click(await screen.findByRole('button', { name: '招待を送信' }));
 
-    expect(await screen.findByText('氏名は必須')).toBeInTheDocument();
+    expect(await screen.findByText('通知先メールは必須')).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -512,18 +511,32 @@ describe('OrgMembersPage', () => {
     // 残り枠を出す (座席 5 - 使用 3 = 2)
     expect(screen.getByText(/現在の空きは2名です。/)).toBeInTheDocument();
 
-    // 検索欄のラベルも「氏名・メールで検索」なので、ダイアログ内に絞って取る
     const dialog = screen.getByRole('dialog');
-    await user.type(within(dialog).getByLabelText(/氏名/), '田中 太郎');
     await user.type(within(dialog).getByLabelText(/通知先メール/), 'tanaka@example.jp');
     await user.click(screen.getByRole('button', { name: '招待を送信' }));
 
-    await waitFor(() => expect(posted).toMatchObject({
-      name: '田中 太郎',
+    await waitFor(() => expect(posted).toEqual({
       email: 'tanaka@example.jp',
       roleType: 'editor',
     }));
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('招待を送信しました'));
+  });
+
+  it('招待で聞くのはメール・権限・参加プロジェクトだけ (#267)', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    stub();
+    renderPage();
+    await screen.findByText('佐藤 航');
+    await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText(/通知先メール/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('combobox', { name: '権限' })).toBeInTheDocument();
+    expect(within(dialog).getByText('参加プロジェクト（任意）')).toBeInTheDocument();
+    // 氏名・所属・職種は受諾した本人が登録する
+    expect(within(dialog).queryByLabelText(/氏名/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/所属/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('combobox', { name: '職種' })).not.toBeInTheDocument();
   });
 
   it('招待の権限を閲覧者にすると閲覧者枠の説明に切り替わる', async () => {

@@ -165,8 +165,13 @@ export function InvitationAcceptPage() {
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-body">
                 <dt className="text-muted-foreground">招待先</dt>
                 <dd>{verifyQuery.data.invitee.email}</dd>
-                <dt className="text-muted-foreground">氏名</dt>
-                <dd>{verifyQuery.data.invitee.name || '—'}</dd>
+                {/* 組織単位の招待では氏名を聞かない (#267)。空の行を出しても情報にならないので省く */}
+                {verifyQuery.data.invitee.name && (
+                  <>
+                    <dt className="text-muted-foreground">氏名</dt>
+                    <dd>{verifyQuery.data.invitee.name}</dd>
+                  </>
+                )}
                 {/* 何に参加するのかを受諾前に出す (#258)。複数もありうる */}
                 <dt className="text-muted-foreground">参加するプロジェクト</dt>
                 <dd>
