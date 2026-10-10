@@ -173,12 +173,13 @@ describe('InvitationAcceptPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('氏名が空の招待でも描画できる (招待行に氏名が無い場合)', async () => {
+  it('氏名が空の招待では氏名の行を出さない (#267 で組織招待は氏名を聞かなくなった)', async () => {
     stubVerify(200, { ...orgVerifyData, invitee: { ...orgVerifyData.invitee, name: '' } });
     renderWithProviders(<InvitationAcceptPage />);
 
     expect(await screen.findByText('組織への招待')).toBeInTheDocument();
-    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('氏名')).not.toBeInTheDocument();
+    expect(screen.getByText('招待先')).toBeInTheDocument();
   });
 
   // #231 でアカウントを持たない人の行き止まりを解消し、#233 で登録自体を

@@ -189,6 +189,22 @@ describe('POST /organizations/me/invitations', () => {
     expect(inv.invitedName).toBe('横山 美咲');
   });
 
+  it('氏名なし (メール・権限だけ) でも招待でき、一覧ではメールで表示される (#267)', async () => {
+    const res = await api<{ data: { id: string } }>('/api/v1/organizations/me/invitations', {
+      method: 'POST',
+      token: ownerToken,
+      body: { email: 'no-name@example.test', roleType: 'viewer' },
+    });
+
+    expect(res.status).toBe(201);
+    const inv = await prisma.invitation.findUniqueOrThrow({ where: { id: res.body.data.id } });
+    expect(inv.invitedName).toBeNull();
+
+    const list = await api<MembersBody>('/api/v1/organizations/me/members', { token: ownerToken });
+    const invited = list.body.data.find((m) => m.status === 'invited');
+    expect(invited?.name).toBe('no-name@example.test');
+  });
+
   it('プロジェクトを選ぶと受諾前から参加者行ができる', async () => {
     const { project } = await createProjectWithAdmin({ user: owner });
 

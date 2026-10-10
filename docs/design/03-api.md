@@ -360,7 +360,7 @@ flowchart TB
 | `GET /api/v1/organizations/me/members/:userId/projects` **(#160)** | ❌ | ❌ | ✅ | その人の参加プロジェクトとボール保持数（参加PJ ドロワー） |
 | `PATCH /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織ロール（課金権限）／**既定のプロジェクト権限**の変更。後者は参加中の全プロジェクトへ反映される（#160） |
 | `DELETE /api/v1/organizations/me/members/:userId` | ❌ | ❌ | ✅ | 組織からの除外（座席の解放） |
-| `POST /api/v1/organizations/me/invitations` **(#160)** | ❌ | ❌ | ✅ | **組織単位の招待**。参加プロジェクトの選択は任意 |
+| `POST /api/v1/organizations/me/invitations` **(#160)** | ❌ | ❌ | ✅ | **組織単位の招待**。必須は `email` / `roleType` のみで、参加プロジェクトの選択は任意。**`name` / `organizationName` / `jobTitle` も任意**（#267 で画面から送らなくなった。氏名・所属・職種は受諾した本人がアカウント登録で入力する） |
 | `DELETE /api/v1/organizations/me/invitations/:invitationId` **(#160)** | ❌ | ❌ | ✅ | 招待の取り消し（枠の解放） |
 | `POST /api/v1/organizations/me/retained-projects` | ❌ | ❌ | ✅ | 上限超過時に維持するプロジェクトを選択（FR-BILL-11） |
 
