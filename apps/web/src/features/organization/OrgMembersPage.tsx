@@ -8,12 +8,10 @@ import { ChevronRight, FolderOpen, Loader2, MailPlus, MoreHorizontal, Plus, Tras
 import { toast } from 'sonner';
 import {
   BILLING_PLANS,
-  JOB_TITLES,
   JOB_TITLE_LABEL,
   PROJECT_ROLES,
   PROJECT_ROLE_DESCRIPTION,
   PROJECT_ROLE_LABEL,
-  type JobTitle,
   type ProjectRole,
 } from '@trakon/shared';
 
@@ -464,13 +462,13 @@ function msg(e: unknown, fallback: string): string {
 // 招待モーダル (Figma node 409:22)
 // -----------------------------------------------------------------------------
 
-const NO_JOB_TITLE = '__none__';
-
+/**
+ * 招待時に聞くのはメール・権限・参加プロジェクトだけ (#267)。
+ * 氏名・所属・職種は受諾した本人がアカウント登録で入力する (users を正とする、#156)。
+ * 招待する側が他社の人の正式な氏名や職種まで把握しているとは限らないため。
+ */
 const inviteSchema = z.object({
-  name: z.string().trim().min(1, '氏名は必須').max(100),
   email: z.string().trim().min(1, '通知先メールは必須').email('メールアドレスの形式が正しくありません'),
-  organizationName: z.string().trim().max(255),
-  jobTitle: z.string(),
   roleType: z.enum(PROJECT_ROLES),
 });
 type InviteValues = z.infer<typeof inviteSchema>;
@@ -487,10 +485,7 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const form = useForm<InviteValues>({
     resolver: zodResolver(inviteSchema),
     defaultValues: {
-      name: '',
       email: '',
-      organizationName: '',
-      jobTitle: NO_JOB_TITLE,
       roleType: 'editor',
     },
   });
@@ -498,10 +493,7 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const mut = useMutation({
     mutationFn: (v: InviteValues) =>
       orgApi.invite({
-        name: v.name,
         email: v.email,
-        organizationName: v.organizationName || undefined,
-        jobTitle: v.jobTitle === NO_JOB_TITLE ? null : (v.jobTitle as JobTitle),
         roleType: v.roleType,
         ...(projectIds.length > 0 ? { projectIds } : {}),
       }),
@@ -548,33 +540,6 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
           onSubmit={form.handleSubmit((v) => mut.mutate(v))}
           className="space-y-4"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label="氏名"
-              htmlFor="invite-name"
-              required
-              error={form.formState.errors.name?.message}
-            >
-              <Input
-                id="invite-name"
-                {...form.register('name')}
-                placeholder="例：田中 太郎"
-                autoFocus
-              />
-            </Field>
-            <Field
-              label="所属"
-              htmlFor="invite-organization"
-              error={form.formState.errors.organizationName?.message}
-            >
-              <Input
-                id="invite-organization"
-                {...form.register('organizationName')}
-                placeholder="会社名・組織名"
-              />
-            </Field>
-          </div>
-
           <Field
             label="通知先メール"
             htmlFor="invite-email"
@@ -586,52 +551,33 @@ function InviteDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
               type="email"
               {...form.register('email')}
               placeholder="name@example.com"
+              autoFocus
             />
           </Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="職種">
-              <Select
-                value={form.watch('jobTitle')}
-                onValueChange={(v) => form.setValue('jobTitle', v)}
-              >
-                <SelectTrigger aria-label="職種">
-                  <SelectValue placeholder="職種を選択" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_JOB_TITLE}>未設定</SelectItem>
-                  {JOB_TITLES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {JOB_TITLE_LABEL[t]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="権限" required>
-              <Select
-                value={roleType}
-                onValueChange={(v) => form.setValue('roleType', v as ProjectRole)}
-              >
-                <SelectTrigger aria-label="権限">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROJECT_ROLES.map((r) => (
-                    <SelectItem key={r} value={r} disabled={!invitableRoles.includes(r)}>
-                      {PROJECT_ROLE_LABEL[r]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {/* 選べない理由を先に見せる。送信して 409 で気づくのは遅い (#257) */}
-              {!invitableRoles.includes('editor') && (
-                <p className="text-text-tertiary mt-1 text-label">
-                  現在のプランでは閲覧者としてのみ招待できます。
-                </p>
-              )}
-            </Field>
-          </div>
+          <Field label="権限" required>
+            <Select
+              value={roleType}
+              onValueChange={(v) => form.setValue('roleType', v as ProjectRole)}
+            >
+              <SelectTrigger aria-label="権限">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROJECT_ROLES.map((r) => (
+                  <SelectItem key={r} value={r} disabled={!invitableRoles.includes(r)}>
+                    {PROJECT_ROLE_LABEL[r]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* 選べない理由を先に見せる。送信して 409 で気づくのは遅い (#257) */}
+            {!invitableRoles.includes('editor') && (
+              <p className="text-text-tertiary mt-1 text-label">
+                現在のプランでは閲覧者としてのみ招待できます。
+              </p>
+            )}
+          </Field>
 
           {/* 招待時にプロジェクトを選べるようにしている (Figma には無い)。
               選ばないと受諾した人に何も見えない状態で入ってきてしまうため。 */}

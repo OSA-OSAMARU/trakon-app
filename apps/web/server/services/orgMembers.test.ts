@@ -442,6 +442,29 @@ describe('createOrgInvitation', () => {
     );
   });
 
+  it('氏名なしでも招待でき、参加者行はメールで仮置きする (#267)', async () => {
+    prismaMock.project.findFirst.mockResolvedValue({ id: 'p-1', name: '灯和食品サイト' });
+    prismaMock.projectMember.findFirst.mockResolvedValue(null);
+
+    await createOrgInvitation({
+      organizationId: 'org-1',
+      actorUserId: 'u-1',
+      origin: '',
+      body: { email: 'Yokoyama@Example.test', roleType: 'editor', projectIds: ['p-1'] },
+    });
+
+    expect(prismaMock.invitation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ email: 'yokoyama@example.test', invitedName: null }),
+      }),
+    );
+    expect(prismaMock.projectMember.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ name: 'yokoyama@example.test' }),
+      }),
+    );
+  });
+
   it('招待メールに参加するプロジェクト名を載せる (#258)', async () => {
     prismaMock.project.findFirst
       .mockResolvedValueOnce({ id: 'p-1', name: '灯和食品サイト' })

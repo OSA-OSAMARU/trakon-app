@@ -32,7 +32,14 @@ const updateOrgMemberBodySchema = z
   });
 
 const createOrgInvitationBodySchema = z.object({
-  name: z.string().trim().min(1).max(100),
+  /**
+   * 任意 (#267)。画面からは送らず、受諾した本人がアカウント登録で入力する。
+   * 未指定なら「招待中」の行はメールアドレスで表示される。
+   */
+  name: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().trim().max(100).optional(),
+  ),
   email: z.string().trim().toLowerCase().email().max(320),
   organizationName: z.preprocess(
     (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),

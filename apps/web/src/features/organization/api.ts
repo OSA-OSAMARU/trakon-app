@@ -49,11 +49,9 @@ export type MemberProject = {
   ballHolderCount: number;
 };
 
+/** 氏名・所属・職種は受諾した本人が登録する (#267) ので送らない */
 export type CreateOrgInvitationInput = {
-  name: string;
   email: string;
-  organizationName?: string;
-  jobTitle?: JobTitle | null;
   roleType: ProjectRole;
   projectIds?: string[];
 };
