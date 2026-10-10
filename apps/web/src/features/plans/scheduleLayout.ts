@@ -23,6 +23,40 @@ export const ROW_HEIGHT_BASE = 40;
 export const ROW_HEIGHT_DEFAULT = ROW_HEIGHT_BASE - ROW_HEIGHT_STEP;
 
 /**
+ * ズームスライダーのつまみ位置 (0〜ZOOM_SLIDER_MAX) と行高の対応。
+ *
+ * 既定の行高をスライダーの真ん中に置くため (#268)、目盛りを左右で変えている。
+ * 左半分に ROW_HEIGHT_MIN〜ROW_HEIGHT_DEFAULT (20〜35px)、
+ * 右半分に ROW_HEIGHT_DEFAULT〜ROW_HEIGHT_MAX (35〜80px) を割り当てる。
+ * 範囲を左右対称に狭めると拡大の上限が下がってしまうため、範囲はそのままにした。
+ */
+export const ZOOM_SLIDER_MAX = 100;
+const ZOOM_SLIDER_MID = ZOOM_SLIDER_MAX / 2;
+
+/** 行高 → つまみ位置。 */
+export function rowHeightToSlider(rowHeight: number): number {
+  const h = Math.min(ROW_HEIGHT_MAX, Math.max(ROW_HEIGHT_MIN, rowHeight));
+  if (h <= ROW_HEIGHT_DEFAULT) {
+    return ((h - ROW_HEIGHT_MIN) / (ROW_HEIGHT_DEFAULT - ROW_HEIGHT_MIN)) * ZOOM_SLIDER_MID;
+  }
+  return (
+    ZOOM_SLIDER_MID +
+    ((h - ROW_HEIGHT_DEFAULT) / (ROW_HEIGHT_MAX - ROW_HEIGHT_DEFAULT)) * ZOOM_SLIDER_MID
+  );
+}
+
+/** つまみ位置 → 行高。ボタン操作と同じ段階 (ROW_HEIGHT_STEP 刻み) に丸める。 */
+export function sliderToRowHeight(position: number): number {
+  const p = Math.min(ZOOM_SLIDER_MAX, Math.max(0, position));
+  const raw =
+    p <= ZOOM_SLIDER_MID
+      ? ROW_HEIGHT_MIN + (p / ZOOM_SLIDER_MID) * (ROW_HEIGHT_DEFAULT - ROW_HEIGHT_MIN)
+      : ROW_HEIGHT_DEFAULT +
+        ((p - ZOOM_SLIDER_MID) / ZOOM_SLIDER_MID) * (ROW_HEIGHT_MAX - ROW_HEIGHT_DEFAULT);
+  return Math.round(raw / ROW_HEIGHT_STEP) * ROW_HEIGHT_STEP;
+}
+
+/**
  * カードの上下インセット px。隣接日のカード間に `CARD_INSET_Y*2` の隙間を生み、
  * 後続コネクト線と矢印を描く余白を確保する (#64)。
  */
