@@ -8,7 +8,6 @@ import { ChevronRight, FolderOpen, Loader2, MailPlus, MoreHorizontal, Plus, Tras
 import { toast } from 'sonner';
 import {
   BILLING_PLANS,
-  JOB_TITLE_LABEL,
   PROJECT_ROLES,
   PROJECT_ROLE_DESCRIPTION,
   PROJECT_ROLE_LABEL,
@@ -147,9 +146,7 @@ export function OrgMembersPage() {
     const rows = membersData ?? [];
     const q = search.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter(
-      (m) => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q),
-    );
+    return rows.filter((m) => m.email.toLowerCase().includes(q));
   }, [membersData, search]);
 
   if (billingLoading) return <PageSkeleton />;
@@ -217,8 +214,8 @@ export function OrgMembersPage() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="氏名・メールで検索"
-                aria-label="氏名・メールで検索"
+                placeholder="メールで検索"
+                aria-label="メールで検索"
                 className="w-full max-w-64"
               />
             </div>
@@ -232,10 +229,9 @@ export function OrgMembersPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>氏名</TableHead>
-                    <TableHead>所属</TableHead>
+                    {/* 氏名・所属・職種は出さない (#267)。招待時に聞かなくなったため、
+                        招待中の行は空欄が並ぶだけになる。人の特定はメールで行う */}
                     <TableHead>通知先メール</TableHead>
-                    <TableHead>職種</TableHead>
                     <TableHead>権限</TableHead>
                     <TableHead>参加PJ</TableHead>
                     <TableHead className="w-10" />
@@ -246,16 +242,9 @@ export function OrgMembersPage() {
                     <TableRow key={m.userId ?? m.invitationId}>
                       <TableCell>
                         <span className="flex items-center gap-2">
-                          <Avatar name={m.name} src={m.avatarUrl} className="size-7 text-label" />
-                          <span className="truncate font-medium">{m.name}</span>
+                          <Avatar name={m.email} src={m.avatarUrl} className="size-7 text-label" />
+                          <span className="truncate font-medium">{m.email}</span>
                         </span>
-                      </TableCell>
-                      <TableCell className="text-text-secondary">
-                        {m.organizationName || '—'}
-                      </TableCell>
-                      <TableCell className="text-text-secondary">{m.email}</TableCell>
-                      <TableCell className="text-text-secondary">
-                        {m.jobTitle ? JOB_TITLE_LABEL[m.jobTitle] : '—'}
                       </TableCell>
                       <TableCell>
                         {m.status === 'invited' ? (
@@ -271,7 +260,7 @@ export function OrgMembersPage() {
                           >
                             <SelectTrigger
                               className="h-8 w-32"
-                              aria-label={`${m.name} の権限`}
+                              aria-label={`${m.email} の権限`}
                             >
                               <SelectValue />
                             </SelectTrigger>
@@ -308,7 +297,7 @@ export function OrgMembersPage() {
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={`${m.name} の操作`}>
+                            <Button variant="ghost" size="icon" aria-label={`${m.email} の操作`}>
                               <MoreHorizontal className="size-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -378,7 +367,7 @@ export function OrgMembersPage() {
             <AlertDialogTitle>権限を変更しますか？</AlertDialogTitle>
             <AlertDialogDescription>
               {roleChange &&
-                `${roleChange.member.name} さんの権限を、${PROJECT_ROLE_LABEL[roleChange.member.defaultProjectRole]}から${PROJECT_ROLE_LABEL[roleChange.to]}へ変更します。`}
+                `${roleChange.member.email} の権限を、${PROJECT_ROLE_LABEL[roleChange.member.defaultProjectRole]}から${PROJECT_ROLE_LABEL[roleChange.to]}へ変更します。`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {roleChange && (
@@ -424,8 +413,8 @@ export function OrgMembersPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {removing?.status === 'invited'
-                ? `${removing?.name} さんへの招待を取り消しますか？`
-                : `${removing?.name} さんを削除しますか？`}
+                ? `${removing?.email} への招待を取り消しますか？`
+                : `${removing?.email} を削除しますか？`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {removing?.status === 'invited'
@@ -675,8 +664,7 @@ function MemberProjectsSheet({
         {member && (
           <div className="space-y-4 px-4 pb-6">
             <div>
-              <p className="text-body font-semibold">{member.name}</p>
-              <p className="text-text-secondary text-label">{member.email}</p>
+              <p className="text-body font-semibold">{member.email}</p>
               <p className="text-brand mt-1 text-label">
                 {PROJECT_ROLE_LABEL[member.defaultProjectRole]} ・{' '}
                 {member.projectCount}件のプロジェクトに参加

@@ -175,7 +175,7 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 | `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（**v1.2：プロジェクト管理者のみ**） |
 | **`/settings/profile`** **(#156)** | **SC-15 マイページ（プロフィール／ログイン情報／退会）** | ✅ | **`MyPage`**（`features/account/MyPage.tsx`） |
 | **`/settings/billing`** **(v1.2)** | **SC-18 プラン・お支払い**（#156 で「プランと請求」から改称） | ✅ | **`BillingPage`** |
-| **`/settings/members`** **(#160)** | **組織のメンバー管理（座席の内訳・権限・参加PJ）** | ✅ | **`OrgMembersPage`**（`features/organization/`） |
+| **`/settings/members`** **(#160)** | **組織のメンバー管理（座席の内訳・権限・参加PJ）**。一覧の列は通知先メール・権限・参加PJ で、**氏名・所属・職種は出さない**（#267）。検索もメールのみ | ✅ | **`OrgMembersPage`**（`features/organization/`） |
 | `*` | 404 | — | `NotFoundPage` |
 
 > Phase 1 で予約：ダッシュボードの「進行判定フィルター」タブ（FR-DASH-08）。
