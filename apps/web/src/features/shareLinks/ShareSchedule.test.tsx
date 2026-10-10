@@ -248,17 +248,19 @@ describe('ShareSchedule (閲覧専用)', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderWithProviders(<ShareSchedule project={project} items={[items[0]!]} plans={[]} />);
 
-    // 行高はスライダーの値で確認する (Figma のズームコントロールに px 表記は無い)。
+    // 行高は aria-valuetext で確認する (スライダーの値はつまみ位置、#268)。
     const slider = () => screen.getByRole('slider', { name: '行の高さ' }) as HTMLInputElement;
-    // 既定はアプリ側のスケジュールと同じ 35 (#268)
-    expect(slider().value).toBe('35');
+    const rowHeight = () => slider().getAttribute('aria-valuetext');
+    // 既定はアプリ側のスケジュールと同じ 35 で、つまみは真ん中 (#268)
+    expect(rowHeight()).toBe('35px');
+    expect(slider().value).toBe('50');
 
     await user.click(screen.getByRole('button', { name: '拡大' }));
-    expect(slider().value).toBe('40');
+    expect(rowHeight()).toBe('40px');
 
     await user.click(screen.getByRole('button', { name: '縮小' }));
     await user.click(screen.getByRole('button', { name: '縮小' }));
-    expect(slider().value).toBe('30');
+    expect(rowHeight()).toBe('30px');
   });
 
   it('range スライダーで行の高さを直接変更できる', () => {
@@ -269,9 +271,10 @@ describe('ShareSchedule (閲覧専用)', () => {
       window.HTMLInputElement.prototype,
       'value',
     )!.set!;
-    set.call(slider, '20');
+    // つまみを左端 (位置 0) へ → 最小の 20px
+    set.call(slider, '0');
     slider.dispatchEvent(new Event('input', { bubbles: true }));
-    expect((slider as HTMLInputElement).value).toBe('20');
+    expect(slider).toHaveAttribute('aria-valuetext', '20px');
   });
 
   it('rowHeight が小さい (<30) と日付軸の曜日ラベルを省略する', () => {
@@ -281,12 +284,12 @@ describe('ShareSchedule (閲覧専用)', () => {
       window.HTMLInputElement.prototype,
       'value',
     )!.set!;
-    // 曜日ラベルは rowHeight>=30 でのみ出る。まずは既定 (40px) で出ていること。
+    // 曜日ラベルは rowHeight>=30 でのみ出る。まずは既定 (35px) で出ていること。
     expect(screen.getAllByText('月').length).toBeGreaterThan(0);
-    // 最小 20px に縮小 → 曜日ラベル非表示分岐へ。
-    set.call(slider, '20');
+    // つまみを左端へ = 最小 20px に縮小 → 曜日ラベル非表示分岐へ。
+    set.call(slider, '0');
     slider.dispatchEvent(new Event('input', { bubbles: true }));
-    expect((slider as HTMLInputElement).value).toBe('20');
+    expect(slider).toHaveAttribute('aria-valuetext', '20px');
     expect(screen.queryByText('月')).not.toBeInTheDocument();
     // 日にちの数字は残る (Figma の日付軸は「日」のみを大きく出す)。
     expect(screen.getAllByText('1').length).toBeGreaterThan(0);
