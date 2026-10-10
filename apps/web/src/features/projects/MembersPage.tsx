@@ -73,6 +73,9 @@ export function MembersPage() {
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'manage' ? 'manage' : 'kanban';
   const selectedItemId = params.get('itemId');
+  // スケジュールから来たときはその制作物へ戻す (#266)。
+  // サイドバーなどから直接開いたときはプロジェクトの既定 (先頭の制作物) のスケジュールへ。
+  const fromItemId = params.get('from');
 
   const membersQuery = useQuery({
     queryKey: membersQueryKey.list(projectId ?? ''),
@@ -89,12 +92,29 @@ export function MembersPage() {
         title="参加者・かんばん"
         description="プロジェクトのメンバーとボールを管理します"
         actions={
-          <Button variant="ghost" size="sm" asChild>
-            <Link to={`/projects/${projectId}/edit`}>
-              <ArrowLeft className="size-4" />
-              プロジェクト設定に戻る
-            </Link>
-          </Button>
+          <>
+            <Button variant="ghost" size="sm" asChild>
+              <Link
+                to={
+                  fromItemId
+                    ? `/projects/${projectId}/items/${encodeURIComponent(fromItemId)}`
+                    : `/projects/${projectId}`
+                }
+              >
+                <ArrowLeft className="size-4" />
+                スケジュールに戻る
+              </Link>
+            </Button>
+            {/* どのタブからでも 1 クリックで行けるよう、ヘッダーに常設する (#266)。
+                組織にまだ居ない人はここでは招待できない (#202) ので、
+                メンバー管理で組織へ招待してから「管理」タブで選ぶ一本道にしている。 */}
+            <Button variant="secondary" size="sm" asChild>
+              <Link to="/settings/members">
+                <UsersRound className="size-4" />
+                メンバー管理
+              </Link>
+            </Button>
+          </>
         }
       />
       <PageContainer width="xl">
@@ -232,14 +252,7 @@ function ManageTab({ projectId }: { projectId: string }) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-heading-section">参加者一覧</CardTitle>
           <div className="flex items-center gap-2">
-            {/* 組織にまだ居ない人はここでは招待できない (#202)。
-                メンバー管理で組織へ招待してから、この画面で選ぶ一本道にしている。 */}
-            <Button size="sm" variant="secondary" asChild>
-              <Link to="/settings/members">
-                <UsersRound className="size-4" />
-                メンバー管理
-              </Link>
-            </Button>
+            {/* メンバー管理へのリンクはページヘッダーに常設している (#266) */}
             <Button size="sm" onClick={() => setAddOpen(true)}>
               <Plus className="size-4" />
               参加者を追加

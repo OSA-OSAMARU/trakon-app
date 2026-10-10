@@ -405,6 +405,65 @@ describe('MembersPage かんばんタブ + 共通 (integration)', () => {
 
     expect(await screen.findByText('参加者一覧')).toBeInTheDocument();
   });
+
+  describe('ヘッダーの導線 (#266)', () => {
+    const stubKanban = () =>
+      server.use(
+        http.get('*/api/v1/projects/p1/members', () => HttpResponse.json({ data: [member()] })),
+        http.get('*/api/v1/projects/p1/items', () => HttpResponse.json({ data: [] })),
+        http.get('*/api/v1/projects/p1/plans', () => HttpResponse.json({ data: [] })),
+      );
+
+    it('かんばんタブのままでもメンバー管理へ 1 クリックで行ける', async () => {
+      stubKanban();
+      renderMembers('/projects/p1/members');
+
+      await screen.findByText('担当者ボード');
+      expect(screen.getByRole('link', { name: /メンバー管理/ })).toHaveAttribute(
+        'href',
+        '/settings/members',
+      );
+    });
+
+    it('スケジュールから来たときは、その制作物のスケジュールへ戻る', async () => {
+      stubKanban();
+      renderMembers('/projects/p1/members?from=item-7');
+
+      await screen.findByText('担当者ボード');
+      expect(screen.getByRole('link', { name: /スケジュールに戻る/ })).toHaveAttribute(
+        'href',
+        '/projects/p1/items/item-7',
+      );
+    });
+
+    it('タブを切り替えても戻り先を失わない', async () => {
+      stubKanban();
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      renderMembers('/projects/p1/members?from=item-7');
+
+      await screen.findByText('担当者ボード');
+      await user.click(screen.getByRole('tab', { name: /管理/ }));
+      await screen.findByText('参加者一覧');
+
+      expect(screen.getByRole('link', { name: /スケジュールに戻る/ })).toHaveAttribute(
+        'href',
+        '/projects/p1/items/item-7',
+      );
+      // メンバー管理へのリンクはヘッダーの 1 つだけ (参加者一覧から重複して出さない)
+      expect(screen.getAllByRole('link', { name: /メンバー管理/ })).toHaveLength(1);
+    });
+
+    it('直接開いたときはプロジェクトの既定のスケジュールへ戻る', async () => {
+      stubKanban();
+      renderMembers('/projects/p1/members');
+
+      await screen.findByText('担当者ボード');
+      expect(screen.getByRole('link', { name: /スケジュールに戻る/ })).toHaveAttribute(
+        'href',
+        '/projects/p1',
+      );
+    });
+  });
 });
 
 // =============================================================================

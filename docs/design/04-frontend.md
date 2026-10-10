@@ -171,6 +171,7 @@ PRD §4.4 UXR-05「煽らず・濁さず・逃げない言葉遣い」を全画�
 | `/projects/:projectId/edit` | SC-10 プロジェクト編集 | ✅ | `ProjectEditPage` |
 | **`/projects/:projectId/members`** **(v1.1 役割変更)** | **SC-17 メンバーかんばん（既定）／SC-11 参加者管理（タブで切替）** | ✅ | **`MemberKanbanPage`**（タブで `ProjectMembersManagePage` に切替） |
 | `/projects/:projectId/members?tab=manage` **(v1.1)** | SC-11 参加者管理 | ✅ | `ProjectMembersManagePage` |
+| `/projects/:projectId/members?from=:itemId` **(#266)** | SC-17 / SC-11 の戻り先指定。ヘッダーの「スケジュールに戻る」がこの制作物へ戻る（無ければ `/projects/:projectId` ＝先頭の制作物）。ヘッダーにはタブに関係なく「メンバー管理」（`/settings/members`）を常設 | ✅ | `MembersPage` |
 | `/projects/:projectId/share-links` **(v1.1 非会員URL前倒し)** | SC-16 非会員URL 発行・管理 | ✅ | `ShareLinkAdminPage`（**v1.2：プロジェクト管理者のみ**） |
 | **`/settings/profile`** **(#156)** | **SC-15 マイページ（プロフィール／ログイン情報／退会）** | ✅ | **`MyPage`**（`features/account/MyPage.tsx`） |
 | **`/settings/billing`** **(v1.2)** | **SC-18 プラン・お支払い**（#156 で「プランと請求」から改称） | ✅ | **`BillingPage`** |
