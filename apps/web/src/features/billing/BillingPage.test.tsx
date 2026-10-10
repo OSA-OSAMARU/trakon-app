@@ -1,3 +1,4 @@
+import { format, parseISO } from 'date-fns';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -22,6 +23,12 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 // 外部サイト (Stripe) への遷移は jsdom で追えないのでラッパをモックする
+/**
+ * 「まだ来ていない更新日 / 適用予定日」。日付を固定で書くと、その日を過ぎた時点で
+ * 適用予定を過ぎた扱い (#244) に変わってテストの前提が崩れるため、実行時刻から求める。
+ */
+const FUTURE_PERIOD_END = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
 const externalRedirect = vi.fn();
 vi.mock('@/lib/navigate', () => ({
   externalRedirect: (url: string) => externalRedirect(url),
@@ -287,9 +294,9 @@ describe('BillingPage (integration)', () => {
           planCode: 'team',
           status: 'active',
           hasStripeCustomer: true,
-          currentPeriodEnd: '2026-10-01T00:00:00.000Z',
+          currentPeriodEnd: FUTURE_PERIOD_END,
           pendingPlanCode: 'personal',
-          pendingPlanEffectiveAt: '2026-10-01T00:00:00.000Z',
+          pendingPlanEffectiveAt: FUTURE_PERIOD_END,
           paymentMethod: { brand: 'visa', last4: '4242' },
         },
       });
@@ -441,9 +448,9 @@ describe('BillingPage (integration)', () => {
                 planCode: 'team',
                 status: 'active',
                 hasStripeCustomer: true,
-                currentPeriodEnd: '2026-10-01T00:00:00.000Z',
+                currentPeriodEnd: FUTURE_PERIOD_END,
                 pendingPlanCode: 'personal',
-                pendingPlanEffectiveAt: '2026-10-01T00:00:00.000Z',
+                pendingPlanEffectiveAt: FUTURE_PERIOD_END,
               },
             },
           }),
@@ -610,7 +617,7 @@ describe('BillingPage (integration)', () => {
         planCode: 'team' as const,
         status: 'active' as const,
         hasStripeCustomer: true,
-        currentPeriodEnd: '2026-10-01T00:00:00.000Z',
+        currentPeriodEnd: FUTURE_PERIOD_END,
       },
       entitlement: {
         ...defaultBillingResponse.entitlement,
@@ -681,7 +688,9 @@ describe('BillingPage (integration)', () => {
       await userEvent.click(within(personalCard).getByRole('button', { name: 'このプランに変更' }));
 
       const dialog = await screen.findByRole('alertdialog');
-      expect(within(dialog).getByText(/2026\/10\/01/)).toBeInTheDocument();
+      // 画面と同じ整形を通す (CI は UTC、手元は JST で日付がずれうるため)
+      const switchDate = format(parseISO(FUTURE_PERIOD_END), 'yyyy/MM/dd');
+      expect(within(dialog).getByText(new RegExp(switchDate))).toBeInTheDocument();
       expect(within(dialog).getByText(/返金はありません/)).toBeInTheDocument();
       expect(within(dialog).getByText(/超えている場合は変更できません/)).toBeInTheDocument();
     });
