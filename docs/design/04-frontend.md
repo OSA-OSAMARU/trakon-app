@@ -439,7 +439,7 @@ flowchart LR
 | `ColumnHeader` | 制作物列のヘッダー（名前・件数・現在のボール保持者） | itemId, name, planCount, holders |
 | `BallChip` | ボールチップ。`mode='edit' \| 'view'` で操作可否を切り替える。表示項目は §4.4.5.7 のサイズ規則に従う | plan, days, rowHeight, lane, mode, … |
 | `LinkLayer` | 列内の後続コネクトを描く SVG オーバーレイ | plans, laneOf, days, rowHeight |
-| `ZoomControl` | 行高（＝縦横ズーム）を変える浮遊コントロール | rowHeight, onChange |
+| `ZoomControl` | 行高（＝縦横ズーム）を変える浮遊コントロール。行高 20〜80px・5px 刻み。倍率 1.0 は 40px で、**既定は 1 段階縮小した 35px**（#268） | rowHeight, onChange |
 | `chain.ts` | 後続チェーンの探索・紐づけ可否判定・保持者解決（純粋関数） | — |
 
 > 横軸は**参加者列ではなく制作物列**（実装・Figma とも）。v1.1 までの「横軸＝参加者列」の記述は実態と乖離していたため、この節の図と併せて後続フェーズで整理する。

@@ -250,14 +250,15 @@ describe('ShareSchedule (閲覧専用)', () => {
 
     // 行高はスライダーの値で確認する (Figma のズームコントロールに px 表記は無い)。
     const slider = () => screen.getByRole('slider', { name: '行の高さ' }) as HTMLInputElement;
-    expect(slider().value).toBe('40');
+    // 既定はアプリ側のスケジュールと同じ 35 (#268)
+    expect(slider().value).toBe('35');
 
     await user.click(screen.getByRole('button', { name: '拡大' }));
-    expect(slider().value).toBe('45');
+    expect(slider().value).toBe('40');
 
     await user.click(screen.getByRole('button', { name: '縮小' }));
     await user.click(screen.getByRole('button', { name: '縮小' }));
-    expect(slider().value).toBe('35');
+    expect(slider().value).toBe('30');
   });
 
   it('range スライダーで行の高さを直接変更できる', () => {
