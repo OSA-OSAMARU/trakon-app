@@ -149,19 +149,31 @@ describe('OrgMembersPage', () => {
     expect(await screen.findByText('Team プラン')).toBeInTheDocument();
     expect(screen.getByText('3 / 5名 利用中')).toBeInTheDocument();
 
-    expect(await screen.findByText('佐藤 航')).toBeInTheDocument();
-    expect(screen.getByText('おさまるカンパニー')).toBeInTheDocument();
-    expect(screen.getByText('sato@example.jp')).toBeInTheDocument();
-    expect(screen.getByText('ディレクター')).toBeInTheDocument();
+    expect(await screen.findByText('sato@example.jp')).toBeInTheDocument();
   });
 
-  it('招待中の行は権限欄に「招待中」を出し、所属・職種は — にする', async () => {
+  it('一覧には氏名・所属・職種を出さない (#267)', async () => {
     stub();
     renderPage();
 
-    const row = (await screen.findByText('石原 美咲')).closest('tr')!;
+    await screen.findByText('sato@example.jp');
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
+    expect(headers).toEqual(expect.arrayContaining(['通知先メール', '権限', '参加PJ']));
+    for (const label of ['氏名', '所属', '職種']) {
+      expect(screen.queryByRole('columnheader', { name: label })).not.toBeInTheDocument();
+    }
+    // 値も出さない (API は返しているが画面には使わない)
+    expect(screen.queryByText('佐藤 航')).not.toBeInTheDocument();
+    expect(screen.queryByText('おさまるカンパニー')).not.toBeInTheDocument();
+    expect(screen.queryByText('ディレクター')).not.toBeInTheDocument();
+  });
+
+  it('招待中の行は権限欄に「招待中」を出す', async () => {
+    stub();
+    renderPage();
+
+    const row = (await screen.findByText('ishihara@example.jp')).closest('tr')!;
     expect(within(row).getByText('招待中')).toBeInTheDocument();
-    expect(within(row).getAllByText('—')).toHaveLength(2);
     // 招待中は権限セレクトを出さない
     expect(within(row).queryByRole('combobox')).not.toBeInTheDocument();
   });
@@ -170,21 +182,21 @@ describe('OrgMembersPage', () => {
     stub();
     renderPage();
 
-    await screen.findByText('佐藤 航');
-    expect(screen.getByRole('combobox', { name: '佐藤 航 の権限' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: '横山 美咲 の権限' })).toBeEnabled();
+    await screen.findByText('sato@example.jp');
+    expect(screen.getByRole('combobox', { name: 'sato@example.jp の権限' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'yokoyama@example.jp の権限' })).toBeEnabled();
   });
 
-  it('氏名・メールで絞り込める', async () => {
+  it('メールで絞り込める', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stub();
     renderPage();
 
-    await screen.findByText('佐藤 航');
-    await user.type(screen.getByLabelText('氏名・メールで検索'), 'yokoyama');
+    await screen.findByText('sato@example.jp');
+    await user.type(screen.getByLabelText('メールで検索'), 'yokoyama');
 
-    expect(screen.getByText('横山 美咲')).toBeInTheDocument();
-    expect(screen.queryByText('佐藤 航')).not.toBeInTheDocument();
+    expect(screen.getByText('yokoyama@example.jp')).toBeInTheDocument();
+    expect(screen.queryByText('sato@example.jp')).not.toBeInTheDocument();
   });
 
   it('権限を変えると確認ダイアログが出て、確定で PATCH を送る', async () => {
@@ -201,9 +213,9 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('横山 美咲');
+    await screen.findByText('yokoyama@example.jp');
 
-    await user.click(screen.getByRole('combobox', { name: '横山 美咲 の権限' }));
+    await user.click(screen.getByRole('combobox', { name: 'yokoyama@example.jp の権限' }));
     await user.click(await screen.findByRole('option', { name: '管理者' }));
 
     expect(await screen.findByText('権限を変更しますか？')).toBeInTheDocument();
@@ -229,8 +241,8 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('横山 美咲');
-    await user.click(screen.getByRole('combobox', { name: '横山 美咲 の権限' }));
+    await screen.findByText('yokoyama@example.jp');
+    await user.click(screen.getByRole('combobox', { name: 'yokoyama@example.jp の権限' }));
     await user.click(await screen.findByRole('option', { name: '管理者' }));
     await user.click(await screen.findByRole('button', { name: '権限を変更' }));
 
@@ -249,9 +261,9 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('石原 美咲');
+    await screen.findByText('ishihara@example.jp');
 
-    await user.click(screen.getByRole('button', { name: '石原 美咲 の操作' }));
+    await user.click(screen.getByRole('button', { name: 'ishihara@example.jp の操作' }));
     await user.click(await screen.findByRole('menuitem', { name: '招待を取り消す' }));
     await user.click(await screen.findByRole('button', { name: '招待を取り消す' }));
 
@@ -278,9 +290,9 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('石原 美咲');
+    await screen.findByText('ishihara@example.jp');
 
-    await user.click(screen.getByRole('button', { name: '石原 美咲 の操作' }));
+    await user.click(screen.getByRole('button', { name: 'ishihara@example.jp の操作' }));
     await user.click(await screen.findByRole('menuitem', { name: '招待を取り消す' }));
     await user.click(await screen.findByRole('button', { name: '招待を取り消す' }));
     await waitFor(() => expect(deleted).toBe(true));
@@ -302,9 +314,9 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('横山 美咲');
+    await screen.findByText('yokoyama@example.jp');
 
-    await user.click(screen.getByRole('button', { name: '横山 美咲 の操作' }));
+    await user.click(screen.getByRole('button', { name: 'yokoyama@example.jp の操作' }));
     await user.click(await screen.findByRole('menuitem', { name: 'メンバーを削除' }));
     // 削除しても表示と履歴は残ることを伝える
     expect(
@@ -341,7 +353,7 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    const row = (await screen.findByText('横山 美咲')).closest('tr')!;
+    const row = (await screen.findByText('yokoyama@example.jp')).closest('tr')!;
     await user.click(within(row).getByRole('button', { name: /3件/ }));
 
     await screen.findByText('灯和食品｜ブランドサイト');
@@ -364,7 +376,7 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('佐藤 航');
+    await screen.findByText('sato@example.jp');
     await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
 
     const dialog = await screen.findByRole('dialog');
@@ -386,7 +398,7 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('佐藤 航');
+    await screen.findByText('sato@example.jp');
     await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
     await user.click(await screen.findByRole('button', { name: '招待を送信' }));
 
@@ -398,9 +410,9 @@ describe('OrgMembersPage', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stub();
     renderPage();
-    await screen.findByText('佐藤 航');
+    await screen.findByText('sato@example.jp');
 
-    await user.click(screen.getByRole('button', { name: '佐藤 航 の操作' }));
+    await user.click(screen.getByRole('button', { name: 'sato@example.jp の操作' }));
     expect(await screen.findByText('オーナーは削除できません')).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'メンバーを削除' })).not.toBeInTheDocument();
   });
@@ -418,9 +430,9 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('石原 美咲');
+    await screen.findByText('ishihara@example.jp');
 
-    await user.click(screen.getByRole('button', { name: '石原 美咲 の操作' }));
+    await user.click(screen.getByRole('button', { name: 'ishihara@example.jp の操作' }));
     await user.click(await screen.findByRole('menuitem', { name: '招待メールを再送' }));
 
     await waitFor(() => expect(resent).toBe(true));
@@ -442,9 +454,9 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('石原 美咲');
+    await screen.findByText('ishihara@example.jp');
 
-    await user.click(screen.getByRole('button', { name: '石原 美咲 の操作' }));
+    await user.click(screen.getByRole('button', { name: 'ishihara@example.jp の操作' }));
     await user.click(await screen.findByRole('menuitem', { name: '招待メールを再送' }));
 
     await waitFor(() =>
@@ -456,9 +468,9 @@ describe('OrgMembersPage', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stub();
     renderPage();
-    await screen.findByText('横山 美咲');
+    await screen.findByText('yokoyama@example.jp');
 
-    await user.click(screen.getByRole('button', { name: '横山 美咲 の操作' }));
+    await user.click(screen.getByRole('button', { name: 'yokoyama@example.jp の操作' }));
     expect(await screen.findByRole('menuitem', { name: 'メンバーを削除' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: '招待メールを再送' })).not.toBeInTheDocument();
   });
@@ -483,7 +495,7 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    const row = (await screen.findByText('横山 美咲')).closest('tr')!;
+    const row = (await screen.findByText('yokoyama@example.jp')).closest('tr')!;
     await user.click(within(row).getByRole('button', { name: /3件/ }));
 
     expect(await screen.findByText('参加プロジェクト')).toBeInTheDocument();
@@ -503,7 +515,7 @@ describe('OrgMembersPage', () => {
     );
 
     renderPage();
-    await screen.findByText('佐藤 航');
+    await screen.findByText('sato@example.jp');
     await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
 
     // ダイアログ見出し (トリガーボタンと同名なので role で絞る)
@@ -526,7 +538,7 @@ describe('OrgMembersPage', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stub();
     renderPage();
-    await screen.findByText('佐藤 航');
+    await screen.findByText('sato@example.jp');
     await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
 
     const dialog = await screen.findByRole('dialog');
@@ -543,7 +555,7 @@ describe('OrgMembersPage', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stub();
     renderPage();
-    await screen.findByText('佐藤 航');
+    await screen.findByText('sato@example.jp');
     await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
 
     await user.click(await screen.findByRole('combobox', { name: '権限' }));
@@ -559,7 +571,7 @@ describe('OrgMembersPage', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     stub({ billing: freeBilling() });
     renderPage();
-    await screen.findByText('佐藤 航');
+    await screen.findByText('sato@example.jp');
     await user.click(screen.getByRole('button', { name: 'メンバーを招待' }));
 
     // 既定の editor は選べないので、選べる閲覧者へ寄せる
@@ -587,7 +599,7 @@ describe('OrgMembersPage', () => {
     });
     renderPage();
 
-    await user.click(await screen.findByRole('combobox', { name: '横山 美咲 の権限' }));
+    await user.click(await screen.findByRole('combobox', { name: 'yokoyama@example.jp の権限' }));
 
     expect(await screen.findByRole('option', { name: '編集者' })).toHaveAttribute(
       'aria-disabled',
