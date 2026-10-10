@@ -10,6 +10,8 @@ import {
   planRange,
   zoomScale,
   ROW_HEIGHT_DEFAULT,
+  rowHeightToSlider,
+  sliderToRowHeight,
 } from './scheduleLayout';
 
 function makePlan(overrides: Partial<Plan> & Pick<Plan, 'id' | 'scheduledDate'>): Plan {
@@ -140,5 +142,29 @@ describe('zoomScale', () => {
   it('既定の行高は基準から 1 段階縮小した 35 (#268)', () => {
     expect(ROW_HEIGHT_DEFAULT).toBe(35);
     expect(zoomScale(ROW_HEIGHT_DEFAULT)).toBe(0.875);
+  });
+});
+
+describe('ズームスライダーの目盛り (#268)', () => {
+  it('既定の行高 (35) がつまみの真ん中、両端が最小 / 最大', () => {
+    expect(rowHeightToSlider(35)).toBe(50);
+    expect(rowHeightToSlider(20)).toBe(0);
+    expect(rowHeightToSlider(80)).toBe(100);
+    expect(sliderToRowHeight(50)).toBe(35);
+    expect(sliderToRowHeight(0)).toBe(20);
+    expect(sliderToRowHeight(100)).toBe(80);
+  });
+
+  it('つまみ位置 → 行高は 5px 刻みに丸め、範囲外は端に寄せる', () => {
+    expect(sliderToRowHeight(10)).toBe(25); // 20 + 3 = 23 → 25
+    expect(sliderToRowHeight(60)).toBe(45); // 35 + 9 = 44 → 45
+    expect(sliderToRowHeight(-5)).toBe(20);
+    expect(sliderToRowHeight(120)).toBe(80);
+  });
+
+  it('全段階で行高 → 位置 → 行高が元に戻る', () => {
+    for (let h = 20; h <= 80; h += 5) {
+      expect(sliderToRowHeight(rowHeightToSlider(h))).toBe(h);
+    }
   });
 });

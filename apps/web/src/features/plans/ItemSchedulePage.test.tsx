@@ -563,20 +563,22 @@ describe('ItemSchedulePage (integration)', () => {
     renderPage();
 
     await screen.findByText('トップページ');
-    // 行高はスライダーの値で確認する (Figma のズームコントロールに px 表記は無い)。
+    // 行高は aria-valuetext で確認する (スライダーの値はつまみ位置、#268)。
     const slider = () => screen.getByLabelText('行の高さ') as HTMLInputElement;
-    // 既定は基準 (40) から 1 段階縮小した 35 (#268)
-    expect(slider().value).toBe('35');
+    const rowHeight = () => slider().getAttribute('aria-valuetext');
+    // 既定は基準 (40) から 1 段階縮小した 35 で、つまみは真ん中 (#268)
+    expect(rowHeight()).toBe('35px');
+    expect(slider().value).toBe('50');
 
     await user.click(screen.getByRole('button', { name: '拡大' }));
-    await waitFor(() => expect(slider().value).toBe('40'));
+    await waitFor(() => expect(rowHeight()).toBe('40px'));
 
     await user.click(screen.getByRole('button', { name: '縮小' }));
-    await waitFor(() => expect(slider().value).toBe('35'));
+    await waitFor(() => expect(rowHeight()).toBe('35px'));
 
-    // スライダー (range) の onChange で rowHeight を直接変更する
-    fireEvent.change(slider(), { target: { value: '60' } });
-    await waitFor(() => expect(slider().value).toBe('60'));
+    // つまみを右端へ動かすと最大の 80px
+    fireEvent.change(slider(), { target: { value: '100' } });
+    await waitFor(() => expect(rowHeight()).toBe('80px'));
   });
 
   // ---------------------------------------------------------------------------
