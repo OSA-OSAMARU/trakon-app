@@ -621,9 +621,10 @@ describe('ItemSchedulePage (integration)', () => {
     renderPage();
 
     await screen.findByText('トップページ');
+    // 参加者画面の「スケジュールに戻る」で今の制作物へ戻すため、from を渡す (#266)
     expect(screen.getByRole('link', { name: /^メンバー$/ })).toHaveAttribute(
       'href',
-      `/projects/${PROJECT_ID}/members`,
+      `/projects/${PROJECT_ID}/members?from=${ITEM_ID}`,
     );
     expect(screen.getByRole('link', { name: /プロジェクト情報/ })).toHaveAttribute(
       'href',

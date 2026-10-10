@@ -381,7 +381,8 @@ function Inner({ projectId, itemId }: { projectId: string; itemId: string }) {
               </Button>
             )}
             <Button variant="ghost" size="sm" asChild>
-              <Link to={`/projects/${projectId}/members`}>
+              {/* from: 参加者画面の「スケジュールに戻る」で今の制作物へ戻すため (#266) */}
+              <Link to={`/projects/${projectId}/members?from=${encodeURIComponent(itemId)}`}>
                 <Users className="size-4" />
                 メンバー
               </Link>
