@@ -11,8 +11,16 @@ export const LANE_WIDTH = 240; // 1 レーン (サブ列) の幅 px (scale=1 時
 export const MIN_COLUMN_WIDTH = 280; // 制作物列の最小幅 px (scale=1 時の基準)
 export const ROW_HEIGHT_MIN = 20;
 export const ROW_HEIGHT_MAX = 80;
-export const ROW_HEIGHT_DEFAULT = 40;
 export const ROW_HEIGHT_STEP = 5;
+/** 倍率 1.0 とみなす行高 px。LANE_WIDTH / MIN_COLUMN_WIDTH はこの行高での寸法。 */
+export const ROW_HEIGHT_BASE = 40;
+/**
+ * 画面を開いたときの行高 px。基準 (40) だと大きく感じるとの声を受け、
+ * 1 段階 (ROW_HEIGHT_STEP) 縮小した値を既定にしている (#268)。
+ * 倍率の基準 (ROW_HEIGHT_BASE) とは切り離しているので、ここを変えても
+ * 各段階の見た目そのものは変わらない。
+ */
+export const ROW_HEIGHT_DEFAULT = ROW_HEIGHT_BASE - ROW_HEIGHT_STEP;
 
 /**
  * カードの上下インセット px。隣接日のカード間に `CARD_INSET_Y*2` の隙間を生み、
@@ -36,10 +44,10 @@ export function chipVerticalBounds(
 
 /**
  * 縦方向のズーム量 (rowHeight) から横方向の倍率を導出する。
- * 拡大バー1本で縦横を連動させるための共通係数 (既定40で1.0 / 20で0.5 / 80で2.0)。
+ * 拡大バー1本で縦横を連動させるための共通係数 (基準40で1.0 / 20で0.5 / 80で2.0)。
  */
 export function zoomScale(rowHeight: number): number {
-  return rowHeight / ROW_HEIGHT_DEFAULT;
+  return rowHeight / ROW_HEIGHT_BASE;
 }
 
 /** rowHeight に連動したレーン幅 px。 */

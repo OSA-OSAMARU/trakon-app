@@ -9,6 +9,7 @@ import {
   isOverdue,
   planRange,
   zoomScale,
+  ROW_HEIGHT_DEFAULT,
 } from './scheduleLayout';
 
 function makePlan(overrides: Partial<Plan> & Pick<Plan, 'id' | 'scheduledDate'>): Plan {
@@ -131,8 +132,13 @@ describe('isActiveNow', () => {
 });
 
 describe('zoomScale', () => {
-  it('zoomScale は既定 40 で 1.0', () => {
+  it('zoomScale は基準 40 で 1.0', () => {
     expect(zoomScale(40)).toBe(1);
     expect(zoomScale(20)).toBe(0.5);
+  });
+
+  it('既定の行高は基準から 1 段階縮小した 35 (#268)', () => {
+    expect(ROW_HEIGHT_DEFAULT).toBe(35);
+    expect(zoomScale(ROW_HEIGHT_DEFAULT)).toBe(0.875);
   });
 });

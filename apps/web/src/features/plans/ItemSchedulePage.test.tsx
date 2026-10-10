@@ -565,13 +565,14 @@ describe('ItemSchedulePage (integration)', () => {
     await screen.findByText('トップページ');
     // 行高はスライダーの値で確認する (Figma のズームコントロールに px 表記は無い)。
     const slider = () => screen.getByLabelText('行の高さ') as HTMLInputElement;
-    expect(slider().value).toBe('40');
+    // 既定は基準 (40) から 1 段階縮小した 35 (#268)
+    expect(slider().value).toBe('35');
 
     await user.click(screen.getByRole('button', { name: '拡大' }));
-    await waitFor(() => expect(slider().value).toBe('45'));
+    await waitFor(() => expect(slider().value).toBe('40'));
 
     await user.click(screen.getByRole('button', { name: '縮小' }));
-    await waitFor(() => expect(slider().value).toBe('40'));
+    await waitFor(() => expect(slider().value).toBe('35'));
 
     // スライダー (range) の onChange で rowHeight を直接変更する
     fireEvent.change(slider(), { target: { value: '60' } });
