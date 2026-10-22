@@ -10,7 +10,7 @@ Docs are authoritative and layered: **基本原則 > PRD (`docs/prd/`) > 基本�
 
 ## Commands
 
-Run from repo root unless noted. Node 20–22 (`.nvmrc`), pnpm 10.
+Run from repo root unless noted. Node 24.x — `.nvmrc` pins the patched release (currently 24.22.1), pnpm 10.
 
 | Command | Purpose |
 |---|---|
