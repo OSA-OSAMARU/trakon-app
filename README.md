@@ -121,7 +121,7 @@ Supabase ローカルスタック（Postgres / Auth / Studio / メール確認�
 
 | ツール | 要件 | 確認 |
 |---|---|---|
-| Node.js | 20〜22（`.nvmrc` 準拠） | `node -v` |
+| Node.js | 24.22.1 以上の 24.x（`.nvmrc` 準拠） | `node -v` |
 | pnpm | 10 系 | `pnpm -v` |
 | Docker | **起動していること**（Supabase ローカルが利用） | `docker info` |
 | Supabase CLI | `pnpm dlx supabase`（都度実行）または `brew install supabase/tap/supabase`（常設） | `pnpm dlx supabase --version` |
