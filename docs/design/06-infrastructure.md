@@ -806,6 +806,14 @@ jobs:
 
 ---
 
+
+### 6.15.8. AI 連携（MCP）のルーティング（2026-11-21）
+
+- `vercel.json` の rewrites に `/.well-known/(oauth-.*)` → `/api` を追加（SPA へのフォールバックより前に置く）。`/api/mcp`・`/api/oauth/*` は既存の `/api/(.*)` に含まれる。
+- 開発時は Vite proxy に `/.well-known` を追加し、`/api` とともに `xfwd: true` で元のホストを Hono に伝える（OAuth メタデータが `localhost:5173` を名乗るため）。
+- 新しい環境変数は不要。issuer などの URL はリクエストのオリジンから組み立てるので、Preview / Production で同じコードが自分の URL を名乗る。Preview で発行したトークンは Production では使えない（オーディエンス束縛）。
+- Vercel の Deployment Protection が有効な Preview には外部の AI クライアントから到達できない。Preview で試すときは MCP Inspector をローカルから使う。
+
 ## 6.16. 議論ポイントの確定結果
 
 | # | 論点 | 確定内容 | 判断理由 |

@@ -28,6 +28,8 @@ import {
   type LegalLinkKey,
 } from './features/legal/legalLinks';
 import { SharePage } from './features/shareLinks/SharePage';
+import { AiConnectionsPage } from './features/aiConnections/AiConnectionsPage';
+import { OAuthConsentPage } from './features/aiConnections/OAuthConsentPage';
 
 export function App() {
   return (
@@ -44,6 +46,15 @@ export function App() {
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
         <Route path="/share/:token" element={<SharePage />} />
+        {/* AI 連携の同意画面 (SC-20, 08-mcp §8.5.2)。ログインは要るがサイドバーは出さない */}
+        <Route
+          path="/oauth/authorize"
+          element={
+            <RequireAuth>
+              <OAuthConsentPage />
+            </RequireAuth>
+          }
+        />
 
         {/* 会社情報・法務ページは公式サイトが正 (#193)。
             旧パスはブックマーク対策として公式サイトへ送るだけにする。 */}
@@ -52,7 +63,10 @@ export function App() {
             key={path}
             path={path}
             element={
-              <ExternalRedirect href={href} label={LEGAL_LINK_LABEL[path.slice(1) as LegalLinkKey]} />
+              <ExternalRedirect
+                href={href}
+                label={LEGAL_LINK_LABEL[path.slice(1) as LegalLinkKey]}
+              />
             }
           />
         ))}
@@ -68,6 +82,7 @@ export function App() {
           <Route path="/settings/profile" element={<MyPage />} />
           <Route path="/settings/members" element={<OrgMembersPage />} />
           <Route path="/settings/billing" element={<BillingPage />} />
+          <Route path="/settings/ai" element={<AiConnectionsPage />} />
           {/* 運営管理 (#204)。権限が無ければ API が 404 を返し、画面は取得失敗を出す */}
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/projects" element={<ProjectListPage />} />

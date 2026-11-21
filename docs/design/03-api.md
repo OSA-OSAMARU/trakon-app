@@ -1658,6 +1658,21 @@ export function deriveBallHolder(plan: PlanLike, latestEvent?: BallEventLike | n
 
 ---
 
+
+## 3.9b. AI 連携（MCP）エンドポイント（2026-11-21）
+
+詳細は [08-mcp.md §8.4](08-mcp.md) を正とする。本章のエンベロープ・認可モデルとの関係だけここに記す。
+
+| パス | 認証 | 本章の規約との関係 |
+|---|---|---|
+| `GET /.well-known/oauth-protected-resource[/api/mcp]`・`GET /.well-known/oauth-authorization-server[/api/mcp]` | なし | RFC 9728 / 8414 の形式。`/api/v1` の外 |
+| `POST /api/oauth/register`・`/token`・`/revoke` | なし（PKCE） | **OAuth の形式**（`{ error, error_description }`）。`{ error: { code } }` エンベロープの例外 |
+| `POST /api/mcp` | MCP アクセストークン（不透明） | JSON-RPC（MCP Streamable HTTP）。GET / DELETE は 405 |
+| `GET` / `POST /api/v1/oauth/authorize` | Supabase JWT | 通常のエンベロープ。同意画面 SC-20 用 |
+| `GET /api/v1/ai-connections`・`DELETE /api/v1/ai-connections/:id` | Supabase JWT | 通常のエンベロープ。他人の接続は 404 集約 |
+
+**MCP のツールは `/api/v1` をプロセス内で呼び出す**（08-mcp §8.8）。§3.3 の認可チェーン（`requireProjectMember` → `requireProjectWritable` → `requireProjectAction`）・404 集約・Zod 検証は AI 経由でもそのまま効く。`requireAuth()` だけが「MCP 側で生成した Request オブジェクト」に限り JWT 検証の代わりに MCP の本人情報を採用する。
+
 ## 3.10. 議論ポイントの確定結果
 
 | # | 論点 | 確定内容 | 判断理由 |

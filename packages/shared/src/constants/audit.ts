@@ -77,10 +77,14 @@ export const AUDIT_ACTIONS_ORG = [
   'retained_projects_changed',
 ] as const;
 
+/** AI 連携 (MCP) の接続 / 接続解除 (設計書 08-mcp §8.6) */
+export const AUDIT_ACTIONS_MCP = ['mcp_connected', 'mcp_revoked'] as const;
+
 export const AUDIT_ACTIONS = [
   ...AUDIT_ACTIONS_CORE,
   ...AUDIT_ACTIONS_BILLING,
   ...AUDIT_ACTIONS_ORG,
+  ...AUDIT_ACTIONS_MCP,
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

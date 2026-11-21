@@ -69,6 +69,14 @@ export default defineConfig({
       '/api': {
         target: `http://127.0.0.1:${SERVER_PORT}`,
         changeOrigin: true,
+        // AI 連携 (08-mcp) の OAuth メタデータが自分の URL (localhost:5173) を名乗れるよう、
+        // x-forwarded-host / proto を付けて Hono 側に元のホストを伝える
+        xfwd: true,
+      },
+      '/.well-known': {
+        target: `http://127.0.0.1:${SERVER_PORT}`,
+        changeOrigin: true,
+        xfwd: true,
       },
     },
   },

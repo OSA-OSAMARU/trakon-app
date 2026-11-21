@@ -4,6 +4,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { ApiError } from '@trakon/shared';
 
 import { getServerEnv } from '../lib/env.js';
+import { getInternalPrincipal } from '../mcp/internalPrincipal.js';
 
 export type AuthenticatedUser = {
   authUserId: string;
@@ -53,9 +54,18 @@ function toAuthenticatedUser(payload: JWTPayload): AuthenticatedUser | null {
 /**
  * Supabase JWT (RS256) を検証して `c.var.authUser` をセットする。
  * 詳細: docs/design/05-security.md §5.3.7
+ *
+ * 例外: AI 連携 (MCP) のツールがプロセス内で生成した Request は、MCP のアクセストークンで
+ * 認証済みの本人情報をそのまま使う (設計書 08-mcp §8.8)。以降の認可チェーンは画面と同一。
  */
 export function requireAuth(): MiddlewareHandler {
   return async (c, next) => {
+    const internal = getInternalPrincipal(c.req.raw);
+    if (internal) {
+      c.set('authUser', internal);
+      return next();
+    }
+
     const env = getServerEnv();
     const token = extractToken(c.req.header('authorization'));
     if (!token) return authError(c, 'AUTH_MISSING', 'Authorization header is required.');
