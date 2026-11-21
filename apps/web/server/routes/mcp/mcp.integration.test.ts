@@ -316,6 +316,64 @@ describe('MCP (AI 連携) end-to-end', () => {
     await client.close();
   });
 
+  it('後続予定を紐付け・解除でき、別の制作物の予定は後続にできない', async () => {
+    const { project, member, token: jwt } = await setupProjectWithDirector();
+    const banner = await createItem({ projectId: project.id, name: 'バナー' });
+    const lp = await createItem({ projectId: project.id, name: 'LP' });
+    const tokens = await connect(jwt);
+    const create = async (itemId: string, title: string, scheduledDate: string) =>
+      (
+        await callTool(tokens.access_token, 'create_plan', {
+          projectId: project.id,
+          itemId,
+          title,
+          category: 'design',
+          scheduledDate,
+          executorMemberId: member.id,
+        })
+      ).structuredContent!.plan.id as string;
+
+    const wire = await create(banner.id, 'ワイヤー', '2026-06-01');
+    const design = await create(banner.id, 'デザイン', '2026-06-05');
+    const lpPlan = await create(lp.id, 'LP デザイン', '2026-06-05');
+
+    const linked = await callTool(tokens.access_token, 'update_plan', {
+      projectId: project.id,
+      planId: wire,
+      successorPlanId: design,
+    });
+    expect(linked.structuredContent!.plan.successorPlanId).toBe(design);
+    expect((await prisma.plan.findUnique({ where: { id: wire } }))!.successorPlanId).toBe(design);
+
+    // 別の制作物の予定は後続にできない (REST の規則がそのまま返る)
+    const cross = await callTool(tokens.access_token, 'update_plan', {
+      projectId: project.id,
+      planId: design,
+      successorPlanId: lpPlan,
+    });
+    expect(cross.isError).toBe(true);
+    expect(cross.content[0]!.text).toContain('SUCCESSOR_OUT_OF_SCOPE');
+
+    // 作成と同時に後続を指定できる / 既に後続になっている予定は二重に使えない
+    const dup = await callTool(tokens.access_token, 'create_plan', {
+      projectId: project.id,
+      itemId: banner.id,
+      title: 'もう一つのワイヤー',
+      category: 'wireframe',
+      scheduledDate: '2026-06-02',
+      successorPlanId: design,
+    });
+    expect(dup.isError).toBe(true);
+    expect(dup.content[0]!.text).toContain('SUCCESSOR_ALREADY_USED');
+
+    const unlinked = await callTool(tokens.access_token, 'update_plan', {
+      projectId: project.id,
+      planId: wire,
+      successorPlanId: null,
+    });
+    expect(unlinked.structuredContent!.plan.successorPlanId).toBeNull();
+  });
+
   it('read スコープだけなら書き込みツールを提示しない', async () => {
     const { token: jwt } = await setupProjectWithDirector();
     const tokens = await connect(jwt, 'read');
