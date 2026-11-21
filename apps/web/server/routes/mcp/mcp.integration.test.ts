@@ -366,6 +366,36 @@ describe('MCP (AI 連携) end-to-end', () => {
     expect(dup.isError).toBe(true);
     expect(dup.content[0]!.text).toContain('SUCCESSOR_ALREADY_USED');
 
+    // 承認済み (TOSS 待ち) の予定にも後続を付けられる (Preview で見つかった不具合の再発防止)
+    const approved = await callTool(tokens.access_token, 'create_plan', {
+      projectId: project.id,
+      itemId: lp.id,
+      title: 'LP 提案',
+      category: 'proposal',
+      scheduledDate: '2026-06-01',
+      executorMemberId: member.id,
+      approverMemberId: member.id,
+    });
+    const approvedId = approved.structuredContent!.plan.id as string;
+    for (const action of ['request_review', 'approve']) {
+      const r = await callTool(tokens.access_token, 'ball_action', {
+        projectId: project.id,
+        planId: approvedId,
+        action,
+      });
+      expect(r.isError).toBeFalsy();
+    }
+    const toApproved = await callTool(tokens.access_token, 'update_plan', {
+      projectId: project.id,
+      planId: approvedId,
+      successorPlanId: lpPlan,
+    });
+    expect(toApproved.isError).toBeFalsy();
+    expect(toApproved.structuredContent!.plan).toMatchObject({
+      ballState: 'approved',
+      successorPlanId: lpPlan,
+    });
+
     const unlinked = await callTool(tokens.access_token, 'update_plan', {
       projectId: project.id,
       planId: wire,
