@@ -185,9 +185,6 @@ export async function validateAuthorizeRequest(
     return fail('invalid_request', 'code_challenge is malformed.');
   }
   const scopes = parseScope(params.scope);
-  if (!scopes) {
-    return fail('invalid_scope', 'Unknown scope requested. Supported: read, write.');
-  }
   const expectedResource = mcpResourceUrl(origin);
   if (params.resource && normalizeResource(params.resource) !== expectedResource) {
     return fail('invalid_target', `resource must be ${expectedResource}.`);
@@ -392,8 +389,8 @@ export async function refreshAccessToken(input: {
   let scope = grant.scope;
   if (input.scope) {
     const requested = parseScope(input.scope);
-    const granted = parseScope(grant.scope) ?? [];
-    if (!requested || !requested.every((s) => granted.includes(s))) {
+    const granted = parseScope(grant.scope);
+    if (!requested.every((s) => granted.includes(s))) {
       throw new OAuthError('invalid_scope', 'Requested scope exceeds the original grant.');
     }
     scope = formatScope(requested);
@@ -504,7 +501,7 @@ export async function verifyAccessToken(
     userId: grant.user.id,
     authUserId: grant.user.authUserId,
     email: grant.user.email,
-    scopes: parseScope(grant.scope) ?? [],
+    scopes: parseScope(grant.scope),
     clientName: grant.client.clientName,
   };
 }
@@ -531,7 +528,7 @@ export async function listAiConnections(userId: string): Promise<AiConnectionDTO
   return rows.map((g) => ({
     id: g.id,
     clientName: g.client.clientName,
-    scopes: parseScope(g.scope) ?? [],
+    scopes: parseScope(g.scope),
     createdAt: g.createdAt.toISOString(),
     lastUsedAt: g.lastUsedAt?.toISOString() ?? null,
   }));

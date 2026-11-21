@@ -112,8 +112,10 @@ describe('parseScope / formatScope', () => {
     expect(parseScope('write read write')).toEqual(['read', 'write']);
     expect(formatScope(['read', 'write'])).toBe('read write');
   });
-  it('未知のスコープは null', () => {
-    expect(parseScope('read admin')).toBeNull();
+  it('知らないスコープは無視する (offline_access・openid などで接続を止めない)', () => {
+    expect(parseScope('read offline_access')).toEqual(['read']);
+    expect(parseScope('openid offline_access')).toEqual(['read', 'write']);
+    expect(parseScope('read admin')).toEqual(['read']);
   });
 });
 
@@ -151,6 +153,11 @@ describe('metadata', () => {
     });
   });
   it('認可サーバメタデータ', () => {
+    expect(buildAuthorizationServerMetadata('https://t.example').scopes_supported).toEqual([
+      'read',
+      'write',
+      'offline_access',
+    ]);
     expect(buildAuthorizationServerMetadata('https://t.example')).toMatchObject({
       issuer: 'https://t.example',
       authorization_endpoint: 'https://t.example/oauth/authorize',

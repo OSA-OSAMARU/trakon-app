@@ -66,6 +66,15 @@ describe('AiConnectionsPage (SC-21)', () => {
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/api/mcp`);
     expect(toastSuccess).toHaveBeenCalledWith('URL をクリップボードにコピーしました');
     expect(await screen.findByText('接続中のアプリはありません。')).toBeInTheDocument();
+    // サービス別の詳しい手順 (SC-22) へ案内する
+    expect(screen.getByRole('link', { name: 'ChatGPT' })).toHaveAttribute(
+      'href',
+      '/help/ai#chatgpt',
+    );
+    expect(screen.getByRole('link', { name: '設定方法を詳しく見る' })).toHaveAttribute(
+      'href',
+      '/help/ai',
+    );
   });
 
   it('コピーに失敗したら知らせる', async () => {

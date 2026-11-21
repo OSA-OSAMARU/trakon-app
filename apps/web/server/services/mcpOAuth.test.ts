@@ -254,6 +254,14 @@ describe('validateAuthorizeRequest', () => {
       resource: RESOURCE,
     });
   });
+  it('ChatGPT などが付ける offline_access があっても通す', async () => {
+    const c = await newClient();
+    const v = await svc.validateAuthorizeRequest(
+      authorizeParams(c.client_id, { scope: 'read write offline_access' }),
+      ORIGIN,
+    );
+    expect(v).toMatchObject({ kind: 'ok', scopes: ['read', 'write'] });
+  });
   it('client_id・redirect_uri が信用できなければリダイレクトしない', async () => {
     const c = await newClient();
     expect(await svc.validateAuthorizeRequest({ client_id: 'nope' }, ORIGIN)).toMatchObject({
@@ -277,7 +285,6 @@ describe('validateAuthorizeRequest', () => {
     [{ code_challenge_method: 'plain' }, 'invalid_request'],
     [{ code_challenge: undefined }, 'invalid_request'],
     [{ code_challenge: 'short' }, 'invalid_request'],
-    [{ scope: 'admin' }, 'invalid_scope'],
     [{ resource: 'https://other.example/api/mcp' }, 'invalid_target'],
   ])('不備は error 付きで戻す %#', async (over, error) => {
     const c = await newClient();
