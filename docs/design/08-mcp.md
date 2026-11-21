@@ -131,6 +131,8 @@
 | `write` | 書き込み系（§8.7.2） |
 
 - スコープ未指定のリクエストは `read write` として扱う。
+- **知らないスコープは拒否せず無視する**（RFC 6749 §3.3）。ChatGPT はリフレッシュトークンを得るために `offline_access` を付けてくるため、拒否すると接続できない。無視しても権限は増えない。`read` / `write` が 1 つも残らなければ `read write` として扱う。
+- 認可サーバメタデータの `scopes_supported` には `offline_access` も載せる（リフレッシュトークンを出すことの表明。TRAKON は要求の有無によらず常に出す）。
 - **スコープに含まれないツールは `tools/list` に出さない**（AI に「使えない道具」を見せない）。
 
 ---
@@ -251,18 +253,33 @@ POST /api/mcp
 | ID | パス | 内容 |
 |---|---|---|
 | SC-20 | `/oauth/authorize` | 同意画面。サイドバーなしの中央カード。アプリ名・戻り先ホスト・許可内容・ログイン中アカウント・「許可する／拒否する」 |
-| SC-21 | `/settings/ai` | AI 連携。MCP サーバ URL（コピー）とクライアント別の接続手順、接続中アプリ一覧（アプリ名・接続日・最終利用・権限）と「接続を解除」 |
+| SC-21 | `/settings/ai` | AI 連携。MCP サーバ URL（コピー）、SC-22 の各節へのリンク、接続中アプリ一覧（アプリ名・接続日・最終利用・権限）と「接続を解除」 |
+| SC-22 | `/help/ai` | **AI 連携の設定方法（ログイン不要の公開ページ）**。設定の流れ・接続先 URL・サービス別の手順（コマンドや設定例はコピー可、`#claude` などのアンカーで直接開ける）・話しかけ方の例・安全について・うまくいかないとき |
 
-サイドバーの設定グループに「AI 連携」を追加する。
+サイドバーのアカウントメニューに「AI 連携」（SC-21）を追加する。SC-22 は SC-21 と、同意画面 SC-20 のエラー表示からリンクする。
+
+**SC-22 を公開ページにする理由**：AI サービス側の設定は、ChatGPT のワークスペース管理者や Claude の組織オーナーなど、TRAKON のアカウントを持たない人が行うことがある。載せる情報（MCP サーバ URL と手順）は秘密ではない。
 
 ---
 
 ## 8.11 クライアント別の接続手順（利用者向け）
 
-MCP サーバ URL：`https://<TRAKON のドメイン>/api/mcp`
+利用者向けの手順は SC-22（`/help/ai`）に載せ、**内容の正は `apps/web/src/features/aiConnections/aiGuides.ts`** とする（画面とずれないよう、本書には要点だけを置く）。各社の公式ドキュメントで 2026 年 11 月に確認した。
 
-| クライアント | 手順の要点 |
-|---|---|
+| クライアント | 対象プラン・前提 | 手順の要点 | OAuth の選択 |
+|---|---|---|---|
+| Claude（claude.ai・デスクトップ） | Free（1 つまで）/ Pro / Max / Team / Enterprise | `Customize` → `Connectors` → `+ Add` → `Add custom connector`。Team / Enterprise はオーナーが `Organization settings` → `Connectors` で追加し、各メンバーが `Connect` | `Register automatically`（DCR） |
+| Claude Code | — | `claude mcp add --transport http trakon <URL>` → `/mcp` | 自動（DCR） |
+| ChatGPT | Business / Enterprise / Edu の Web 版（Pro は閲覧系のみ、モバイル不可）。Business は管理者・オーナーが追加 | `chatgpt.com/plugins` → `+` → `Add custom MCP server` → 認証 `OAuth` → `Create as a plugin` → インストール。チャットでは `@` で選ぶ | OAuth（`offline_access` を付けてくる → §8.5.4） |
+| Gemini CLI | — | `settings.json` の `mcpServers` に `{"trakon": {"httpUrl": "<URL>"}}` → `/mcp auth trakon` | 自動（DCR） |
+| GitHub Copilot（VS Code） | 組織ポリシーで制限される場合あり | `MCP: Add Server` → `HTTP` → `Global` / `Copilot Global` → `Authenticate`。ファイルなら `~/.copilot/mcp-config.json` の `mcpServers` | 自動（DCR） |
+| Microsoft Copilot Studio | Power Platform のデータポリシー対象 | `Tools` → `Add a tool` → `New tool` → `Model Context Protocol` | `OAuth 2.0` → `Dynamic discovery` |
+
+- 画面の名称は各社の更新で変わりやすい。**ボタン名は英語表示のラベルをそのまま書く**（日本語表示の訳語は確認できないため）。
+- Claude の `Use Claude's published identity` と、ChatGPT が対応する CIMD（Client ID Metadata Documents）には TRAKON はまだ対応していない（§8.13）。手順では DCR を使う選択肢を案内する。
+- **実際の各サービスからの接続は、本番環境（外部から到達できる環境）でしか確認できない**。リリース後に確認し、手順と食い違えば `aiGuides.ts` を直す。
+
+---|---|
 | Claude（claude.ai / デスクトップ / モバイル） | 設定 → コネクタ → カスタムコネクタを追加 → URL を貼る → 「連携」で TRAKON の同意画面が開く |
 | Claude Code | `claude mcp add --transport http trakon <URL>` → `/mcp` で認証 |
 | ChatGPT | 設定 → アプリとコネクタ（開発者モード）→ 作成 → URL を貼り、認証に OAuth を選ぶ |

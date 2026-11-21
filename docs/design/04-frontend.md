@@ -1357,7 +1357,8 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 | ID | パス | レイアウト | 要点 |
 |---|---|---|---|
 | SC-20 同意画面 | `/oauth/authorize` | `RequireAuth` のみ（サイドバーなし、招待受諾と同じ中央カード） | OAuth の authorization_endpoint。未ログインは `/login?next=` 経由で戻る。**アプリ名（自己申告）と戻り先ホストを並べて表示**。許可／拒否は API が返す URL へ `window.location.assign` |
-| SC-21 AI 連携 | `/settings/ai` | `SidebarLayout`。アカウントメニューに「AI 連携」 | MCP サーバ URL のコピー、クライアント別の接続手順、接続中アプリの一覧と「接続を解除」（確認ダイアログ） |
+| SC-21 AI 連携 | `/settings/ai` | `SidebarLayout`。アカウントメニューに「AI 連携」 | MCP サーバ URL のコピー、SC-22 の各節へのリンク、接続中アプリの一覧と「接続を解除」（確認ダイアログ） |
+| SC-22 AI 連携の設定方法 | `/help/ai` | **ログイン不要**（共有画面と同じ公開ページ）。ヘッダーにワードマークと「接続中のアプリを管理」 | サービス別の手順（コマンド・設定例はコピー可、`#id` で各節へ直接移動）、話しかけ方の例、安全について、うまくいかないとき。手順データは `aiGuides.ts` |
 
 コードは `src/features/aiConnections/`。
 

@@ -127,6 +127,10 @@ describe('OAuthConsentPage (SC-20)', () => {
 
     expect(await screen.findByText('この接続は続けられません')).toBeInTheDocument();
     expect(screen.getByText(/登録されていません。/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'AI 連携の設定方法を見る' })).toHaveAttribute(
+      'href',
+      '/help/ai',
+    );
     expect(to).not.toHaveBeenCalled();
   });
 

@@ -108,19 +108,17 @@ export function matchesRegisteredRedirectUri(
 }
 
 /**
- * scope パラメータを解釈する。未指定・空なら全スコープ。
- * 未知のスコープが含まれていれば null (= invalid_scope)。
+ * scope パラメータを解釈する。
+ *
+ * **知らないスコープは拒否せず無視する** (RFC 6749 §3.3: 認可サーバは要求の一部を無視してよい)。
+ * AI クライアントは `offline_access` (ChatGPT がリフレッシュトークンを得るために付ける) や
+ * `openid` などを足してくることがあり、拒否すると接続そのものができなくなるため。
+ * 無視しても権限は増えない。read / write が 1 つも残らなければ (未指定を含む) 全スコープ。
  */
-export function parseScope(value: string | null | undefined): McpScope[] | null {
+export function parseScope(value: string | null | undefined): McpScope[] {
   const parts = (value ?? '').split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return [...MCP_SCOPES];
-  const result: McpScope[] = [];
-  for (const p of parts) {
-    if (!(MCP_SCOPES as readonly string[]).includes(p)) return null;
-    if (!result.includes(p as McpScope)) result.push(p as McpScope);
-  }
-  // 表記を正規化する (並び順を固定)
-  return MCP_SCOPES.filter((s) => result.includes(s));
+  const known = MCP_SCOPES.filter((s) => parts.includes(s));
+  return known.length > 0 ? known : [...MCP_SCOPES];
 }
 
 export function formatScope(scopes: readonly McpScope[]): string {
@@ -166,7 +164,9 @@ export function buildAuthorizationServerMetadata(origin: string) {
     token_endpoint: `${origin}/api/oauth/token`,
     registration_endpoint: `${origin}/api/oauth/register`,
     revocation_endpoint: `${origin}/api/oauth/revoke`,
-    scopes_supported: [...MCP_SCOPES],
+    // offline_access は「リフレッシュトークンが出る」ことの表明 (ChatGPT はこれを見る)。
+    // TRAKON は常にリフレッシュトークンを出すので、要求されても何も変わらない
+    scopes_supported: [...MCP_SCOPES, 'offline_access'],
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
     grant_types_supported: ['authorization_code', 'refresh_token'],

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Bot, Check, Loader2 } from 'lucide-react';
 
@@ -102,6 +102,9 @@ export function OAuthConsentPage() {
                   : '接続の内容を確認できませんでした。'}
                 AI アプリの画面から接続をやり直してください。
               </CardDescription>
+              <Link to="/help/ai" className="text-label underline underline-offset-2">
+                AI 連携の設定方法を見る
+              </Link>
             </CardHeader>
           </Card>
         )}

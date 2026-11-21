@@ -29,6 +29,7 @@ import {
 } from './features/legal/legalLinks';
 import { SharePage } from './features/shareLinks/SharePage';
 import { AiConnectionsPage } from './features/aiConnections/AiConnectionsPage';
+import { AiSetupGuidePage } from './features/aiConnections/AiSetupGuidePage';
 import { OAuthConsentPage } from './features/aiConnections/OAuthConsentPage';
 
 export function App() {
@@ -46,6 +47,8 @@ export function App() {
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         <Route path="/invitations/:token" element={<InvitationAcceptPage />} />
         <Route path="/share/:token" element={<SharePage />} />
+        {/* AI 連携の設定方法 (SC-22, 08-mcp §8.10)。AI 側の管理者が読めるようログイン不要 */}
+        <Route path="/help/ai" element={<AiSetupGuidePage />} />
         {/* AI 連携の同意画面 (SC-20, 08-mcp §8.5.2)。ログインは要るがサイドバーは出さない */}
         <Route
           path="/oauth/authorize"

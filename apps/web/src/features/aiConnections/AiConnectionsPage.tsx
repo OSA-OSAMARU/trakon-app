@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Bot, Copy, Unplug } from 'lucide-react';
@@ -22,35 +23,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 
+import { AI_GUIDES } from './aiGuides';
 import { aiApi, aiConnectionsQueryKey, mcpServerUrl, type AiConnection } from './api';
-
-/**
- * クライアント別の接続手順 (設計書 08-mcp §8.11)。
- * 各社の画面名称は変わりやすいので、要点だけに留める。
- */
-const CLIENT_GUIDES: { name: string; steps: string }[] = [
-  {
-    name: 'Claude（Web・デスクトップ・モバイル）',
-    steps: '設定 → コネクタ → カスタムコネクタを追加 で URL を貼り付け、「連携」を押す',
-  },
-  {
-    name: 'ChatGPT',
-    steps: '設定 → アプリとコネクタ（開発者モード）→ 作成 で URL を貼り付け、認証に OAuth を選ぶ',
-  },
-  {
-    name: 'Claude Code',
-    steps: 'claude mcp add --transport http trakon <URL> を実行し、/mcp で認証する',
-  },
-  {
-    name: 'Gemini CLI',
-    steps:
-      'settings.json の mcpServers に "trakon": { "httpUrl": "<URL>" } を追加し、/mcp auth trakon',
-  },
-  {
-    name: 'GitHub Copilot（VS Code）',
-    steps: '.vscode/mcp.json の servers に "trakon": { "type": "http", "url": "<URL>" } を追加',
-  },
-];
 
 function formatDateTime(iso: string): string {
   return format(new Date(iso), 'yyyy/MM/dd HH:mm');
@@ -114,14 +88,27 @@ export function AiConnectionsPage() {
               コピー
             </Button>
           </div>
-          <ul className="space-y-3 text-body">
-            {CLIENT_GUIDES.map((g) => (
-              <li key={g.name}>
-                <p className="font-medium">{g.name}</p>
-                <p className="text-text-secondary">{g.steps}</p>
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-2 text-body">
+            <p className="font-medium">サービス別の設定方法</p>
+            <ul className="flex flex-wrap gap-2">
+              {AI_GUIDES.map((g) => (
+                <li key={g.id}>
+                  <Link
+                    to={`/help/ai#${g.id}`}
+                    className="inline-block rounded-full border border-border px-3 py-1 text-label hover:bg-surface-subtle"
+                  >
+                    {g.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <Link
+              to="/help/ai"
+              className="inline-flex items-center gap-1 text-label underline underline-offset-2"
+            >
+              設定方法を詳しく見る
+            </Link>
+          </div>
           <p className="text-text-secondary text-label">
             AI
             からできる操作は、あなたが参加しているプロジェクトと、そこでのあなたの権限の範囲に限られます。
