@@ -1106,6 +1106,19 @@ PR ごとに Supabase Branch DB を作成し、Prisma migrate を流す：
 
 ---
 
+
+### 2.9.4. AI 連携（MCP）の追加テーブル（2026-11-21）
+
+マイグレーション `20261121000001_add_mcp_oauth` で次の 3 テーブルを追加し、`audit_logs.action` に `mcp_connected` / `mcp_revoked` を追加した。列定義・設計判断は [08-mcp.md §8.6](08-mcp.md) を正とする。
+
+| テーブル | 役割 | 主な制約 |
+|---|---|---|
+| `mcp_clients` | 動的登録された OAuth クライアント（id = client_id） | `client_name` 1〜100 文字、`redirect_uris` 1〜10 件 |
+| `mcp_authorization_codes` | 認可コード（10 分・1 回限り） | `code_hash` UNIQUE、users / mcp_clients へ ON DELETE CASCADE |
+| `mcp_grants` | 接続（同意 1 回 = 1 行）と現在有効なトークンのハッシュ | `access_token_hash` / `refresh_token_hash` UNIQUE、users / mcp_clients へ ON DELETE CASCADE |
+
+既存の `oauth_identities`（Google / Microsoft ログイン）とは無関係。混同を避けるため `mcp_` 接頭辞にした。トークン・コードは SHA-256 のみ保存する（招待トークンと同じ方針、§5.5）。
+
 ## 2.10. 議論ポイントの確定結果
 
 | # | 論点 | 確定内容 | 判断理由 |

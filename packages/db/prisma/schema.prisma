@@ -50,13 +50,15 @@ model User {
 
   oauthIdentities    OAuthIdentity[]
   auditLogs          AuditLog[]
-  projectsCreated    Project[]            @relation("ProjectsCreatedBy")
+  projectsCreated    Project[]              @relation("ProjectsCreatedBy")
   memberships        ProjectMember[]
   ballEvents         BallEvent[]
-  organizationsOwned Organization[]       @relation("OrganizationOwner")
+  organizationsOwned Organization[]         @relation("OrganizationOwner")
   orgMemberships     OrganizationMember[]
-  invitationsSent    Invitation[]         @relation("InvitationInvitedBy")
+  invitationsSent    Invitation[]           @relation("InvitationInvitedBy")
   trialClaims        BillingTrialClaim[]
+  mcpAuthCodes       McpAuthorizationCode[]
+  mcpGrants          McpGrant[]
 
   @@index([authUserId], map: "idx_users_auth_user_id")
   @@map("users")
@@ -580,4 +582,70 @@ model BillingTrialClaim {
   @@index([emailDomain], map: "idx_btc_domain")
   @@index([stripeCustomerId], map: "idx_btc_customer")
   @@map("billing_trial_claims")
+}
+
+// -----------------------------------------------------------------------------
+// AI 連携 (MCP サーバ) の OAuth 2.1 認可 — 設計書 08-mcp.md §8.6
+//
+// 既存の oauth_identities (Google / Microsoft ログイン) とは別物。混同しないよう
+// すべて mcp_ 接頭辞にする。トークン・認可コードは生値を持たず SHA-256 のみ保存する。
+// -----------------------------------------------------------------------------
+
+/// 動的クライアント登録 (RFC 7591) されたクライアント。id がそのまま client_id
+model McpClient {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  /// 自己申告の名称。信用しない (同意画面では戻り先ホストを併記する)
+  clientName   String   @map("client_name")
+  redirectUris String[] @map("redirect_uris")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  authCodes McpAuthorizationCode[]
+  grants    McpGrant[]
+
+  @@map("mcp_clients")
+}
+
+/// 認可コード (10 分・1 回限り)
+model McpAuthorizationCode {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  codeHash      String    @unique(map: "uq_mac_code_hash") @map("code_hash")
+  clientId      String    @map("client_id") @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  redirectUri   String    @map("redirect_uri")
+  /// PKCE S256 の code_challenge
+  codeChallenge String    @map("code_challenge")
+  scope         String
+  /// RFC 8707 の resource (= その環境の /api/mcp の URL)
+  resource      String
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt    DateTime? @map("consumed_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  client McpClient @relation(fields: [clientId], references: [id], onDelete: Cascade, map: "fk_mac_client_id")
+  user   User      @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_mac_user_id")
+
+  @@index([userId], map: "idx_mac_user_id")
+  @@map("mcp_authorization_codes")
+}
+
+/// 接続 (同意 1 回につき 1 行)。AI 連携設定 (SC-21) の 1 行に対応する
+model McpGrant {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  clientId              String    @map("client_id") @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  scope                 String
+  resource              String
+  accessTokenHash       String    @unique(map: "uq_mg_access_token_hash") @map("access_token_hash")
+  accessTokenExpiresAt  DateTime  @map("access_token_expires_at") @db.Timestamptz
+  refreshTokenHash      String    @unique(map: "uq_mg_refresh_token_hash") @map("refresh_token_hash")
+  refreshTokenExpiresAt DateTime  @map("refresh_token_expires_at") @db.Timestamptz
+  lastUsedAt            DateTime? @map("last_used_at") @db.Timestamptz
+  revokedAt             DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  client McpClient @relation(fields: [clientId], references: [id], onDelete: Cascade, map: "fk_mg_client_id")
+  user   User      @relation(fields: [userId], references: [id], onDelete: Cascade, map: "fk_mg_user_id")
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_mg_user_id_created_at")
+  @@map("mcp_grants")
 }

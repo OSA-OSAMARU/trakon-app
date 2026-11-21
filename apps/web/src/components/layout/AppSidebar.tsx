@@ -1,6 +1,7 @@
 import { Link, NavLink } from 'react-router-dom';
 import {
   Archive,
+  Bot,
   LayoutDashboard,
   List,
   MoreHorizontal,
@@ -158,6 +159,12 @@ export function AppSidebar({
                 <Link to="/settings/billing">
                   <CreditCard className="size-4" />
                   プラン・お支払い
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/settings/ai">
+                  <Bot className="size-4" />
+                  AI 連携
                 </Link>
               </DropdownMenuItem>
               {/* 運営管理 (#204)。運営アカウントにだけ出す。

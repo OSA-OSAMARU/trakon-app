@@ -1349,6 +1349,18 @@ Tailwind 標準（4px グリッド）。レイアウト padding は 16〜24px、
 
 **実装しない。** Figma のデザインはライトテーマのみで、ダーク用の指定が存在しない。`index.html` の `color-scheme` は `light` 固定とし、v1.1 まで存在した `.dark` ブロックと `dark:` ユーティリティ（一度も有効化されていなかった）は削除した。将来的に対応する場合も、全トークンが CSS 変数化されているため差し替えで対応できる。
 
+
+### 4.9.7. AI 連携の画面（SC-20 / SC-21, 2026-11-21）
+
+詳細は [08-mcp.md §8.10](08-mcp.md)。
+
+| ID | パス | レイアウト | 要点 |
+|---|---|---|---|
+| SC-20 同意画面 | `/oauth/authorize` | `RequireAuth` のみ（サイドバーなし、招待受諾と同じ中央カード） | OAuth の authorization_endpoint。未ログインは `/login?next=` 経由で戻る。**アプリ名（自己申告）と戻り先ホストを並べて表示**。許可／拒否は API が返す URL へ `window.location.assign` |
+| SC-21 AI 連携 | `/settings/ai` | `SidebarLayout`。アカウントメニューに「AI 連携」 | MCP サーバ URL のコピー、クライアント別の接続手順、接続中アプリの一覧と「接続を解除」（確認ダイアログ） |
+
+コードは `src/features/aiConnections/`。
+
 ## 4.10. 議論ポイントの確定結果
 
 | # | 論点 | 確定内容 | 判断理由 |

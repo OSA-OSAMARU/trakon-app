@@ -59,6 +59,9 @@ process.env.STRIPE_PORTAL_CONFIGURATION_ID ??= TEST_STRIPE.portalConfigurationId
 
 // TRUNCATE 対象 (FK 依存順は CASCADE で吸収)。
 const TABLES = [
+  'mcp_grants',
+  'mcp_authorization_codes',
+  'mcp_clients',
   'audit_logs',
   'ball_events',
   'plans',

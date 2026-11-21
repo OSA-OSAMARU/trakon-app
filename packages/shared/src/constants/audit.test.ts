@@ -4,6 +4,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_ACTIONS_BILLING,
   AUDIT_ACTIONS_CORE,
+  AUDIT_ACTIONS_MCP,
   AUDIT_ACTIONS_ORG,
   isAuditAction,
 } from './audit.js';
@@ -13,11 +14,19 @@ import {
 // ここでは配列そのものの健全性 — 重複がないこと・欠落がないこと — を守る。
 
 describe('監査ログの action 許可値', () => {
-  it('3 グループの連結で、取りこぼしがない', () => {
+  it('4 グループの連結で、取りこぼしがない', () => {
     expect(AUDIT_ACTIONS).toHaveLength(
-      AUDIT_ACTIONS_CORE.length + AUDIT_ACTIONS_BILLING.length + AUDIT_ACTIONS_ORG.length,
+      AUDIT_ACTIONS_CORE.length +
+        AUDIT_ACTIONS_BILLING.length +
+        AUDIT_ACTIONS_ORG.length +
+        AUDIT_ACTIONS_MCP.length,
     );
-    for (const group of [AUDIT_ACTIONS_CORE, AUDIT_ACTIONS_BILLING, AUDIT_ACTIONS_ORG]) {
+    for (const group of [
+      AUDIT_ACTIONS_CORE,
+      AUDIT_ACTIONS_BILLING,
+      AUDIT_ACTIONS_ORG,
+      AUDIT_ACTIONS_MCP,
+    ]) {
       for (const action of group) {
         expect(AUDIT_ACTIONS).toContain(action);
       }
