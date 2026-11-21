@@ -187,7 +187,7 @@ describe('MCP (AI 連携) end-to-end', () => {
     ]);
     const detail = await callTool(tokens.access_token, 'get_project', { projectId: project.id });
     expect(detail.structuredContent!.items).toEqual([{ id: item.id, name: 'バナー' }]);
-    expect(detail.structuredContent!.members[0]).toMatchObject({ id: member.id });
+    expect(detail.structuredContent!.members[0]).toMatchObject({ id: member.id, isMe: true });
     expect(detail.structuredContent!.members[0]).not.toHaveProperty('email');
 
     // create_plan は REST を通るので、DB に入り監査対象のルールも同じ

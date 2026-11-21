@@ -32,6 +32,7 @@ const SERVER_INSTRUCTIONS = `TRAKON は制作進行管理ツールです。プ�
 使い方の原則:
 - ID は推測しないでください。まず list_projects でプロジェクトを、get_project で制作物と参加者の ID を確認してから操作します。
 - 人や制作物を名前で指定されたら、get_project の一覧から一致するものを選んでください。候補が複数あるときや見つからないときは利用者に確認してください。
+- 「自分」「私」は、get_project の members のうち isMe: true の参加者です。
 - 日付は YYYY-MM-DD (日本時間) です。「来週の月曜」などの相対的な指定は、応答に含まれる today を基準に計算してください。
 - 予定には 3 つの役割があります: 実施者 (executor, 作業する人) / 承認者 (approver, 確認する人, 任意) / 進行責任者 (progress_manager, 承認後に次の工程へ TOSS する人)。
 - ボールの流れ: 実施中 → (確認依頼) → 確認待ち → (承認) → 承認済み → (TOSS) → 後続予定の実施者へ。差し戻しで実施者に戻ります。
@@ -141,6 +142,8 @@ function withoutUndefined<T extends Record<string, unknown>>(obj: T): Partial<T>
 export type CreateMcpServerInput = {
   dispatch: Dispatch;
   scopes: readonly McpScope[];
+  /** 接続した本人の users.id。参加者行の isMe 判定に使う */
+  currentUserId: string;
   /**
    * planId → itemId の解決 (REST のパスに itemId が要るため)。**projectId 配下に限定して引く。**
    * 参加していないプロジェクトでも、続く REST 呼び出しが 404 に集約するので存在は漏れない。
@@ -211,7 +214,7 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
       {
         title: 'プロジェクト詳細',
         description:
-          'プロジェクトの概要・制作物 (items) ・参加者 (members) を返します。予定の作成や担当者の指定に必要な itemId / memberId はここで確認してください。',
+          'プロジェクトの概要・制作物 (items) ・参加者 (members) を返します。予定の作成や担当者の指定に必要な itemId / memberId はここで確認してください。利用者本人の参加者行は isMe: true です (同名の参加者がいても本人はこれで判別できます)。',
         inputSchema: { projectId },
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
@@ -241,6 +244,8 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
           // メール・アバター URL は AI へ渡さない (最小限の個人情報, SR-PRIVACY-01)
           members: members.data.map((m) => ({
             id: m.id,
+            // 「自分の担当で」を解決するため。同名の参加者行があっても取り違えない
+            isMe: m.userId === input.currentUserId,
             name: m.name,
             organizationName: m.organizationName,
             memberType: m.memberType,
@@ -316,7 +321,7 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
       {
         title: '今日の自分のボール',
         description:
-          '利用者本人が今日対応すべき予定 (自分がボールを持っている予定) を、プロジェクトごとに返します。期限切れ (isOverdue) も含みます。',
+          '利用者本人が今日対応すべき予定 (自分がボールを持っている予定) を、プロジェクトごとに返します。期限切れ (isOverdue) も含みます。件数 (myTaskCount / myOverdueCount) も本人の分だけです。チーム全体の状況は list_plans を使ってください。',
         inputSchema: {},
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
@@ -324,16 +329,23 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
         const res = await dispatch<DashboardDTO>('GET', '/users/me/dashboard');
         if (!res.ok) return toToolError(res);
         const d = res.data;
+        const projects = d.projects
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            myTasks: p.memberSections.filter((s) => s.member.isMe).flatMap((s) => s.tasks),
+          }))
+          .filter((p) => p.myTasks.length > 0);
+        const myTasks = projects.flatMap((p) => p.myTasks);
+        // 件数は**本人の分だけ**数え直す。REST の summary は参加プロジェクト全員の合計で
+        // (ダッシュボード画面の全体表示用)、そのまま渡すと AI が「あなたには 2 件」と誤読する
         return ok({
           today: d.today,
-          summary: d.summary,
-          projects: d.projects
-            .map((p) => ({
-              id: p.id,
-              name: p.name,
-              myTasks: p.memberSections.filter((s) => s.member.isMe).flatMap((s) => s.tasks),
-            }))
-            .filter((p) => p.myTasks.length > 0),
+          summary: {
+            myTaskCount: myTasks.length,
+            myOverdueCount: myTasks.filter((t) => t.isOverdue).length,
+          },
+          projects,
         });
       },
     );

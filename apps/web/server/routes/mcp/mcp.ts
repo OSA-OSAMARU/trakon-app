@@ -69,6 +69,7 @@ export function createMcpRoute(fetchApp: (req: Request) => Response | Promise<Re
             user: { authUserId: principal.authUserId, email: principal.email },
           }),
           scopes: principal.scopes,
+          currentUserId: principal.userId,
           resolvePlanItemId,
         });
         const transport = new WebStandardStreamableHTTPServerTransport({

@@ -18,6 +18,8 @@ const P = '11111111-1111-4111-8111-111111111111';
 const I = '22222222-2222-4222-8222-222222222222';
 const PL = '33333333-3333-4333-8333-333333333333';
 const M = '44444444-4444-4444-8444-444444444444';
+/** 接続した本人の users.id */
+const ME = 'user-me';
 
 const member = (id: string, name: string) => ({
   id,
@@ -63,6 +65,7 @@ async function setup(opts: { scopes?: McpScope[]; route: Route; itemId?: string 
   const server = createTrakonMcpServer({
     dispatch: dispatch as unknown as Dispatch,
     scopes: opts.scopes ?? ['read', 'write'],
+    currentUserId: ME,
     resolvePlanItemId: async () => (opts.itemId === undefined ? I : opts.itemId),
     now: () => new Date('2026-06-01T00:00:00Z'),
   });
@@ -189,11 +192,15 @@ describe('読み取りツール', () => {
           return okRes([
             {
               ...member(M, '田中'),
+              userId: ME,
               email: 'tanaka@example.test',
               avatarUrl: 'https://signed',
               jobTitle: 'designer',
               roleType: 'admin',
             },
+            // 同名でも別アカウント / アカウント未紐付けの参加者行は本人ではない
+            { ...member('m2', '田中'), userId: 'someone-else', jobTitle: null, roleType: 'editor' },
+            { ...member('m3', '田中'), userId: null, jobTitle: null, roleType: 'viewer' },
           ]);
         return undefined;
       },
@@ -202,7 +209,11 @@ describe('読み取りツール', () => {
     expect(r.structuredContent).toMatchObject({
       project: { id: P, myRole: 'editor', defaultProgressManager: { id: M, name: '田中' } },
       items: [{ id: I, name: 'バナー' }],
-      members: [{ id: M, name: '田中', role: 'admin', jobTitle: 'designer' }],
+      members: [
+        { id: M, isMe: true, name: '田中', role: 'admin', jobTitle: 'designer' },
+        { id: 'm2', isMe: false, role: 'editor' },
+        { id: 'm3', isMe: false, role: 'viewer' },
+      ],
     });
     expect(r.content[0]!.text).not.toContain('tanaka@example.test');
     expect(r.content[0]!.text).not.toContain('https://signed');
@@ -304,20 +315,22 @@ describe('読み取りツール', () => {
     expect((await call('get_plan', { projectId: P, planId: PL })).isError).toBe(true);
   });
 
-  it('get_my_dashboard: 自分の予定があるプロジェクトだけ返す', async () => {
+  it('get_my_dashboard: 自分の予定があるプロジェクトだけ返し、件数も本人の分だけ数える', async () => {
     const task = { planId: PL, title: 't', isOverdue: false };
+    const overdue = { planId: 'p-late', title: 'late', isOverdue: true };
     const { call } = await setup({
       route: () =>
         okRes({
           today: '2026-06-01',
-          summary: { todayTaskCount: 1, overdueCount: 0 },
+          // REST の summary は参加プロジェクト全員の合計 (画面の全体表示用)
+          summary: { todayTaskCount: 4, overdueCount: 2 },
           projects: [
             {
               id: P,
               name: 'A',
               memberSections: [
-                { member: { isMe: true }, tasks: [task] },
-                { member: { isMe: false }, tasks: [{ planId: 'other' }] },
+                { member: { isMe: true }, tasks: [task, overdue] },
+                { member: { isMe: false }, tasks: [{ planId: 'other', isOverdue: true }] },
               ],
             },
             { id: 'q', name: 'B', memberSections: [{ member: { isMe: false }, tasks: [{}] }] },
@@ -327,8 +340,33 @@ describe('読み取りツール', () => {
     const r = await call('get_my_dashboard');
     expect(r.structuredContent).toEqual({
       today: '2026-06-01',
-      summary: { todayTaskCount: 1, overdueCount: 0 },
-      projects: [{ id: P, name: 'A', myTasks: [task] }],
+      summary: { myTaskCount: 2, myOverdueCount: 1 },
+      projects: [{ id: P, name: 'A', myTasks: [task, overdue] }],
+    });
+  });
+
+  it('get_my_dashboard: 他人のボールしか無ければ 0 件 (Preview で見つかった食い違い)', async () => {
+    const { call } = await setup({
+      route: () =>
+        okRes({
+          today: '2026-11-21',
+          summary: { todayTaskCount: 2, overdueCount: 2 },
+          projects: [
+            {
+              id: P,
+              name: 'test',
+              memberSections: [
+                { member: { isMe: true }, tasks: [] },
+                { member: { isMe: false }, tasks: [{ isOverdue: true }, { isOverdue: true }] },
+              ],
+            },
+          ],
+        }),
+    });
+    expect((await call('get_my_dashboard')).structuredContent).toEqual({
+      today: '2026-11-21',
+      summary: { myTaskCount: 0, myOverdueCount: 0 },
+      projects: [],
     });
   });
 

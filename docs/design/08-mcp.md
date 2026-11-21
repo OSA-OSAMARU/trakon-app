@@ -195,10 +195,10 @@
 | ツール | 入力 | 呼ぶ REST | 出力 |
 |---|---|---|---|
 | `list_projects` | `archived?` | `GET /projects?limit=200` | `today`、プロジェクト一覧（id・名前・クライアント名・期間・自分のロール） |
-| `get_project` | `projectId` | `GET /projects/:id`・`/items`・`/members` | プロジェクト概要、制作物（id・名前）、参加者（id・名前・区分・ロール） |
+| `get_project` | `projectId` | `GET /projects/:id`・`/items`・`/members` | プロジェクト概要、制作物（id・名前）、参加者（id・名前・区分・ロール・**`isMe`**）。`isMe` は接続した本人の参加者行で、同名の参加者がいても「自分の担当で」を取り違えないために返す |
 | `list_plans` | `projectId`, `from?`, `to?`, `itemId?`, `memberId?` | `GET /projects/:id/plans` | `today`、予定一覧（`memberId` はいずれかの役割またはボール保持者に一致） |
 | `get_plan` | `projectId`, `planId` | `GET …/items/:itemId/plans/:planId` | 予定 + ボールの履歴 |
-| `get_my_dashboard` | — | `GET /users/me/dashboard` | 今日の自分のボール（ダッシュボードと同じ） |
+| `get_my_dashboard` | — | `GET /users/me/dashboard` | 今日の自分のボール（本人がボールを持つ予定だけ）。件数 `myTaskCount` / `myOverdueCount` も**本人の分だけ数え直す**（REST の `summary` は参加プロジェクト全員の合計で、そのまま渡すと AI が「あなたには N 件」と誤読するため） |
 
 ### 8.7.2 書き込み（scope: `write`）
 
