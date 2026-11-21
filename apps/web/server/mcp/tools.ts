@@ -36,6 +36,7 @@ const SERVER_INSTRUCTIONS = `TRAKON は制作進行管理ツールです。プ�
 - 日付は YYYY-MM-DD (日本時間) です。「来週の月曜」などの相対的な指定は、応答に含まれる today を基準に計算してください。
 - 予定には 3 つの役割があります: 実施者 (executor, 作業する人) / 承認者 (approver, 確認する人, 任意) / 進行責任者 (progress_manager, 承認後に次の工程へ TOSS する人)。
 - ボールの流れ: 実施中 → (確認依頼) → 確認待ち → (承認) → 承認済み → (TOSS) → 後続予定の実施者へ。差し戻しで実施者に戻ります。
+- 後続予定 (successorPlanId) は「この予定が終わったら次はこれ」というつながりです。TOSS の行き先になります。同じ制作物の中の予定だけを指定でき、1 つの予定を後続にできるのは 1 つの先行予定だけです。
 - 書き込み (作成・変更・削除・ボール操作) の前に、何をするかを利用者に確認してください。
 - エラーが返ったら、メッセージの内容 (権限がない・プロジェクト期間外など) を利用者に分かる言葉で伝えてください。`;
 
@@ -55,6 +56,12 @@ const isoDate = z
 const projectId = z.string().uuid().describe('プロジェクト ID (list_projects で取得)');
 const planId = z.string().uuid().describe('予定 ID (list_plans で取得)');
 const memberId = z.string().uuid().describe('参加者 ID (get_project の members[].id)');
+const successorPlanId = z
+  .string()
+  .uuid()
+  .describe(
+    '後続予定の ID (list_plans の plans[].id)。同じ制作物の予定で、まだ他の予定の後続になっていないもの',
+  );
 const categoryDescription = `作業カテゴリ: ${PLAN_CATEGORIES.map((c) => `${c}=${PLAN_CATEGORY_LABEL[c]}`).join(', ')}`;
 
 export const BALL_ACTIONS = {
@@ -379,7 +386,7 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
       {
         title: '予定を作成',
         description:
-          '制作物に予定を追加します。日付はプロジェクト期間内である必要があります。担当者 (executorMemberId など) は get_project の members[].id を指定します。進行責任者を省略するとプロジェクトの既定値が入ります。',
+          '制作物に予定を追加します。日付はプロジェクト期間内である必要があります。担当者 (executorMemberId など) は get_project の members[].id を指定します。進行責任者を省略するとプロジェクトの既定値が入ります。既にある予定を後続にするなら successorPlanId を指定します (新しく作る予定を既存の予定の後続にするときは、作成後に先行予定の側を update_plan で更新します)。',
         inputSchema: {
           projectId,
           itemId: z.string().uuid().describe('制作物 ID (get_project の items[].id)'),
@@ -399,6 +406,7 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
             .enum(SCHEDULE_THEMES)
             .optional()
             .describe('カードの色 (省略時はカテゴリ既定)'),
+          successorPlanId: successorPlanId.optional(),
         },
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
@@ -418,7 +426,7 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
       {
         title: '予定を変更',
         description:
-          '予定の内容を変更します。変えたい項目だけ指定してください。担当者・終了日・メモは null を指定すると未設定に戻せます。itemId を指定すると同じプロジェクト内の別の制作物へ移動します。',
+          '予定の内容を変更します。変えたい項目だけ指定してください。担当者・終了日・メモは null を指定すると未設定に戻せます。itemId を指定すると同じプロジェクト内の別の制作物へ移動します (移動すると後続のつながりは外れます)。successorPlanId で後続予定を紐付け、null で外せます。',
         inputSchema: {
           projectId,
           planId,
@@ -435,6 +443,7 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
           itemId: z.string().uuid().optional().describe('移動先の制作物 ID'),
           memo: z.string().max(2000).nullable().optional(),
           colorTheme: z.enum(SCHEDULE_THEMES).nullable().optional(),
+          successorPlanId: successorPlanId.nullable().optional(),
         },
         annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       },
@@ -442,6 +451,12 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
         const changes = withoutUndefined(body);
         if (Object.keys(changes).length === 0) {
           return errorText('変更する項目が指定されていません。');
+        }
+        // 制作物を移動すると REST 側が後続のつながりを外すため、同時指定は黙って捨てられてしまう
+        if (changes.itemId && changes.successorPlanId) {
+          return errorText(
+            '制作物の移動と後続の紐付けは同時にできません。先に移動してから、移動先の制作物の予定を後続に指定してください。',
+          );
         }
         const path = await planPath(pid, plid);
         if (typeof path !== 'string') return path;

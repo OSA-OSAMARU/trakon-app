@@ -51,6 +51,7 @@
 | MCP | 2026-11-21 | **AI 連携（MCP サーバ）の追加**。**第8章 08-mcp.md を新設**。Claude / ChatGPT / Gemini / Copilot などの AI アシスタントから自然言語で予定の確認・登録・変更・ボール操作をできるよう、リモート MCP サーバ（Streamable HTTP・ステートレス）を `POST /api/mcp` に同居させた。認可は **OAuth 2.1 認可サーバを Hono に自前実装**（動的クライアント登録 + PKCE S256 必須 + リフレッシュトークンのローテーション + RFC 8707 のオーディエンス束縛、トークンは不透明・DB はハッシュのみ）。**MCP ツールは既存 REST API をプロセス内で呼ぶ薄いアダプタ**とし、参加 404 集約・凍結/課金・ロール判定・監査ログを画面操作と同一にした。`mcp_clients` / `mcp_authorization_codes` / `mcp_grants` を追加し、`audit_logs.action` に `mcp_connected` / `mcp_revoked` を追加。同意画面 SC-20（`/oauth/authorize`）と AI 連携設定 SC-21（`/settings/ai`）を新設。PRD FR-API-01（Phase 3）の一部前倒し。SR-EXT-01（組織による許可制）は §8.13 に持ち越し。 | — |
 | MCP-guide | 2026-11-21 | **AI 連携の設定方法ページを追加**。SC-22（`/help/ai`、ログイン不要）を新設し、Claude・Claude Code・ChatGPT・Gemini CLI・GitHub Copilot（VS Code）・Copilot Studio の接続手順を、各社の公式ドキュメント（2026 年 11 月時点）にもとづいて掲載。手順データは `aiGuides.ts` に集約し、SC-21 と同意画面からリンク。あわせて、ChatGPT が付けてくる `offline_access` などの**知らないスコープを拒否せず無視する**よう認可サーバを修正（拒否すると接続できなかった）。08-mcp §8.5.4 / §8.10 / §8.11、04-frontend §4.9.7 を改訂。 | — |
 | MCP-me | 2026-11-21 | **Preview での接続テストで見つかった MCP ツールの改善**。① `get_my_dashboard` の件数を本人の分だけに（参加プロジェクト全員の合計を渡していたため、一覧 0 件なのに「2 件」と読めた）。② `get_project` の参加者に `isMe` を追加し、サーバの案内文に「自分＝isMe」を明記（同名の参加者行があると「自分の担当で」を解決できなかった）。08-mcp §8.7.1 を改訂。 | — |
+| MCP-succ | 2026-11-21 | **MCP ツールで後続予定を紐付けられるようにする**。`create_plan` / `update_plan` に `successorPlanId` を追加（`null` で解除）。規則（同じ制作物内・1 対 1・自分自身不可）は REST が持ち、サーバの案内文にも明記。制作物の移動と後続の同時指定はツール側で拒否。08-mcp §8.7.2 を改訂。 | — |
 
 ---
 

@@ -425,6 +425,57 @@ describe('書き込みツール', () => {
     });
   });
 
+  it('create_plan / update_plan: 後続予定を紐付け・解除できる', async () => {
+    const NEXT = '66666666-6666-4666-8666-666666666666';
+    const { call, dispatch } = await setup({
+      route: () => okRes(planDto({ successorPlanId: NEXT })),
+    });
+    const created = await call('create_plan', {
+      projectId: P,
+      itemId: I,
+      title: 'ワイヤー',
+      category: 'wireframe',
+      scheduledDate: '2026-06-01',
+      successorPlanId: NEXT,
+    });
+    expect(dispatch).toHaveBeenLastCalledWith(
+      'POST',
+      `/projects/${P}/items/${I}/plans`,
+      expect.objectContaining({ successorPlanId: NEXT }),
+    );
+    expect(created.structuredContent!.plan.successorPlanId).toBe(NEXT);
+
+    await call('update_plan', { projectId: P, planId: PL, successorPlanId: NEXT });
+    expect(dispatch).toHaveBeenLastCalledWith('PATCH', `/projects/${P}/items/${I}/plans/${PL}`, {
+      successorPlanId: NEXT,
+    });
+    await call('update_plan', { projectId: P, planId: PL, successorPlanId: null });
+    expect(dispatch).toHaveBeenLastCalledWith('PATCH', `/projects/${P}/items/${I}/plans/${PL}`, {
+      successorPlanId: null,
+    });
+  });
+
+  it('update_plan: 制作物の移動と後続の紐付けは同時に受け付けない', async () => {
+    const { call, dispatch } = await setup({ route: () => okRes(planDto()) });
+    const r = await call('update_plan', {
+      projectId: P,
+      planId: PL,
+      itemId: '77777777-7777-4777-8777-777777777777',
+      successorPlanId: '66666666-6666-4666-8666-666666666666',
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0]!.text).toContain('同時にできません');
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('後続のつながりの決まりを AI に案内する', async () => {
+    const { client } = await setup({ route: () => undefined });
+    expect(client.getInstructions()).toContain('同じ制作物の中の予定だけ');
+    const tools = (await client.listTools()).tools;
+    const update = tools.find((t) => t.name === 'update_plan')!;
+    expect(update.inputSchema.properties).toHaveProperty('successorPlanId');
+  });
+
   it('update_plan: 変更項目が無ければエラー', async () => {
     const { call, dispatch } = await setup({ route: () => okRes(planDto()) });
     const r = await call('update_plan', { projectId: P, planId: PL });

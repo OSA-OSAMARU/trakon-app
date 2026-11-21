@@ -187,7 +187,7 @@
 
 - 入力は Zod で定義し、`tools/list` には JSON Schema として出る。説明文は**日本語**で、AI が正しく使えるよう前提（ID の取り方・日付の書式・JST）を書く。
 - 出力は `structuredContent`（JSON）と、同じ内容のテキスト（JSON 文字列）を返す。
-- REST が 4xx を返したら **`isError: true` のツール結果**として `コード: メッセージ` を返す（AI が理由を読んで言い直せるようにする。例：`PLAN_OUT_OF_PERIOD`、`NOT_FOUND`、`SUBSCRIPTION_READ_ONLY`）。
+- REST が 4xx を返したら **`isError: true` のツール結果**として `コード: メッセージ` を返す（AI が理由を読んで言い直せるようにする。例：`PLAN_OUT_OF_PROJECT_PERIOD`、`NOT_FOUND`、`SUBSCRIPTION_READ_ONLY`）。
 - 予定の出力は AI のコンテキストを節約するため要約形（id・制作物・タイトル・カテゴリ・日付・3 役割の id と名前・ボール保持者・状態・後続・メモ）にする。
 
 ### 8.7.1 読み取り（scope: `read`、`readOnlyHint: true`）
@@ -205,10 +205,12 @@
 | ツール | 入力 | 呼ぶ REST | 注意 |
 |---|---|---|---|
 | `create_item` | `projectId`, `name` | `POST /projects/:id/items` | 編集者以上 |
-| `create_plan` | `projectId`, `itemId`, `title`, `category`, `scheduledDate`, `dueDate?`, `executorMemberId?`, `approverMemberId?`, `progressManagerMemberId?`, `memo?`, `colorTheme?` | `POST …/items/:itemId/plans` | プロジェクト期間外は `PLAN_OUT_OF_PERIOD` |
-| `update_plan` | `projectId`, `planId`, 変更する項目のみ（`null` で解除） | `PATCH …/plans/:planId` | `itemId` 指定で別制作物へ移動 |
+| `create_plan` | `projectId`, `itemId`, `title`, `category`, `scheduledDate`, `dueDate?`, `executorMemberId?`, `approverMemberId?`, `progressManagerMemberId?`, `memo?`, `colorTheme?`, `successorPlanId?` | `POST …/items/:itemId/plans` | プロジェクト期間外は `PLAN_OUT_OF_PROJECT_PERIOD` |
+| `update_plan` | `projectId`, `planId`, 変更する項目のみ（`null` で解除）。`successorPlanId` で後続予定の紐付け・解除 | `PATCH …/plans/:planId` | `itemId` 指定で別制作物へ移動（後続のつながりは外れる）。**移動と後続の同時指定はツール側で拒否**（REST は移動時に後続を黙って捨てるため） |
 | `delete_plan` | `projectId`, `planId` | `DELETE …/plans/:planId` | `destructiveHint: true`。履歴のある予定は削除不可（既存仕様） |
 | `ball_action` | `projectId`, `planId`, `action`, `note?` | `POST …/plans/:planId/{action}` | `action` = `request_review` / `request_review_undo` / `approve` / `approve_undo` / `send_back` / `send_back_to_predecessor` / `toss` / `toss_undo`。TOSS は管理者のみ（既存仕様）。通知メールも画面操作と同じく送られる |
+
+**後続予定（`successorPlanId`）**：先行予定が承認されたあと、進行責任者の TOSS でボールが渡る先（#131）。規則は REST がそのまま持つ — 同じ制作物の予定のみ（`SUCCESSOR_OUT_OF_SCOPE`）、1 つの予定を後続にできる先行予定は 1 つだけ（`SUCCESSOR_ALREADY_USED`）、自分自身は不可。AI が「ワイヤー → デザイン → コーディング」のような流れを組めるよう、サーバの案内文にもこの規則を書く。
 
 `planId` だけで操作できるよう、MCP 側で `planId` → `itemId` を解決してから REST を呼ぶ（**解決は `projectId` 配下に限定**。参加していなければ REST の 404 集約がそのまま効くので、存在の有無は漏れない）。
 
