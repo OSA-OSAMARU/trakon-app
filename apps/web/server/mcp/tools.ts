@@ -426,7 +426,7 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
       {
         title: '予定を変更',
         description:
-          '予定の内容を変更します。変えたい項目だけ指定してください。担当者・終了日・メモは null を指定すると未設定に戻せます。itemId を指定すると同じプロジェクト内の別の制作物へ移動します (移動すると後続のつながりは外れます)。successorPlanId で後続予定を紐付け、null で外せます。',
+          '予定の内容を変更します。変えたい項目だけ指定してください。担当者・終了日・メモは null を指定すると未設定に戻せます。itemId を指定すると同じプロジェクト内の別の制作物へ移動します (移動すると後続のつながりは外れます)。successorPlanId で後続予定を紐付け、null で外せます (承認済みの予定にも紐付けられます)。',
         inputSchema: {
           projectId,
           planId,
@@ -452,17 +452,42 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
         if (Object.keys(changes).length === 0) {
           return errorText('変更する項目が指定されていません。');
         }
-        // 制作物を移動すると REST 側が後続のつながりを外すため、同時指定は黙って捨てられてしまう
-        if (changes.itemId && changes.successorPlanId) {
+        const { successorPlanId: successor, ...fields } = changes;
+        // 制作物を移動すると REST 側が後続のつながりを外し、予定のパスも変わる。
+        // 同時に指定されると後続の指定が捨てられるか 404 になるので、先に断る
+        if (fields.itemId && successor !== undefined) {
           return errorText(
             '制作物の移動と後続の紐付けは同時にできません。先に移動してから、移動先の制作物の予定を後続に指定してください。',
           );
         }
         const path = await planPath(pid, plid);
         if (typeof path !== 'string') return path;
-        const res = await dispatch<PlanDTO>('PATCH', path, changes);
-        if (!res.ok) return toToolError(res);
-        return ok({ plan: summarizePlan(res.data) });
+
+        let plan: PlanDTO | undefined;
+        if (Object.keys(fields).length > 0) {
+          const res = await dispatch<PlanDTO>('PATCH', path, fields);
+          if (!res.ok) return toToolError(res);
+          plan = res.data;
+        }
+        // 後続は専用のエンドポイントで付け替える。一般の更新は「実施中」の予定にしか効かないが、
+        // 後続は**承認済み (TOSS 待ち) の予定にこそ必要**なため (画面のつなぎ操作と同じ経路)
+        if (successor !== undefined) {
+          const res = await dispatch<PlanDTO>('PATCH', `${path}/successor`, {
+            successorPlanId: successor,
+          });
+          if (!res.ok) {
+            const err = toToolError(res);
+            if (plan) {
+              err.content.push({
+                type: 'text',
+                text: '(後続以外の項目の変更は反映済みです)',
+              });
+            }
+            return err;
+          }
+          plan = res.data;
+        }
+        return ok({ plan: summarizePlan(plan!) });
       },
     );
 
@@ -471,7 +496,7 @@ export function createTrakonMcpServer(input: CreateMcpServerInput): McpServer {
       {
         title: '予定を削除',
         description:
-          '予定を削除します。ボールの受け渡し履歴がある予定は削除できません。実行前に必ず利用者に確認してください。',
+          '予定を削除します。画面からの削除と同じく、ボールの受け渡し履歴は記録に残したまま一覧から消えます。実行前に必ず利用者に確認してください。',
         inputSchema: { projectId, planId },
         annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       },

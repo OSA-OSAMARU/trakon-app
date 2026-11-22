@@ -445,28 +445,89 @@ describe('書き込みツール', () => {
     );
     expect(created.structuredContent!.plan.successorPlanId).toBe(NEXT);
 
+    // 後続は専用のエンドポイントへ (承認済みの予定でも付け替えられる経路)
+    dispatch.mockClear();
     await call('update_plan', { projectId: P, planId: PL, successorPlanId: NEXT });
-    expect(dispatch).toHaveBeenLastCalledWith('PATCH', `/projects/${P}/items/${I}/plans/${PL}`, {
-      successorPlanId: NEXT,
-    });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenLastCalledWith(
+      'PATCH',
+      `/projects/${P}/items/${I}/plans/${PL}/successor`,
+      { successorPlanId: NEXT },
+    );
     await call('update_plan', { projectId: P, planId: PL, successorPlanId: null });
-    expect(dispatch).toHaveBeenLastCalledWith('PATCH', `/projects/${P}/items/${I}/plans/${PL}`, {
-      successorPlanId: null,
-    });
+    expect(dispatch).toHaveBeenLastCalledWith(
+      'PATCH',
+      `/projects/${P}/items/${I}/plans/${PL}/successor`,
+      { successorPlanId: null },
+    );
   });
 
-  it('update_plan: 制作物の移動と後続の紐付けは同時に受け付けない', async () => {
-    const { call, dispatch } = await setup({ route: () => okRes(planDto()) });
+  it('update_plan: ほかの項目と後続を一緒に頼まれたら、更新 → 後続の順に 2 回呼ぶ', async () => {
+    const NEXT = '66666666-6666-4666-8666-666666666666';
+    const { call, dispatch } = await setup({
+      route: (_m, path) =>
+        okRes(planDto(path.endsWith('/successor') ? { successorPlanId: NEXT } : { title: '改題' })),
+    });
     const r = await call('update_plan', {
       projectId: P,
       planId: PL,
-      itemId: '77777777-7777-4777-8777-777777777777',
+      title: '改題',
+      successorPlanId: NEXT,
+    });
+    expect(dispatch.mock.calls).toEqual([
+      ['PATCH', `/projects/${P}/items/${I}/plans/${PL}`, { title: '改題' }],
+      ['PATCH', `/projects/${P}/items/${I}/plans/${PL}/successor`, { successorPlanId: NEXT }],
+    ]);
+    expect(r.structuredContent!.plan.successorPlanId).toBe(NEXT);
+  });
+
+  it('update_plan: 後続だけ失敗したら、ほかの項目は反映済みだと伝える', async () => {
+    const { call } = await setup({
+      route: (_m, path) =>
+        path.endsWith('/successor')
+          ? ng(
+              422,
+              'SUCCESSOR_OUT_OF_SCOPE',
+              'successorPlanId must reference a plan within the same item.',
+            )
+          : okRes(planDto()),
+    });
+    const r = await call('update_plan', {
+      projectId: P,
+      planId: PL,
+      title: '改題',
       successorPlanId: '66666666-6666-4666-8666-666666666666',
     });
     expect(r.isError).toBe(true);
-    expect(r.content[0]!.text).toContain('同時にできません');
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(r.content.map((c) => c.text).join('\n')).toContain('SUCCESSOR_OUT_OF_SCOPE');
+    expect(r.content.map((c) => c.text).join('\n')).toContain('反映済み');
   });
+
+  it('update_plan: 後続だけの失敗なら「反映済み」は付けない', async () => {
+    const { call } = await setup({ route: () => ng(422, 'SUCCESSOR_ALREADY_USED', 'used') });
+    const r = await call('update_plan', {
+      projectId: P,
+      planId: PL,
+      successorPlanId: '66666666-6666-4666-8666-666666666666',
+    });
+    expect(r.content).toHaveLength(1);
+  });
+
+  it.each([['66666666-6666-4666-8666-666666666666'], [null]])(
+    'update_plan: 制作物の移動と後続の指定 (%s) は同時に受け付けない',
+    async (successorPlanId) => {
+      const { call, dispatch } = await setup({ route: () => okRes(planDto()) });
+      const r = await call('update_plan', {
+        projectId: P,
+        planId: PL,
+        itemId: '77777777-7777-4777-8777-777777777777',
+        successorPlanId,
+      });
+      expect(r.isError).toBe(true);
+      expect(r.content[0]!.text).toContain('同時にできません');
+      expect(dispatch).not.toHaveBeenCalled();
+    },
+  );
 
   it('後続のつながりの決まりを AI に案内する', async () => {
     const { client } = await setup({ route: () => undefined });
